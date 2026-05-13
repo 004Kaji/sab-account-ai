@@ -1,0 +1,19 @@
+// Signup page — split layout matching the login page.
+// Collects business details + plan selection. Server component that passes
+// the pre-selected plan (from URL) to the client signup form.
+
+import type { Metadata } from 'next'
+import SignupForm from './SignupForm'
+
+export const metadata: Metadata = { title: 'Create Account' }
+
+export default async function SignupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ plan?: string }>
+}) {
+  const { plan } = await searchParams
+  // Only accept known plan values; default to 'free'
+  const validPlan = plan === 'starter' || plan === 'pro' ? plan : 'free'
+  return <SignupForm initialPlan={validPlan} />
+}
