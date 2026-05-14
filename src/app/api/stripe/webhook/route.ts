@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 // src/app/api/stripe/webhook/route.ts
 // Stripe webhook handler — keeps Supabase in sync with subscription events
 
