@@ -72,17 +72,18 @@ function KpiCard({ label, value, sub, color }: { label: string; value: string; s
 }
 
 // ── Add Record Modal ──────────────────────────────────────────────────
-function AddRecordModal({ open, onClose, onSaved }: {
+function AddRecordModal({ open, onClose, onSaved, defaultType }: {
   open: boolean
   onClose: () => void
   onSaved: (record: Record) => void
+  defaultType: RecordType
 }) {
   const { toast } = useToast()
-  const [form, setForm]     = useState<RecordForm>(defaultForm())
+  const [form, setForm]     = useState<RecordForm>(defaultForm(defaultType))
   const [saving, setSaving] = useState(false)
 
-  // Reset when modal opens
-  useEffect(() => { if (open) setForm(defaultForm()) }, [open])
+  // Reset when modal opens, using the caller's requested type
+  useEffect(() => { if (open) setForm(defaultForm(defaultType)) }, [open, defaultType])
 
   function setField<K extends keyof RecordForm>(key: K, value: RecordForm[K]) {
     setForm(prev => {
@@ -308,6 +309,7 @@ export default function RecordsPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onSaved={rec => setRecords(prev => [rec, ...prev].sort((a, b) => b.date.localeCompare(a.date)))}
+        defaultType={defaultType}
       />
 
       <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>

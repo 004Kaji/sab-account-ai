@@ -30,14 +30,20 @@ export function formatDateAU(dateStr: string): string {
 /** Get today's date as a YYYY-MM-DD string (for <input type="date">) */
 export function todayISO(): string {
   const d = new Date()
-  return d.toISOString().split('T')[0]
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 /** Add N days to a YYYY-MM-DD string and return the result as YYYY-MM-DD */
 export function addDays(dateStr: string, days: number): string {
-  const date = new Date(dateStr)
-  date.setDate(date.getDate() + days)
-  return date.toISOString().split('T')[0]
+  const [y, mo, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, mo - 1, d + days)
+  const yr = date.getFullYear()
+  const mn = String(date.getMonth() + 1).padStart(2, '0')
+  const dy = String(date.getDate()).padStart(2, '0')
+  return `${yr}-${mn}-${dy}`
 }
 
 /** Get a human-readable greeting based on the current time of day */

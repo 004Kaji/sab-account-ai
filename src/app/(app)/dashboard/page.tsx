@@ -35,37 +35,38 @@ function fyRange() {
 
 function monthRange() {
   const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  const end   = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  const y   = now.getFullYear()
+  const m   = now.getMonth()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const lastDay = new Date(y, m + 1, 0).getDate()
   return {
-    start: start.toISOString().slice(0, 10),
-    end:   end.toISOString().slice(0, 10),
+    start: `${y}-${pad(m + 1)}-01`,
+    end:   `${y}-${pad(m + 1)}-${pad(lastDay)}`,
   }
 }
 
 function currentQuarterRange() {
   const now   = new Date()
   const month = now.getMonth() // 0-based
+  const yr    = now.getFullYear()
   // ATO quarters: Q1=Jul-Sep, Q2=Oct-Dec, Q3=Jan-Mar, Q4=Apr-Jun
+  // Index by calendar month (0=Jan … 11=Dec)
   const quarterStart = [
-    [6, 0], [6, 0], [6, 0],   // Jul Aug Sep
-    [9, 0], [9, 0], [9, 0],   // Oct Nov Dec
-    [0, 1], [0, 1], [0, 1],   // Jan Feb Mar (next year)
-    [3, 0], [3, 0], [3, 0],   // Apr May Jun
+    [0, 0], [0, 0], [0, 0],   // Jan Feb Mar → Q3 starts 1 Jan
+    [3, 0], [3, 0], [3, 0],   // Apr May Jun → Q4 starts 1 Apr
+    [6, 0], [6, 0], [6, 0],   // Jul Aug Sep → Q1 starts 1 Jul
+    [9, 0], [9, 0], [9, 0],   // Oct Nov Dec → Q2 starts 1 Oct
   ][month]
   const quarterEnd = [
-    [8, 0], [8, 0], [8, 0],
-    [11,0], [11,0], [11,0],
-    [2, 1], [2, 1], [2, 1],
-    [5, 0], [5, 0], [5, 0],
+    [2, 0], [2, 0], [2, 0],   // Jan Feb Mar → Q3 ends 31 Mar
+    [5, 0], [5, 0], [5, 0],   // Apr May Jun → Q4 ends 30 Jun
+    [8, 0], [8, 0], [8, 0],   // Jul Aug Sep → Q1 ends 30 Sep
+    [11,0], [11,0], [11,0],   // Oct Nov Dec → Q2 ends 31 Dec
   ][month]
-  const yr = now.getFullYear()
-  const startDate = new Date(yr + quarterStart[1], quarterStart[0], 1)
-  const endDate   = new Date(yr + quarterEnd[1],   quarterEnd[0] + 1, 0)
-  return {
-    start: startDate.toISOString().slice(0, 10),
-    end:   endDate.toISOString().slice(0, 10),
-  }
+  const startDate = new Date(yr, quarterStart[0], 1)
+  const endDate   = new Date(yr, quarterEnd[0] + 1, 0)
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  return { start: fmt(startDate), end: fmt(endDate) }
 }
 
 function nextBasDue(): string {

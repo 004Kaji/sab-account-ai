@@ -158,7 +158,6 @@ export default function SignupForm({ initialPlan }: { initialPlan: Plan }) {
             abn: abn.trim() || null,
           })
           router.push('/dashboard')
-          router.refresh()
           return
         }
         // Email confirmation is ON — save business details for when they confirm

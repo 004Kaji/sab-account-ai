@@ -19,7 +19,6 @@ export default function AuthCallbackPage() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
         router.push('/dashboard')
-        router.refresh()
       } else if (event === 'SIGNED_OUT') {
         setError('Sign in failed. Please try again.')
       }
@@ -30,7 +29,6 @@ export default function AuthCallbackPage() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         router.push('/dashboard')
-        router.refresh()
       }
     })
 

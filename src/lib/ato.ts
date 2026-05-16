@@ -30,14 +30,15 @@ const PERIODS_PER_YEAR: Record<string, number> = {
   monthly:     12,
 }
 
-// ── Scale 1: claiming tax-free threshold ────────────────────────
+// ── Scale 1: claiming tax-free threshold (2024-25, Stage 3 cuts) ──
+// Brackets: 0-18,200 / 18,201-45,000 / 45,001-135,000 / 135,001-190,000 / 190,001+
 
 function taxScale1(income: number): number {
-  if (income <= 18200) return 0
-  if (income <= 45000) return (income - 18200) * 0.19
-  if (income <= 120000) return 5092 + (income - 45000) * 0.325
-  if (income <= 180000) return 29467 + (income - 120000) * 0.37
-  return 51667 + (income - 180000) * 0.45
+  if (income <= 18200)  return 0
+  if (income <= 45000)  return (income - 18200) * 0.19
+  if (income <= 135000) return 5092 + (income - 45000) * 0.325
+  if (income <= 190000) return 34342 + (income - 135000) * 0.37
+  return 54692 + (income - 190000) * 0.45
 }
 
 // LITO (Low Income Tax Offset) — 2024-25 ATO rates
@@ -50,13 +51,14 @@ function lito(income: number): number {
   return 0
 }
 
-// ── Scale 2: NOT claiming tax-free threshold ─────────────────────
+// ── Scale 2: NOT claiming tax-free threshold (2024-25, Stage 3 cuts)
+// Same brackets but taxed from $0 at 19% (no free threshold, no LITO).
 
 function taxScale2(income: number): number {
-  if (income <= 45000) return income * 0.325
-  if (income <= 120000) return 14625 + (income - 45000) * 0.325
-  if (income <= 180000) return 39000 + (income - 120000) * 0.37
-  return 61200 + (income - 180000) * 0.45
+  if (income <= 45000)  return income * 0.19
+  if (income <= 135000) return 8550 + (income - 45000) * 0.325
+  if (income <= 190000) return 37800 + (income - 135000) * 0.37
+  return 58150 + (income - 190000) * 0.45
 }
 
 // ── Medicare levy (2%, applies when income > $26,000) ────────────

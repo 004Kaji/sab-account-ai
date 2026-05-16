@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
           plan,
           stripe_customer_id: session.customer as string,
           stripe_subscription_id: session.subscription as string,
-          subscription_status: 'active',
+          subscription_status: 'trialing',
           trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
         }).eq('id', userId)
 
