@@ -115,10 +115,11 @@ export function calculatePAYG(input: PaygInput): PaygResult {
   const annualHELP     = hasHELP ? helpRepayment(annualSalary) : 0
   const annualTotal    = annualTax + annualMedicare + annualHELP
 
-  // ATO NAT 1008: withholding must never be rounded down — use Math.ceil
-  const periodTax      = Math.ceil(annualTax / periods)
-  const periodMedicare = Math.ceil(annualMedicare / periods)
-  const periodHELP     = Math.ceil(annualHELP / periods)
+  // Single round on the combined annual total — breakdown figures are informational only
+  const periodTotal    = Math.round(annualTotal / periods)
+  const periodTax      = Math.round(annualTax / periods)
+  const periodMedicare = Math.round(annualMedicare / periods)
+  const periodHELP     = Math.round(annualHELP / periods)
 
   return {
     annualTax:      Math.round(annualTax),
@@ -128,7 +129,7 @@ export function calculatePAYG(input: PaygInput): PaygResult {
     periodTax,
     periodMedicare,
     periodHELP,
-    periodTotal:    periodTax + periodMedicare + periodHELP,
+    periodTotal,
   }
 }
 
