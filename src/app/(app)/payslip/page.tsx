@@ -761,7 +761,7 @@ export default function PayslipPage() {
 
                 {/* Shared: salary sacrifice + overtime */}
                 <div>
-                  <label className="sab-label">Salary Sacrifice to Super {form.pay_basis === 'salary' ? '(per year)' : '(this period)'}</label>
+                  <label className="sab-label">Salary Sacrifice to Super (per year)</label>
                   <div style={{ position: 'relative' }}>
                     <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.875rem' }}>$</span>
                     <input type="number" min={0} step={form.pay_basis === 'salary' ? 100 : 10} className="sab-input" placeholder="0"

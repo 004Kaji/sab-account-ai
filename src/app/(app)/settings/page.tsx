@@ -332,7 +332,7 @@ export default function SettingsPage() {
     }> = [
       {
         key: 'free', name: 'Free', price: '$0', period: 'forever',
-        features: ['5 invoices/month', 'AI invoice generation', 'Income & expense records', 'GST/BAS estimates'],
+        features: ['3 invoices/month', 'AI invoice generation', 'Income & expense records', 'GST/BAS estimates'],
       },
       {
         key: 'starter', name: 'Starter', price: '$9', period: '/month',

@@ -47,12 +47,18 @@ export async function POST(request: NextRequest) {
         const plan = session.metadata?.plan
         if (!userId || !plan) break
 
+        let trialEndsAt: string | null = null
+        if (session.subscription) {
+          const sub = await stripe.subscriptions.retrieve(session.subscription as string)
+          trialEndsAt = sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null
+        }
+
         await supabase.from('profiles').update({
           plan,
           stripe_customer_id: session.customer as string,
           stripe_subscription_id: session.subscription as string,
           subscription_status: 'trialing',
-          trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+          trial_ends_at: trialEndsAt ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
         }).eq('id', userId)
 
         console.log(`✅ User ${userId} upgraded to ${plan}`)
