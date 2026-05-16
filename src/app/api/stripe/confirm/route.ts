@@ -13,9 +13,11 @@ export async function POST(req: NextRequest) {
   const { sessionId } = await req.json() as { sessionId: string }
   if (!sessionId) return NextResponse.json({ error: 'Missing session ID' }, { status: 400 })
 
-  const session = await stripe.checkout.sessions.retrieve(sessionId)
+  const session = await stripe.checkout.sessions.retrieve(sessionId, {
+    expand: ['subscription'],
+  })
 
-  if (session.payment_status !== 'paid' && session.status !== 'complete') {
+  if (session.status !== 'complete') {
     return NextResponse.json({ error: 'Payment not complete' }, { status: 400 })
   }
 
@@ -27,12 +29,18 @@ export async function POST(req: NextRequest) {
   const plan = session.metadata?.plan
   if (!plan) return NextResponse.json({ error: 'No plan in session' }, { status: 400 })
 
+  // Use Stripe's actual trial end date from the subscription object
+  const sub = session.subscription as { trial_end?: number | null } | null
+  const trialEnd = sub?.trial_end
+    ? new Date(sub.trial_end * 1000).toISOString()
+    : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+
   await supabase.from('profiles').update({
     plan,
     stripe_customer_id:      session.customer as string,
-    stripe_subscription_id:  session.subscription as string,
+    stripe_subscription_id:  typeof session.subscription === 'string' ? session.subscription : (session.subscription as { id: string } | null)?.id ?? null,
     subscription_status:     'trialing',
-    trial_ends_at:           new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    trial_ends_at:           trialEnd,
   }).eq('id', user.id)
 
   return NextResponse.json({ ok: true, plan })

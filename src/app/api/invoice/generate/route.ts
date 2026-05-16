@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { createServiceClient } from '@/lib/supabase'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function POST(req: NextRequest) {
   try {
+    // Require an authenticated user before touching Anthropic API
+    const token = req.headers.get('Authorization')?.replace('Bearer ', '')
+    if (!token) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+
+    const supabase = createServiceClient()
+    const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
+    if (authErr || !user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+
     const { prompt } = await req.json()
     if (!prompt?.trim()) {
       return NextResponse.json({ error: 'Prompt required' }, { status: 400 })

@@ -180,12 +180,16 @@ export default function InvoicePage() {
       const supabase = createBrowserClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const [{ data: bizData }, { count }] = await Promise.all([
+      const [{ data: bizData }, { data: lastInv }] = await Promise.all([
         supabase.from('business_profiles').select('business_name,abn,email,phone,address').eq('id', user.id).single(),
-        supabase.from('invoices').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('invoices').select('invoice_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       ])
       setBiz(bizData ?? null)
-      const nextNum = generateInvoiceNumber((count ?? 0) + 1)
+      // Derive next number from the last invoice_number (avoids duplicates when invoices are deleted)
+      const lastSeq = lastInv?.invoice_number
+        ? parseInt(lastInv.invoice_number.split('-').pop() ?? '0', 10)
+        : 0
+      const nextNum = generateInvoiceNumber(lastSeq + 1)
       setForm(makeForm(nextNum))
     }
     load()
@@ -228,9 +232,11 @@ export default function InvoicePage() {
     if (!aiPrompt.trim()) return
     setAiLoading(true)
     try {
+      const supabase = createBrowserClient()
+      const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch('/api/invoice/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token ?? ''}` },
         body: JSON.stringify({ prompt: aiPrompt }),
       })
       const data = await res.json()
@@ -257,10 +263,10 @@ export default function InvoicePage() {
       const supabase = createBrowserClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        const startOfMonth = new Date()
-        startOfMonth.setDate(1)
-        startOfMonth.setHours(0, 0, 0, 0)
-        const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', startOfMonth.toISOString())
+        // Use local date string (YYYY-MM-01) to avoid UTC timezone shift for AU users
+        const now = new Date()
+        const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+        const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', startOfMonth)
         if ((count ?? 0) >= 3) { toast('Free plan limit reached (3/month) — upgrade to create more', 'error'); return }
       }
     }
