@@ -313,13 +313,16 @@ export default function PayslipPage() {
       const supabase = createBrowserClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const [{ data: bizData }, { count }] = await Promise.all([
+      const [{ data: bizData }, { data: lastSlip }] = await Promise.all([
         supabase.from('business_profiles').select('business_name,abn,email').eq('id', user.id).single(),
-        supabase.from('payslips').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('payslips').select('payslip_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       ])
       setBiz(bizData ?? null)
-      const yr  = new Date().getFullYear()
-      const num = `PS-${yr}-${String((count ?? 0) + 1).padStart(3, '0')}`
+      const yr = new Date().getFullYear()
+      const lastSeq = lastSlip?.payslip_number
+        ? parseInt(lastSlip.payslip_number.split('-').pop() ?? '0', 10)
+        : 0
+      const num = `PS-${yr}-${String(lastSeq + 1).padStart(3, '0')}`
       setForm(makeForm(num))
     }
     load()

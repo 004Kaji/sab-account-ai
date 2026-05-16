@@ -257,9 +257,13 @@ export default function RecordsPage() {
   useEffect(() => {
     async function load() {
       const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setLoading(false); return }
+
       const { data, error } = await supabase
         .from('records')
         .select('*')
+        .eq('user_id', user.id)
         .gte('date', fy.start)
         .lte('date', fy.end)
         .order('date', { ascending: false })

@@ -71,10 +71,10 @@ function currentQuarterRange() {
 
 function nextBasDue(): string {
   const month = new Date().getMonth()
-  if (month <= 1 || month === 11) return 'Feb 28 — Q2 BAS'
-  if (month <= 3)                  return 'Apr 28 — Q3 BAS'
-  if (month <= 6)                  return 'Jul 28 — Q4 BAS'
-  return 'Oct 28 — Q1 BAS'
+  if (month <= 1 || month >= 10) return 'Feb 28 — Q2 BAS'   // Jan, Feb, Nov, Dec
+  if (month <= 3)                return 'Apr 28 — Q3 BAS'   // Mar, Apr
+  if (month <= 6)                return 'Jul 28 — Q4 BAS'   // May, Jun, Jul
+  return 'Oct 28 — Q1 BAS'                                  // Aug, Sep, Oct
 }
 
 function nextSuperDue(): string {
