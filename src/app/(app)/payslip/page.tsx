@@ -705,6 +705,18 @@ export default function PayslipPage() {
                   </div>
                 )}
 
+                {/* MLS warning — citizen/PR earning above $93k with Medicare */}
+                {form.residency_status === 'citizen_pr' && effectiveAnnualSalary > 93000 && !form.medicare_exemption && (
+                  <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.35)', borderRadius: '8px', padding: '0.875rem 1rem' }}>
+                    <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#92400e', marginBottom: '0.25rem' }}>
+                      ⚠️ Medicare Levy Surcharge may apply
+                    </p>
+                    <p style={{ fontSize: '0.75rem', color: '#78350f', lineHeight: 1.5 }}>
+                      Your income exceeds $93,000. If you do not hold private hospital cover, the ATO may charge an additional Medicare Levy Surcharge of 1.0%–1.5% when you lodge your tax return. This is NOT included in your PAYG withholding. Speak to your tax agent or visit ato.gov.au/mls
+                    </p>
+                  </div>
+                )}
+
                 {form.residency_status !== 'whm' && (
                   <Toggle
                     label="Claiming tax-free threshold (Scale 1)"

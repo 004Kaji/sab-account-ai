@@ -202,6 +202,18 @@ async function buildPayslipDoc(data: PayslipPDFData) {
     y += 10
   }
 
+  // ── MLS disclosure note ──────────────────────────────────────────────
+  if (data.annual_salary > 93000 && !data.medicare_exempt) {
+    y += 4
+    doc.setFillColor(255, 251, 235)
+    doc.rect(margin, y, cW, 8, 'F')
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(7.5)
+    doc.setTextColor(146, 64, 14)
+    doc.text('Note: Medicare Levy Surcharge (1%–1.5%) may apply at tax time if no private hospital cover is held.', margin + 3, y + 5)
+    y += 10
+  }
+
   // ── Footer ──────────────────────────────────────────────────────────
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.5)
