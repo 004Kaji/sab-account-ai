@@ -380,9 +380,34 @@ export default function SettingsPage() {
                 Free trial ends {formatDateAU(profile.trial_ends_at.slice(0, 10))}
               </p>
             )}
-            {profile.subscription_status && !['active', 'trialing', 'inactive'].includes(profile.subscription_status) && (
-              <p style={{ fontSize: '0.8125rem', color: 'var(--ember)', marginTop: '0.25rem' }}>
-                Status: {profile.subscription_status}
+            {profile.subscription_status === 'past_due' && (
+              <div style={{
+                marginTop: '0.75rem',
+                padding: '0.75rem 1rem',
+                background: 'rgba(220,60,40,0.07)',
+                border: '1px solid rgba(220,60,40,0.25)',
+                borderRadius: '0.5rem',
+              }}>
+                <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--ember)', marginBottom: '0.25rem' }}>
+                  Payment failed
+                </p>
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text2)', marginBottom: '0.5rem' }}>
+                  We couldn&apos;t charge your card. Please update your payment method to keep your plan active.
+                </p>
+                <button
+                  onClick={handlePortal}
+                  disabled={stripeLoading}
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.8125rem', padding: '0.375rem 0.875rem' }}
+                >
+                  {stripeLoading && <span className="spinner" style={{ width: '0.8rem', height: '0.8rem', borderWidth: '2px' }} />}
+                  Update payment method →
+                </button>
+              </div>
+            )}
+            {profile.subscription_status === 'cancelled' && (
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text2)', marginTop: '0.25rem' }}>
+                Subscription cancelled — you&apos;re on the free plan.
               </p>
             )}
           </div>

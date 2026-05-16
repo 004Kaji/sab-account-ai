@@ -302,6 +302,35 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
           </header>
 
+          {profile.subscription_status === 'past_due' && (
+            <div style={{
+              background: 'rgba(220,60,40,0.1)',
+              borderBottom: '1px solid rgba(220,60,40,0.25)',
+              padding: '0.625rem 1.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '1rem',
+              flexWrap: 'wrap',
+            }}>
+              <p style={{ fontSize: '0.875rem', color: 'var(--ember)', fontWeight: 500, margin: 0 }}>
+                ⚠ Payment failed — please update your payment method to keep your plan active.
+              </p>
+              <Link
+                href="/settings?tab=subscription"
+                style={{
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  color: 'var(--ember)',
+                  textDecoration: 'underline',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Update payment →
+              </Link>
+            </div>
+          )}
+
           <main style={{ flex: 1 }}>
             {children}
           </main>
