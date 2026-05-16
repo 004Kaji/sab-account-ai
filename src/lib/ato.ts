@@ -1,5 +1,18 @@
 // ATO PAYG withholding calculation for SAB Account AI
-// FY2024-25 — Scale 1 (claiming threshold) and Scale 2 (not claiming)
+// FY2024-25 — Scale 1 (claiming threshold), Scale 2, Scale 15 (WHM)
+
+// ── Residency status ──────────────────────────────────────────────────
+export type ResidencyStatus =
+  | 'citizen_pr'  // Australian citizen or permanent resident
+  | 'student'     // International student (student visa)
+  | 'temp_work'   // Temporary work visa (482, 457, etc)
+  | 'whm'         // Working holiday maker (417 or 462)
+  | 'partner'     // Partner or dependent visa (temporary)
+  | 'other_temp'  // Other temporary resident
+
+export function isMedicareExemptByResidency(status: ResidencyStatus): boolean {
+  return status !== 'citizen_pr'
+}
 
 export type PaygInput = {
   annualSalary: number
@@ -7,6 +20,7 @@ export type PaygInput = {
   hasHELP: boolean
   medicareLevyExemption: boolean
   payCycle: 'weekly' | 'fortnightly' | 'monthly'
+  residencyStatus?: ResidencyStatus
 }
 
 export type PaygResult = {
@@ -51,7 +65,15 @@ function medicareLevy(income: number, exempt: boolean): number {
   return income * 0.02
 }
 
-// ── STEP 4 — Scale 2 (not claiming threshold, no LITO) ───────────────
+// ── STEP 4a — Scale 15: Working holiday maker (no threshold, no LITO) ─
+function taxScaleWHM(income: number): number {
+  if (income <= 45000)  return income * 0.15
+  if (income <= 120000) return 6750 + (income - 45000) * 0.325
+  if (income <= 180000) return 31125 + (income - 120000) * 0.37
+  return 53325 + (income - 180000) * 0.45
+}
+
+// ── STEP 4b — Scale 2 (not claiming threshold, no LITO) ──────────────
 function taxScale2(income: number): number {
   if (income <= 45000)  return income * 0.325
   if (income <= 120000) return 14625 + (income - 45000) * 0.325
@@ -74,29 +96,39 @@ function helpRepayment(income: number): number {
 
 // ── STEP 6 — Main PAYG calculation ───────────────────────────────────
 export function calculatePAYG(input: PaygInput): PaygResult {
-  const { annualSalary, claimingThreshold, hasHELP, medicareLevyExemption, payCycle } = input
+  const { annualSalary, claimingThreshold, hasHELP, medicareLevyExemption, payCycle, residencyStatus = 'citizen_pr' } = input
   const periods = PERIODS_PER_YEAR[payCycle]
 
+  const isWHM = residencyStatus === 'whm'
+  const effectiveMedicareExempt = medicareLevyExemption || isMedicareExemptByResidency(residencyStatus)
+
   let annualTax: number
-  if (claimingThreshold) {
+  if (isWHM) {
+    annualTax = taxScaleWHM(annualSalary)
+  } else if (claimingThreshold) {
     annualTax = Math.max(0, taxScale1(annualSalary) - lito(annualSalary))
   } else {
-    annualTax = taxScale2(annualSalary)  // No LITO on Scale 2
+    annualTax = taxScale2(annualSalary)
   }
 
-  const annualMedicare = medicareLevy(annualSalary, medicareLevyExemption)
+  const annualMedicare = medicareLevy(annualSalary, effectiveMedicareExempt)
   const annualHELP     = hasHELP ? helpRepayment(annualSalary) : 0
   const annualTotal    = annualTax + annualMedicare + annualHELP
+
+  // ATO NAT 1008: withholding must never be rounded down — use Math.ceil
+  const periodTax      = Math.ceil(annualTax / periods)
+  const periodMedicare = Math.ceil(annualMedicare / periods)
+  const periodHELP     = Math.ceil(annualHELP / periods)
 
   return {
     annualTax:      Math.round(annualTax),
     annualMedicare: Math.round(annualMedicare),
     annualHELP:     Math.round(annualHELP),
     annualTotal:    Math.round(annualTotal),
-    periodTax:      Math.round(annualTax / periods),
-    periodMedicare: Math.round(annualMedicare / periods),
-    periodHELP:     Math.round(annualHELP / periods),
-    periodTotal:    Math.round(annualTotal / periods),
+    periodTax,
+    periodMedicare,
+    periodHELP,
+    periodTotal:    periodTax + periodMedicare + periodHELP,
   }
 }
 
@@ -120,6 +152,7 @@ export type PayslipInput = {
   hasHELP: boolean
   medicareLevyExemption: boolean
   useNewSuperRate: boolean
+  residencyStatus?: ResidencyStatus
 }
 
 export type PayslipNumbers = {
@@ -145,6 +178,7 @@ export function calculatePayslip(input: PayslipInput): PayslipNumbers {
   const {
     annualSalary, salarySacrifice, overtimeHours, overtimeRate,
     payCycle, claimingThreshold, hasHELP, medicareLevyExemption, useNewSuperRate,
+    residencyStatus = 'citizen_pr',
   } = input
 
   const periods = PERIODS_PER_YEAR[payCycle]
@@ -163,6 +197,7 @@ export function calculatePayslip(input: PayslipInput): PayslipNumbers {
     hasHELP,
     medicareLevyExemption,
     payCycle,
+    residencyStatus,
   })
 
   const totalDeductions = payg.periodTotal

@@ -6,7 +6,7 @@ import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
 import PlanGate from '@/components/ui/PlanGate'
-import { calculatePayslip, type PayslipNumbers } from '@/lib/ato'
+import { calculatePayslip, isMedicareExemptByResidency, type PayslipNumbers, type ResidencyStatus } from '@/lib/ato'
 import { formatCurrency, formatDateAU, todayISO, addDays, formatABN } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -23,6 +23,7 @@ interface PayslipForm {
   employment_type:   string
   pay_cycle:         PayCycle
   pay_basis:         PayBasis
+  residency_status:  ResidencyStatus
   claiming_threshold: boolean
   has_help:          boolean
   medicare_exemption: boolean
@@ -68,9 +69,10 @@ function makeForm(num: string): PayslipForm {
     employment_type:   'full-time',
     pay_cycle:         cycle,
     pay_basis:         'salary',
+    residency_status:  'student',
     claiming_threshold: true,
     has_help:          false,
-    medicare_exemption: false,
+    medicare_exemption: true,   // default: international student = exempt
     use_new_super_rate: true,
     annual_salary:     0,
     hourly_rate:       0,
@@ -175,7 +177,11 @@ function PayslipPreview({ form, biz, numbers, ytdIsActual }: {
             {form.pay_period_start ? formatDateAU(form.pay_period_start) : '—'} – {form.pay_period_end ? formatDateAU(form.pay_period_end) : '—'}
           </p>
           <p style={{ fontSize: '0.75rem', color: '#A09590' }}>Payment: {form.payment_date ? formatDateAU(form.payment_date) : '—'}</p>
-          <p style={{ fontSize: '0.75rem', color: '#A09590' }}>{form.claiming_threshold ? 'Scale 1' : 'Scale 2'}{form.has_help ? ' + HELP' : ''}</p>
+          <p style={{ fontSize: '0.75rem', color: '#A09590' }}>
+            {form.residency_status === 'whm' ? 'Scale 15 (WHM)' : form.claiming_threshold ? 'Scale 1' : 'Scale 2'}
+            {isMedicareExemptByResidency(form.residency_status) ? ' — Medicare exempt' : ''}
+            {form.has_help ? ' + HELP' : ''}
+          </p>
         </div>
       </div>
 
@@ -296,6 +302,7 @@ export default function PayslipPage() {
     hasHELP:               form.has_help,
     medicareLevyExemption: form.medicare_exemption,
     useNewSuperRate:       form.use_new_super_rate,
+    residencyStatus:       form.residency_status,
   })
 
   const ytdIsActual = ytdPrev !== null
@@ -369,6 +376,9 @@ export default function PayslipPage() {
         next.pay_period_end   = period.end
         next.ordinary_hours   = DEFAULT_HOURS[value as PayCycle]
       }
+      if (key === 'residency_status') {
+        next.medicare_exemption = isMedicareExemptByResidency(value as ResidencyStatus)
+      }
       return next
     })
   }
@@ -441,6 +451,8 @@ export default function PayslipPage() {
       use_new_super_rate: form.use_new_super_rate,
       claiming_threshold: form.claiming_threshold,
       has_help:          form.has_help,
+      medicare_exempt:   form.medicare_exemption,
+      residency_status:  form.residency_status,
       ytdIsActual,
       numbers:           displayNumbers,
     })
@@ -467,6 +479,8 @@ export default function PayslipPage() {
         ordinary_hours:    form.ordinary_hours,
         super_fund_name:   form.super_fund_name,
         member_number:     form.member_number,
+        medicare_exempt:   form.medicare_exemption,
+        residency_status:  form.residency_status,
         use_new_super_rate: form.use_new_super_rate,
         claiming_threshold: form.claiming_threshold,
         has_help:          form.has_help,
@@ -588,7 +602,9 @@ export default function PayslipPage() {
             Generate Payslip
           </h1>
           <p style={{ color: 'var(--text3)', fontSize: '0.875rem' }}>
-            {form.payslip_number} · ATO Scale {form.claiming_threshold ? '1' : '2'} · Super {form.use_new_super_rate ? '12%' : '11.5%'}
+            {form.payslip_number} · ATO Scale {form.residency_status === 'whm' ? '15 (WHM)' : form.claiming_threshold ? '1' : '2'}
+            {isMedicareExemptByResidency(form.residency_status) ? ' · Medicare exempt' : ''}
+            {' '}· Super {form.use_new_super_rate ? '12%' : '11.5%'}
           </p>
         </div>
 
@@ -633,6 +649,18 @@ export default function PayslipPage() {
                     </select>
                   </div>
                 </div>
+                <div>
+                  <label className="sab-label">Residency status for tax purposes</label>
+                  <select className="sab-input" value={form.residency_status}
+                    onChange={e => setField('residency_status', e.target.value as ResidencyStatus)}>
+                    <option value="citizen_pr">Australian citizen or permanent resident</option>
+                    <option value="student">International student (student visa)</option>
+                    <option value="temp_work">Temporary work visa (482, 457, etc)</option>
+                    <option value="whm">Working holiday maker (417 or 462 visa)</option>
+                    <option value="partner">Partner or dependent visa (temporary)</option>
+                    <option value="other_temp">Other temporary resident</option>
+                  </select>
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
                   <div>
                     <label className="sab-label">Super Fund Name <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
@@ -652,24 +680,53 @@ export default function PayslipPage() {
             <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem' }}>
               <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '1rem' }}>Tax Settings</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <Toggle
-                  label="Claiming tax-free threshold (Scale 1)"
-                  hint="Most Australian residents claim this. Untick for second jobs or non-residents (Scale 2)."
-                  checked={form.claiming_threshold}
-                  onChange={v => setField('claiming_threshold', v)}
-                />
+
+                {/* WHM warning */}
+                {form.residency_status === 'whm' && (
+                  <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.35)', borderRadius: '8px', padding: '0.875rem 1rem' }}>
+                    <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#92400e', marginBottom: '0.25rem' }}>
+                      Working holiday maker rates apply
+                    </p>
+                    <p style={{ fontSize: '0.75rem', color: '#78350f', lineHeight: 1.5 }}>
+                      Employer must be registered with the ATO for working holiday maker tax. Rate: 15% on first $45,000, then standard upper rates. No LITO. No Medicare levy.
+                    </p>
+                  </div>
+                )}
+
+                {/* Medicare exempt info box */}
+                {isMedicareExemptByResidency(form.residency_status) && (
+                  <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '8px', padding: '0.875rem 1rem' }}>
+                    <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#166534', marginBottom: '0.25rem' }}>
+                      Medicare levy exempt
+                    </p>
+                    <p style={{ fontSize: '0.75rem', color: '#166534', lineHeight: 1.5 }}>
+                      Temporary residents and international students are not entitled to Medicare benefits and do not pay the 2% levy. Claim your exemption using a Medicare Entitlement Statement (MES) from Services Australia when lodging your tax return.
+                    </p>
+                  </div>
+                )}
+
+                {form.residency_status !== 'whm' && (
+                  <Toggle
+                    label="Claiming tax-free threshold (Scale 1)"
+                    hint="Most Australian residents claim this. Untick for second jobs or non-residents (Scale 2)."
+                    checked={form.claiming_threshold}
+                    onChange={v => setField('claiming_threshold', v)}
+                  />
+                )}
                 <Toggle
                   label="Has HELP / HECS debt"
                   hint="Enables HELP repayment withholding based on ATO 2024-25 thresholds."
                   checked={form.has_help}
                   onChange={v => setField('has_help', v)}
                 />
-                <Toggle
-                  label="Apply Medicare levy (2%)"
-                  hint="Turn off only if employee holds a valid Medicare levy exemption certificate."
-                  checked={!form.medicare_exemption}
-                  onChange={v => setField('medicare_exemption', !v)}
-                />
+                {form.residency_status === 'citizen_pr' && (
+                  <Toggle
+                    label="Apply Medicare levy (2%)"
+                    hint="Turn off only if employee holds a valid Medicare levy exemption certificate."
+                    checked={!form.medicare_exemption}
+                    onChange={v => setField('medicare_exemption', !v)}
+                  />
+                )}
                 <Toggle
                   label="Super at 12% (from 1 July 2025)"
                   hint="Untick to use the previous 11.5% rate for periods before 1 July 2025."

@@ -20,6 +20,8 @@ export interface PayslipPDFData {
   use_new_super_rate: boolean
   claiming_threshold: boolean
   has_help: boolean
+  medicare_exempt?: boolean
+  residency_status?: string
   ytdIsActual?: boolean
   numbers: PayslipNumbers
 }
@@ -87,10 +89,15 @@ async function buildPayslipDoc(data: PayslipPDFData) {
     ...(data.super_fund_name ? [`Super Fund: ${data.super_fund_name}`] : []),
     ...(data.member_number   ? [`Member No: ${data.member_number}`]    : []),
   ]
+  const taxScaleLabel = data.residency_status === 'whm'
+    ? 'Scale 15 — Working Holiday Maker'
+    : data.claiming_threshold
+      ? `Scale 1${data.medicare_exempt ? ' — Medicare exempt' : ''}`
+      : 'Scale 2'
   const periodLines: [string, string][] = [
     ['Period',   `${formatDateAU(data.pay_period_start)} – ${formatDateAU(data.pay_period_end)}`],
     ['Payment',  formatDateAU(data.payment_date)],
-    ['Tax Scale', data.claiming_threshold ? 'Scale 1 (claiming threshold)' : 'Scale 2'],
+    ['Tax Scale', taxScaleLabel],
   ]
 
   const startY = y
@@ -182,6 +189,18 @@ async function buildPayslipDoc(data: PayslipPDFData) {
   row('Gross Earnings YTD', formatCurrency(n.ytdGross))
   row('Tax Withheld YTD',   formatCurrency(n.ytdTax))
   row('Super YTD',          formatCurrency(n.ytdSuper))
+
+  // ── Medicare exempt note ────────────────────────────────────────────
+  if (data.medicare_exempt) {
+    y += 4
+    doc.setFillColor(240, 253, 244)
+    doc.rect(margin, y, cW, 8, 'F')
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(7.5)
+    doc.setTextColor(22, 101, 52)
+    doc.text('Medicare levy exempt — MES held for this period', margin + 3, y + 5)
+    y += 10
+  }
 
   // ── Footer ──────────────────────────────────────────────────────────
   doc.setFont('helvetica', 'normal')
