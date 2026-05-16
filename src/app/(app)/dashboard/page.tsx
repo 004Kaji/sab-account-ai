@@ -69,21 +69,46 @@ function currentQuarterRange() {
   return { start: fmt(startDate), end: fmt(endDate) }
 }
 
-function nextBasDue(): string {
-  const month = new Date().getMonth()
-  if (month <= 1 || month >= 10) return 'Feb 28 — Q2 BAS'   // Jan, Feb, Nov, Dec
-  if (month <= 3)                return 'Apr 28 — Q3 BAS'   // Mar, Apr
-  if (month <= 6)                return 'Jul 28 — Q4 BAS'   // May, Jun, Jul
-  return 'Oct 28 — Q1 BAS'                                  // Aug, Sep, Oct
+// ATO quarterly deadlines in calendar order (month is 0-indexed).
+// BAS: Q1=Oct 28, Q2=Feb 28, Q3=Apr 28, Q4=Jul 28
+// Super follows the same dates per user spec.
+const QUARTERLY_DEADLINES = [
+  { month: 1,  day: 28, bas: 'Q2 BAS (Oct–Dec)',   super: 'Q2 super (Oct–Dec)'  },
+  { month: 3,  day: 28, bas: 'Q3 BAS (Jan–Mar)',   super: 'Q3 super (Jan–Mar)'  },
+  { month: 6,  day: 28, bas: 'Q4 BAS (Apr–Jun)',   super: 'Q4 super (Apr–Jun)'  },
+  { month: 9,  day: 28, bas: 'Q1 BAS (Jul–Sep)',   super: 'Q1 super (Jul–Sep)'  },
+]
+
+const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function nextQuarterlyDeadline(key: 'bas' | 'super'): string {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const yr = today.getFullYear()
+
+  // Check current year then next year so we never return a past date
+  for (const offset of [0, 1]) {
+    for (const d of QUARTERLY_DEADLINES) {
+      const due = new Date(yr + offset, d.month, d.day)
+      if (due >= today) {
+        return `${d.day} ${M[d.month]} ${yr + offset} — ${d[key]}`
+      }
+    }
+  }
+  return 'See ATO website'
 }
 
-function nextSuperDue(): string {
-  const month = new Date().getMonth()
-  if (month <= 0)  return 'Jan 28 — Q2 super'
-  if (month <= 3)  return 'Apr 28 — Q3 super'
-  if (month <= 6)  return 'Jul 28 — Q4 super'
-  if (month <= 9)  return 'Oct 28 — Q1 super'
-  return 'Jan 28 — Q2 super'
+function nextBasDue():   string { return nextQuarterlyDeadline('bas')   }
+function nextSuperDue(): string { return nextQuarterlyDeadline('super') }
+
+function nextMonthlyBasDue(): string {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  // Monthly BAS is due the 21st of the following month
+  // If the 21st of this month is still upcoming, that's the next deadline
+  const thisMonth21 = new Date(today.getFullYear(), today.getMonth(), 21)
+  const due = today <= thisMonth21 ? thisMonth21 : new Date(today.getFullYear(), today.getMonth() + 1, 21)
+  return `${due.getDate()} ${M[due.getMonth()]} ${due.getFullYear()} — Monthly BAS`
 }
 
 // Which statuses a user can switch to from each current status
@@ -531,8 +556,9 @@ export default function DashboardPage() {
             <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.875rem' }}>ATO Deadlines</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {[
-                { label: 'Next BAS due', value: nextBasDue(), icon: '📋' },
-                { label: 'Super due',    value: nextSuperDue(), icon: '🏦' },
+                { label: 'Quarterly BAS', value: nextBasDue(),        icon: '📋' },
+                { label: 'Monthly BAS',   value: nextMonthlyBasDue(), icon: '🗓' },
+                { label: 'Super due',     value: nextSuperDue(),      icon: '🏦' },
               ].map(item => (
                 <div key={item.label} style={{
                   display: 'flex', alignItems: 'flex-start', gap: '0.625rem',
