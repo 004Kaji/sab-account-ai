@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
         const userId = sub.metadata?.userId
         if (!userId) break
 
-        const plan = sub.items.data[0]?.price?.metadata?.plan || 'free'
+        const plan = sub.metadata?.plan || sub.items.data[0]?.price?.metadata?.plan || 'free'
         await supabase.from('profiles').update({
           plan: sub.status === 'active' || sub.status === 'trialing' ? plan : 'free',
           subscription_status: sub.status,
