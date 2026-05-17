@@ -108,7 +108,6 @@ export default function ClientsPage() {
         phone:         form.phone.trim()          || null,
         address:       form.address.trim()        || null,
         abn:           form.abn.replace(/\s/g,'') || null,
-        website:       form.website.trim()        || null,
         notes:         form.notes.trim()          || null,
       }
 
@@ -293,10 +292,6 @@ export default function ClientsPage() {
           <div>
             <label className="sab-label">Business Address <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
             <textarea className="sab-input" rows={2} placeholder="123 Main St, Sydney NSW 2000" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
-          </div>
-          <div>
-            <label className="sab-label">Website <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
-            <input className="sab-input" placeholder="https://acme.com.au" value={form.website} onChange={e => setForm(f => ({ ...f, website: e.target.value }))} />
           </div>
           <div>
             <label className="sab-label">Notes <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>

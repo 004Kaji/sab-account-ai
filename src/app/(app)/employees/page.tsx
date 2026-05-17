@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import { useToast } from '@/components/ui/Toast'
 import Modal from '@/components/ui/Modal'
+import PlanGate from '@/components/ui/PlanGate'
 
 interface Employee {
   id: string
@@ -48,7 +49,7 @@ function emptyForm(): EmployeeForm {
     employment_type: 'casual', pay_cycle: 'fortnightly',
     pay_basis: 'salary', annual_salary: '', hourly_rate: '',
     ordinary_hours: '76', super_fund_name: '', member_number: '',
-    residency_status: 'student', notes: '',
+    residency_status: 'citizen_pr', notes: '',
   }
 }
 
@@ -193,12 +194,15 @@ export default function EmployeesPage() {
   }
 
   if (loading) return (
-    <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div className="spinner" style={{ width: '1.5rem', height: '1.5rem', borderWidth: '2.5px', borderColor: 'var(--cream3)', borderTopColor: 'var(--ember)' }} />
-    </div>
+    <PlanGate requiredPlan="pro">
+      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="spinner" style={{ width: '1.5rem', height: '1.5rem', borderWidth: '2.5px', borderColor: 'var(--cream3)', borderTopColor: 'var(--ember)' }} />
+      </div>
+    </PlanGate>
   )
 
   return (
+    <PlanGate requiredPlan="pro">
     <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
@@ -433,5 +437,6 @@ export default function EmployeesPage() {
         </div>
       </Modal>
     </div>
+    </PlanGate>
   )
 }

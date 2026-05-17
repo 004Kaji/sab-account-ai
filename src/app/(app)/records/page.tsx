@@ -251,6 +251,7 @@ export default function RecordsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [filter, setFilter]     = useState<FilterTab>('all')
   const [defaultType, setDefaultType] = useState<RecordType>('income')
+  const [w4Withholding, setW4Withholding] = useState(0)
 
   const fy = fyRange()
 
@@ -260,16 +261,17 @@ export default function RecordsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setLoading(false); return }
 
-      const { data, error } = await supabase
-        .from('records')
-        .select('*')
-        .eq('user_id', user.id)
-        .gte('date', fy.start)
-        .lte('date', fy.end)
-        .order('date', { ascending: false })
+      const [{ data, error }, { data: w4Data }] = await Promise.all([
+        supabase.from('records').select('*').eq('user_id', user.id)
+          .gte('date', fy.start).lte('date', fy.end).order('date', { ascending: false }),
+        supabase.from('abn_payments').select('withholding_amount').eq('user_id', user.id)
+          .eq('has_abn', false).gte('payment_date', fy.start).lte('payment_date', fy.end),
+      ])
 
       if (error) { toast('Failed to load records', 'error'); setLoading(false); return }
       setRecords((data ?? []) as Record[])
+      const w4Total = (w4Data ?? []).reduce((s: number, r: { withholding_amount: number }) => s + Number(r.withholding_amount), 0)
+      setW4Withholding(w4Total)
       setLoading(false)
     }
     load()
@@ -481,6 +483,12 @@ export default function RecordsPage() {
                     <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color }}>{formatCurrency(value)}</span>
                   </div>
                 ))}
+                {w4Withholding > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
+                    <span style={{ color: 'var(--text2)' }}>W4 Withholding (No-ABN)</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--ember)' }}>{formatCurrency(w4Withholding)}</span>
+                  </div>
+                )}
               </div>
 
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.875rem' }}>
@@ -493,6 +501,11 @@ export default function RecordsPage() {
                 <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.375rem' }}>
                   Collected minus input tax credits
                 </p>
+                {w4Withholding > 0 && (
+                  <p style={{ fontSize: '0.75rem', color: 'var(--ember)', marginTop: '0.25rem' }}>
+                    + {formatCurrency(w4Withholding)} W4 withholding to remit
+                  </p>
+                )}
               </div>
             </div>
 

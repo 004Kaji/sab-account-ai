@@ -9,13 +9,14 @@ import { initials } from '@/lib/utils'
 import { ToastProvider } from '@/components/ui/Toast'
 
 const NAV_ITEMS = [
-  { label: 'Dashboard',      href: '/dashboard',  proOnly: false },
-  { label: 'Create Invoice', href: '/invoice',    proOnly: false },
-  { label: 'Payslips',       href: '/payslip',    proOnly: true  },
-  { label: 'Records',        href: '/records',    proOnly: false },
-  { label: 'Clients',        href: '/clients',    proOnly: false },
-  { label: 'Employees',      href: '/employees',  proOnly: false },
-  { label: 'Settings',       href: '/settings',   proOnly: false },
+  { label: 'Dashboard',      href: '/dashboard',     proOnly: false },
+  { label: 'Create Invoice', href: '/invoice',       proOnly: false },
+  { label: 'Payslips',       href: '/payslip',       proOnly: true  },
+  { label: 'ABN Pay',        href: '/abn-payments',  proOnly: true  },
+  { label: 'Records',        href: '/records',       proOnly: false },
+  { label: 'Clients',        href: '/clients',       proOnly: false },
+  { label: 'Employees',      href: '/employees',     proOnly: true  },
+  { label: 'Settings',       href: '/settings',      proOnly: false },
 ]
 
 const PLAN_STYLES: Record<string, { bg: string; color: string; label: string }> = {
@@ -390,6 +391,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     {item.label === 'Dashboard'      && '◻'}
                     {item.label === 'Create Invoice' && '📄'}
                     {item.label === 'Payslips'       && '💵'}
+                    {item.label === 'ABN Pay'        && '🤝'}
                     {item.label === 'Records'        && '📊'}
                     {item.label === 'Clients'        && '👥'}
                     {item.label === 'Employees'      && '👤'}
