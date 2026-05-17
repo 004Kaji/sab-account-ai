@@ -1065,7 +1065,6 @@ export default function ABNPaymentsPage() {
 
       setSavedPayment({ type: 'abn', pdf: pdfData, gross, recipientEmail: abnForm.contractor_email.trim() })
       setEmailTo(abnForm.contractor_email.trim())
-      await downloadABNRemittancePDF(pdfData)
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
@@ -1128,7 +1127,6 @@ export default function ABNPaymentsPage() {
 
       setSavedPayment({ type: 'noabn', pdf: noabnPdfData, gross, withholding, netPayable, recipientEmail: noabnForm.worker_email.trim() })
       setEmailTo(noabnForm.worker_email.trim())
-      await downloadNoABNWithholdingPDF(noabnPdfData)
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
