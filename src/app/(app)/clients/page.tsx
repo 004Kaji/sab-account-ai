@@ -91,7 +91,9 @@ export default function ClientsPage() {
   }
 
   async function handleSave() {
-    if (!form.business_name.trim()) { toast('Business name is required', 'error'); return }
+    if (!form.contact_name.trim())  { toast('Contact name is required', 'error'); return }
+    if (!form.email.trim())         { toast('Email is required', 'error'); return }
+    if (!form.phone.trim())         { toast('Phone is required', 'error'); return }
     if (!validateABN(form.abn)) { toast('ABN must be 11 digits', 'error'); return }
     setSaving(true)
     try {
@@ -100,7 +102,7 @@ export default function ClientsPage() {
       if (!user) throw new Error('Not authenticated')
 
       const payload = {
-        business_name: form.business_name.trim(),
+        business_name: form.business_name.trim() || form.contact_name.trim(),
         contact_name:  form.contact_name.trim()  || null,
         email:         form.email.trim()          || null,
         phone:         form.phone.trim()          || null,
@@ -265,39 +267,39 @@ export default function ClientsPage() {
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Edit Client' : 'Add Client'} maxWidth="560px">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
           <div>
-            <label className="sab-label">Business Name <span style={{ color: 'var(--ember)' }}>*</span></label>
+            <label className="sab-label">Business Name <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
             <input className="sab-input" placeholder="Acme Pty Ltd" value={form.business_name} onChange={e => setForm(f => ({ ...f, business_name: e.target.value }))} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
-              <label className="sab-label">ABN <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(11 digits)</span></label>
+              <label className="sab-label">ABN <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
               <input className="sab-input" placeholder="61 234 567 890" value={form.abn} onChange={e => setForm(f => ({ ...f, abn: e.target.value }))} />
             </div>
             <div>
-              <label className="sab-label">Contact Name</label>
+              <label className="sab-label">Contact Name <span style={{ color: 'var(--ember)' }}>*</span></label>
               <input className="sab-input" placeholder="Jane Smith" value={form.contact_name} onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))} />
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
-              <label className="sab-label">Email</label>
+              <label className="sab-label">Email <span style={{ color: 'var(--ember)' }}>*</span></label>
               <input className="sab-input" type="email" placeholder="accounts@acme.com.au" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
             </div>
             <div>
-              <label className="sab-label">Phone</label>
+              <label className="sab-label">Phone <span style={{ color: 'var(--ember)' }}>*</span></label>
               <input className="sab-input" placeholder="02 9000 0000" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
             </div>
           </div>
           <div>
-            <label className="sab-label">Business Address</label>
+            <label className="sab-label">Business Address <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
             <textarea className="sab-input" rows={2} placeholder="123 Main St, Sydney NSW 2000" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
           </div>
           <div>
-            <label className="sab-label">Website</label>
+            <label className="sab-label">Website <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
             <input className="sab-input" placeholder="https://acme.com.au" value={form.website} onChange={e => setForm(f => ({ ...f, website: e.target.value }))} />
           </div>
           <div>
-            <label className="sab-label">Notes</label>
+            <label className="sab-label">Notes <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
             <textarea className="sab-input" rows={2} placeholder="Any notes about this client..." value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
           </div>
           <div style={{ display: 'flex', gap: '0.625rem', paddingTop: '0.5rem' }}>
