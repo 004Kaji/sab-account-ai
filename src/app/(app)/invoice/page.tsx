@@ -6,7 +6,6 @@ import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
 import AutocompleteDropdown from '@/components/ui/AutocompleteDropdown'
-import Modal from '@/components/ui/Modal'
 import {
   formatCurrency, formatDateAU, todayISO, addDays,
   uid, generateInvoiceNumber, formatABN,
@@ -86,6 +85,7 @@ function InvoicePreview({ form, biz, totals }: {
         <div>
           <p style={{ fontSize: '0.625rem', fontWeight: 700, color: '#A09590', letterSpacing: '0.06em', marginBottom: '0.375rem' }}>BILL TO</p>
           <p style={{ fontWeight: 700 }}>{form.client_name || '—'}</p>
+          {form.client_business_name && <p style={{ color: '#646060' }}>{form.client_business_name}</p>}
           {form.client_abn && <p style={{ color: '#646060' }}>ABN: {formatABN(form.client_abn)}</p>}
           {form.client_email && <p style={{ color: '#646060' }}>{form.client_email}</p>}
           {form.client_address && <p style={{ color: '#646060', whiteSpace: 'pre-line' }}>{form.client_address}</p>}
@@ -155,6 +155,7 @@ function makeForm(invoiceNumber: string) {
     due_date: addDays(today, 14),
     payment_terms: '14 days',
     client_name: '',
+    client_business_name: '',
     client_abn: '',
     client_email: '',
     client_address: '',
@@ -177,8 +178,6 @@ export default function InvoicePage() {
   const [biz, setBiz] = useState<BizProfile | null>(null)
   const [clients, setClients] = useState<ClientRecord[]>([])
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
-  const [showAddClient, setShowAddClient] = useState(false)
-  const [addClientName, setAddClientName] = useState('')
   const [savingClient, setSavingClient] = useState(false)
   const [clientSaved, setClientSaved] = useState(false)
   const [form, setForm] = useState<InvoiceForm>(makeForm('INV-…'))
@@ -346,6 +345,7 @@ export default function InvoicePage() {
       business_phone: biz?.phone ?? '',
       business_address: biz?.address ?? '',
       client_name: form.client_name,
+      client_business_name: form.client_business_name || undefined,
       client_abn: form.client_abn ? formatABN(form.client_abn) : '',
       client_email: form.client_email,
       client_address: form.client_address,
@@ -370,7 +370,8 @@ export default function InvoicePage() {
       if (!user) return
       await supabase.from('clients').insert({
         user_id:       user.id,
-        business_name: form.client_name.trim(),
+        contact_name:  form.client_name.trim(),
+        business_name: form.client_business_name.trim() || form.client_name.trim(),
         abn:           form.client_abn.replace(/\s/g, '') || null,
         email:         form.client_email.trim() || null,
         address:       form.client_address.trim() || null,
@@ -400,6 +401,7 @@ export default function InvoicePage() {
         business_phone: biz?.phone ?? '',
         business_address: biz?.address ?? '',
         client_name: form.client_name,
+        client_business_name: form.client_business_name || undefined,
         client_abn: form.client_abn ? formatABN(form.client_abn) : '',
         client_email: form.client_email,
         client_address: form.client_address,
@@ -552,28 +554,36 @@ export default function InvoicePage() {
               <AutocompleteDropdown
                 label={<>Client Name <span style={{ color: 'var(--ember)' }}>*</span></>}
                 placeholder="Search clients or type a new name…"
-                items={clients.map(c => ({ id: c.id, label: c.business_name, sublabel: c.abn ? `ABN ${c.abn}` : c.email ?? undefined }))}
+                items={clients.map(c => ({ id: c.id, label: c.contact_name || c.business_name, sublabel: c.business_name !== (c.contact_name || c.business_name) ? c.business_name : (c.abn ? `ABN ${c.abn}` : c.email ?? undefined) }))}
                 value={form.client_name}
                 onSelect={item => {
                   const c = clients.find(x => x.id === item.id)
                   if (!c) return
                   setSelectedClientId(c.id)
-                  setField('client_name', c.business_name)
-                  setField('client_abn', c.abn ?? '')
-                  setField('client_email', c.email ?? '')
-                  setField('client_address', c.address ?? '')
+                  setForm(prev => ({
+                    ...prev,
+                    client_name: c.contact_name || c.business_name,
+                    client_business_name: c.business_name,
+                    client_abn: c.abn ?? '',
+                    client_email: c.email ?? '',
+                    client_address: c.address ?? '',
+                  }))
                 }}
-                onClear={() => { setSelectedClientId(null); setField('client_name', '') }}
-                onAddNew={() => { setAddClientName(form.client_name); setShowAddClient(true) }}
+                onClear={() => { setSelectedClientId(null); setForm(prev => ({ ...prev, client_name: '', client_business_name: '' })) }}
+                onAddNew={() => router.push('/clients')}
                 addNewLabel="+ Add new client"
               />
               {selectedClientId && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', color: '#15803d', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
                   <span>✓</span>
                   <span><strong>{form.client_name}</strong> loaded from client list</span>
-                  <button onClick={() => { setSelectedClientId(null); setField('client_name', '') }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8125rem', color: '#15803d', textDecoration: 'underline' }}>Change</button>
+                  <button onClick={() => { setSelectedClientId(null); setForm(prev => ({ ...prev, client_name: '', client_business_name: '' })) }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8125rem', color: '#15803d', textDecoration: 'underline' }}>Change</button>
                 </div>
               )}
+              <div>
+                <label className="sab-label">Business Name <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
+                <input className="sab-input" placeholder="Acme Pty Ltd" value={form.client_business_name} onChange={e => setField('client_business_name', e.target.value)} />
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
                 <div><label className="sab-label">Client ABN <span style={{ color: 'var(--text3)' }}>(optional)</span></label><input className="sab-input" placeholder="12 345 678 901" value={form.client_abn} onChange={e => setField('client_abn', e.target.value)} /></div>
                 <div><label className="sab-label">Client Email <span style={{ color: 'var(--text3)' }}>(optional)</span></label><input className="sab-input" placeholder="accounts@client.com.au" value={form.client_email} onChange={e => setField('client_email', e.target.value)} /></div>
@@ -660,47 +670,6 @@ export default function InvoicePage() {
         }
       `}</style>
 
-      {/* Add Client Quick Modal */}
-      <Modal open={showAddClient} onClose={() => setShowAddClient(false)} title="Add Client" maxWidth="480px">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-          <div>
-            <label className="sab-label">Business Name <span style={{ color: 'var(--ember)' }}>*</span></label>
-            <input className="sab-input" placeholder="Acme Pty Ltd" value={addClientName} onChange={e => setAddClientName(e.target.value)} />
-          </div>
-          <div style={{ display: 'flex', gap: '0.625rem' }}>
-            <button
-              onClick={async () => {
-                if (!addClientName.trim()) return
-                setSavingClient(true)
-                try {
-                  const supabase = createBrowserClient()
-                  const { data: { user } } = await supabase.auth.getUser()
-                  if (!user) return
-                  const { data: newClient, error } = await supabase.from('clients').insert({
-                    user_id: user.id, business_name: addClientName.trim(),
-                  }).select('id,business_name,contact_name,email,phone,address,abn').single()
-                  if (error) throw error
-                  setClients(prev => [...prev, newClient as ClientRecord].sort((a, b) => a.business_name.localeCompare(b.business_name)))
-                  setSelectedClientId(newClient.id)
-                  setField('client_name', newClient.business_name)
-                  toast(`${newClient.business_name} added to clients`, 'success')
-                  setShowAddClient(false)
-                } catch {
-                  toast('Could not add client', 'error')
-                } finally {
-                  setSavingClient(false)
-                }
-              }}
-              disabled={savingClient || !addClientName.trim()}
-              className="btn btn-ember"
-              style={{ flex: 1 }}
-            >
-              {savingClient ? 'Saving…' : 'Save Client'}
-            </button>
-            <button onClick={() => setShowAddClient(false)} className="btn btn-outline" style={{ flex: 1 }}>Cancel</button>
-          </div>
-        </div>
-      </Modal>
     </div>
   )
 }

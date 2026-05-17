@@ -246,6 +246,7 @@ export interface InvoicePDFData {
   business_phone: string
   business_address: string
   client_name: string
+  client_business_name?: string
   client_abn: string
   client_email: string
   client_address: string
@@ -323,6 +324,7 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
   doc.setTextColor(100, 95, 90)
 
   const clientLines: string[] = []
+  if (data.client_business_name) clientLines.push(data.client_business_name)
   if (data.client_abn)     clientLines.push(`ABN: ${data.client_abn}`)
   if (data.client_email)   clientLines.push(data.client_email)
   if (data.client_address) clientLines.push(data.client_address)
