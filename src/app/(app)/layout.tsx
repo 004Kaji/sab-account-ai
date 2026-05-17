@@ -14,7 +14,7 @@ const NAV_ITEMS = [
   { label: 'Payslips',       href: '/payslip',    proOnly: true  },
   { label: 'Records',        href: '/records',    proOnly: false },
   { label: 'Clients',        href: '/clients',    proOnly: false },
-  { label: 'Employers',      href: '/employers',  proOnly: false },
+  { label: 'Employees',      href: '/employees',  proOnly: false },
   { label: 'Settings',       href: '/settings',   proOnly: false },
 ]
 
@@ -392,7 +392,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     {item.label === 'Payslips'       && '💵'}
                     {item.label === 'Records'        && '📊'}
                     {item.label === 'Clients'        && '👥'}
-                    {item.label === 'Employers'      && '🏢'}
+                    {item.label === 'Employees'      && '👤'}
                     {item.label === 'Settings'       && '⚙'}
                   </span>
                   {item.label === 'Create Invoice' ? 'Invoice' : item.label}
