@@ -6,6 +6,12 @@ import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { formatCurrency, formatDateAU, todayISO } from '@/lib/utils'
 
+interface TopClient {
+  client_name: string
+  total: number
+  count: number
+}
+
 // ── Types ────────────────────────────────────────────────────────────
 type InvoiceStatus = 'draft' | 'pending' | 'paid' | 'overdue'
 
@@ -285,6 +291,7 @@ function calcKPIs(all: Invoice[], gstCredits: number, superOwing: number, mStart
 export default function DashboardPage() {
   const profile = useProfile()
   const [invoices, setInvoices]     = useState<Invoice[]>([])
+  const [topClients, setTopClients] = useState<TopClient[]>([])
   const [kpis, setKpis]             = useState<KPIs>({ invoicedThisMonth: 0, outstanding: 0, gstToRemit: 0, superOwing: 0 })
   const [loading, setLoading]       = useState(true)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
@@ -357,6 +364,19 @@ export default function DashboardPage() {
 
         superOwingRef.current = (payslips ?? []).reduce((s, p) => s + Number(p.super_sg), 0)
       }
+
+      // Compute top 3 clients from FY invoices
+      const clientMap = new Map<string, { total: number; count: number }>()
+      for (const inv of all) {
+        if (!inv.client_name || inv.status === 'draft') continue
+        const entry = clientMap.get(inv.client_name) ?? { total: 0, count: 0 }
+        clientMap.set(inv.client_name, { total: entry.total + Number(inv.total_inc_gst), count: entry.count + 1 })
+      }
+      const sorted = [...clientMap.entries()]
+        .map(([client_name, v]) => ({ client_name, ...v }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 3)
+      setTopClients(sorted)
 
       setKpis(calcKPIs(all, gstCreditsRef.current, superOwingRef.current, mr.start, mr.end))
       setInvoices(all.slice(0, 8))
@@ -595,6 +615,37 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* ── Top Clients ────────────────────────────────────────── */}
+      {topClients.length > 0 && (
+        <div style={{ marginTop: '1.5rem', background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+          <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--char)' }}>Top Clients — {fyLabel}</h2>
+            <Link href="/clients" style={{ fontSize: '0.8125rem', color: 'var(--ember)', textDecoration: 'none', fontWeight: 500 }}>View all →</Link>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${topClients.length}, 1fr)` }}>
+            {topClients.map((client, i) => (
+              <div
+                key={client.client_name}
+                style={{
+                  padding: '1.25rem 1.5rem',
+                  borderRight: i < topClients.length - 1 ? '1px solid var(--border)' : 'none',
+                }}
+              >
+                <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {client.client_name}
+                </p>
+                <p style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--ember)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.02em' }}>
+                  {formatCurrency(client.total)}
+                </p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.25rem' }}>
+                  {client.count} {client.count === 1 ? 'invoice' : 'invoices'}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <style>{`
         @media (max-width: 900px) {

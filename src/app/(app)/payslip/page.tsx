@@ -6,6 +6,8 @@ import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
 import PlanGate from '@/components/ui/PlanGate'
+import AutocompleteDropdown from '@/components/ui/AutocompleteDropdown'
+import Modal from '@/components/ui/Modal'
 import { calculatePayslip, isMedicareExemptByResidency, type PayslipNumbers, type ResidencyStatus } from '@/lib/ato'
 import { formatCurrency, formatDateAU, todayISO, addDays, formatABN } from '@/lib/utils'
 
@@ -17,8 +19,19 @@ type PayBasis = 'salary' | 'hourly'
 const DEFAULT_HOURS: Record<PayCycle, number> = { weekly: 38, fortnightly: 76, monthly: 165 }
 const PERIODS_PER_YEAR: Record<PayCycle, number> = { weekly: 52, fortnightly: 26, monthly: 12 }
 
+interface EmployerRecord {
+  id: string
+  business_name: string
+  abn: string | null
+  default_super_fund: string | null
+  default_pay_cycle: string
+  default_employment_type: string
+}
+
 interface PayslipForm {
   payslip_number:    string
+  employer_name:     string
+  employer_abn:      string
   employee_name:     string
   employment_type:   string
   pay_cycle:         PayCycle
@@ -59,12 +72,14 @@ function defaultPeriod(cycle: PayCycle): { start: string; end: string } {
   }
 }
 
-function makeForm(num: string): PayslipForm {
+function makeForm(num: string, employerName = '', employerAbn = ''): PayslipForm {
   const today   = todayISO()
   const cycle: PayCycle = 'fortnightly'
   const period  = defaultPeriod(cycle)
   return {
     payslip_number:    num,
+    employer_name:     employerName,
+    employer_abn:      employerAbn,
     employee_name:     '',
     employment_type:   'full-time',
     pay_cycle:         cycle,
@@ -280,6 +295,12 @@ export default function PayslipPage() {
   useEffect(() => { document.title = 'Payslips — SAB Account AI' }, [])
 
   const [biz, setBiz]   = useState<BizProfile | null>(null)
+  const [employers, setEmployers] = useState<EmployerRecord[]>([])
+  const [selectedEmployerId, setSelectedEmployerId] = useState<string | null>(null)
+  const [showAddEmployer, setShowAddEmployer] = useState(false)
+  const [addEmployerName, setAddEmployerName] = useState('')
+  const [savingEmployer, setSavingEmployer] = useState(false)
+  const [employerSaved, setEmployerSaved] = useState(false)
   const [form, setForm] = useState<PayslipForm>(makeForm('PS-…'))
   const [saving, setSaving] = useState(false)
   const [savedSlip, setSavedSlip] = useState<{ id: string; number: string } | null>(null)
@@ -320,17 +341,19 @@ export default function PayslipPage() {
       const supabase = createBrowserClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const [{ data: bizData }, { data: lastSlip }] = await Promise.all([
+      const [{ data: bizData }, { data: lastSlip }, { data: empData }] = await Promise.all([
         supabase.from('business_profiles').select('business_name,abn,email').eq('id', user.id).single(),
         supabase.from('payslips').select('payslip_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('employers').select('id,business_name,abn,default_super_fund,default_pay_cycle,default_employment_type').eq('user_id', user.id).order('business_name'),
       ])
       setBiz(bizData ?? null)
+      setEmployers((empData ?? []) as EmployerRecord[])
       const yr = new Date().getFullYear()
       const lastSeq = lastSlip?.payslip_number
         ? parseInt(lastSlip.payslip_number.split('-').pop() ?? '0', 10)
         : 0
       const num = `PS-${yr}-${String(lastSeq + 1).padStart(3, '0')}`
-      setForm(makeForm(num))
+      setForm(makeForm(num, bizData?.business_name ?? '', bizData?.abn ?? ''))
     }
     load()
   }, [])
@@ -404,8 +427,8 @@ export default function PayslipPage() {
         pay_cycle:         form.pay_cycle,
         super_fund_name:   form.super_fund_name,
         member_number:     form.member_number,
-        employer_name:     biz?.business_name ?? '',
-        employer_abn:      biz?.abn ?? '',
+        employer_name:     form.employer_name || (biz?.business_name ?? ''),
+        employer_abn:      form.employer_abn  || (biz?.abn ?? ''),
         pay_period_start:  form.pay_period_start,
         pay_period_end:    form.pay_period_end,
         payment_date:      form.payment_date,
@@ -437,8 +460,8 @@ export default function PayslipPage() {
       pay_period_start:  form.pay_period_start,
       pay_period_end:    form.pay_period_end,
       payment_date:      form.payment_date,
-      employer_name:     biz?.business_name ?? '',
-      employer_abn:      biz?.abn ? formatABN(biz.abn) : '',
+      employer_name:     form.employer_name || (biz?.business_name ?? ''),
+      employer_abn:      (form.employer_abn || biz?.abn) ? formatABN(form.employer_abn || (biz?.abn ?? '')) : '',
       employee_name:     form.employee_name,
       employment_type:   form.employment_type,
       pay_cycle:         form.pay_cycle,
@@ -468,8 +491,8 @@ export default function PayslipPage() {
         pay_period_start:  form.pay_period_start,
         pay_period_end:    form.pay_period_end,
         payment_date:      form.payment_date,
-        employer_name:     biz?.business_name ?? '',
-        employer_abn:      biz?.abn ? formatABN(biz.abn) : '',
+        employer_name:     form.employer_name || (biz?.business_name ?? ''),
+        employer_abn:      (form.employer_abn || biz?.abn) ? formatABN(form.employer_abn || (biz?.abn ?? '')) : '',
         employee_name:     form.employee_name,
         employment_type:   form.employment_type,
         pay_cycle:         form.pay_cycle,
@@ -565,6 +588,44 @@ export default function PayslipPage() {
           )}
         </div>
 
+        {!selectedEmployerId && form.employer_name && !employerSaved && (
+          <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1.25rem', marginBottom: '1rem', textAlign: 'left' }}>
+            <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.375rem' }}>
+              Save &ldquo;{form.employer_name}&rdquo; to your employer list?
+            </p>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text2)', marginBottom: '0.875rem' }}>
+              Auto-fill their details next time you generate a payslip.
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                onClick={async () => {
+                  setSavingEmployer(true)
+                  try {
+                    const supabase = createBrowserClient()
+                    const { data: { user } } = await supabase.auth.getUser()
+                    if (!user) return
+                    await supabase.from('employers').insert({
+                      user_id:       user.id,
+                      business_name: form.employer_name.trim(),
+                      abn:           form.employer_abn.replace(/\s/g, '') || null,
+                    })
+                    setEmployerSaved(true)
+                    toast(`${form.employer_name} saved to your employer list`, 'success')
+                  } catch { toast('Could not save employer', 'error') } finally { setSavingEmployer(false) }
+                }}
+                disabled={savingEmployer}
+                className="btn btn-char"
+                style={{ fontSize: '0.8125rem', padding: '0.4rem 0.875rem' }}
+              >
+                {savingEmployer ? 'Saving…' : 'Save employer'}
+              </button>
+              <button onClick={() => setEmployerSaved(true)} className="btn btn-ghost" style={{ fontSize: '0.8125rem', padding: '0.4rem 0.875rem' }}>
+                Not now
+              </button>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <button onClick={handleDownloadPDF} className="btn btn-ember" style={{ width: '100%' }}>
             Download PDF
@@ -574,9 +635,11 @@ export default function PayslipPage() {
               setSavedSlip(null)
               setEmailTo('')
               setEmailSent(false)
+              setSelectedEmployerId(null)
+              setEmployerSaved(false)
               const yr  = new Date().getFullYear()
               const nextNum = parseInt(savedSlip.number.split('-')[2] ?? '1') + 1
-              setForm(makeForm(`PS-${yr}-${String(nextNum).padStart(3, '0')}`))
+              setForm(makeForm(`PS-${yr}-${String(nextNum).padStart(3, '0')}`, form.employer_name, form.employer_abn))
             }}
             className="btn btn-outline"
             style={{ width: '100%' }}
@@ -612,6 +675,49 @@ export default function PayslipPage() {
 
           {/* ── Left: form ──────────────────────────────────────── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+            {/* Employer */}
+            <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem' }}>
+              <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '1rem' }}>Employer</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <AutocompleteDropdown
+                  label="Employer / Business"
+                  placeholder="Search employers…"
+                  items={employers.map(e => ({ id: e.id, label: e.business_name, sublabel: e.abn ? `ABN ${e.abn}` : undefined }))}
+                  value={form.employer_name}
+                  onSelect={item => {
+                    const e = employers.find(x => x.id === item.id)
+                    if (!e) return
+                    setSelectedEmployerId(e.id)
+                    setField('employer_name', e.business_name)
+                    setField('employer_abn', e.abn ?? '')
+                    if (e.default_super_fund) setField('super_fund_name', e.default_super_fund)
+                    setField('pay_cycle', e.default_pay_cycle as PayCycle)
+                    setField('employment_type', e.default_employment_type)
+                  }}
+                  onClear={() => { setSelectedEmployerId(null); setField('employer_name', ''); setField('employer_abn', '') }}
+                  onAddNew={() => { setAddEmployerName(form.employer_name); setShowAddEmployer(true) }}
+                  addNewLabel="+ Add new employer"
+                />
+                {selectedEmployerId && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', color: '#15803d', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
+                    <span>✓</span>
+                    <span><strong>{form.employer_name}</strong> loaded from employer list</span>
+                    <button onClick={() => { setSelectedEmployerId(null); setField('employer_name', biz?.business_name ?? ''); setField('employer_abn', biz?.abn ?? '') }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8125rem', color: '#15803d', textDecoration: 'underline' }}>Change</button>
+                  </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
+                  <div>
+                    <label className="sab-label">Employer Name</label>
+                    <input className="sab-input" placeholder="Your Business Pty Ltd" value={form.employer_name} onChange={e => { setField('employer_name', e.target.value); setSelectedEmployerId(null) }} />
+                  </div>
+                  <div>
+                    <label className="sab-label">Employer ABN</label>
+                    <input className="sab-input" placeholder="12 345 678 901" value={form.employer_abn} onChange={e => setField('employer_abn', e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Employee Details */}
             <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem' }}>
@@ -916,6 +1022,49 @@ export default function PayslipPage() {
           }
         `}</style>
       </div>
+
+      {/* Add Employer Quick Modal */}
+      <Modal open={showAddEmployer} onClose={() => setShowAddEmployer(false)} title="Add Employer" maxWidth="480px">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+          <div>
+            <label className="sab-label">Business Name <span style={{ color: 'var(--ember)' }}>*</span></label>
+            <input className="sab-input" placeholder="Lordsprings Pty Ltd" value={addEmployerName} onChange={e => setAddEmployerName(e.target.value)} />
+          </div>
+          <div style={{ display: 'flex', gap: '0.625rem' }}>
+            <button
+              onClick={async () => {
+                if (!addEmployerName.trim()) return
+                setSavingEmployer(true)
+                try {
+                  const supabase = createBrowserClient()
+                  const { data: { user } } = await supabase.auth.getUser()
+                  if (!user) return
+                  const { data: newEmp, error } = await supabase.from('employers').insert({
+                    user_id: user.id, business_name: addEmployerName.trim(),
+                    default_pay_cycle: 'fortnightly', default_employment_type: 'casual',
+                  }).select('id,business_name,abn,default_super_fund,default_pay_cycle,default_employment_type').single()
+                  if (error) throw error
+                  setEmployers(prev => [...prev, newEmp as EmployerRecord].sort((a, b) => a.business_name.localeCompare(b.business_name)))
+                  setSelectedEmployerId(newEmp.id)
+                  setField('employer_name', newEmp.business_name)
+                  toast(`${newEmp.business_name} added to employers`, 'success')
+                  setShowAddEmployer(false)
+                } catch {
+                  toast('Could not add employer', 'error')
+                } finally {
+                  setSavingEmployer(false)
+                }
+              }}
+              disabled={savingEmployer || !addEmployerName.trim()}
+              className="btn btn-ember"
+              style={{ flex: 1 }}
+            >
+              {savingEmployer ? 'Saving…' : 'Save Employer'}
+            </button>
+            <button onClick={() => setShowAddEmployer(false)} className="btn btn-outline" style={{ flex: 1 }}>Cancel</button>
+          </div>
+        </div>
+      </Modal>
     </PlanGate>
   )
 }

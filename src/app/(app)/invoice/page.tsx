@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
+import AutocompleteDropdown from '@/components/ui/AutocompleteDropdown'
+import Modal from '@/components/ui/Modal'
 import {
   formatCurrency, formatDateAU, todayISO, addDays,
   uid, generateInvoiceNumber, formatABN,
@@ -25,6 +27,16 @@ interface BizProfile {
   email: string
   phone: string
   address: string
+}
+
+interface ClientRecord {
+  id: string
+  business_name: string
+  contact_name: string | null
+  email: string | null
+  phone: string | null
+  address: string | null
+  abn: string | null
 }
 
 const PAYMENT_TERMS = ['7 days', '14 days', '30 days', 'On receipt'] as const
@@ -163,6 +175,12 @@ export default function InvoicePage() {
   useEffect(() => { document.title = 'Create Invoice — SAB Account AI' }, [])
 
   const [biz, setBiz] = useState<BizProfile | null>(null)
+  const [clients, setClients] = useState<ClientRecord[]>([])
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
+  const [showAddClient, setShowAddClient] = useState(false)
+  const [addClientName, setAddClientName] = useState('')
+  const [savingClient, setSavingClient] = useState(false)
+  const [clientSaved, setClientSaved] = useState(false)
   const [form, setForm] = useState<InvoiceForm>(makeForm('INV-…'))
   const [mode, setMode] = useState<'ai' | 'manual'>('ai')
   const [aiPrompt, setAiPrompt] = useState('')
@@ -180,11 +198,13 @@ export default function InvoicePage() {
       const supabase = createBrowserClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const [{ data: bizData }, { data: lastInv }] = await Promise.all([
+      const [{ data: bizData }, { data: lastInv }, { data: clientData }] = await Promise.all([
         supabase.from('business_profiles').select('business_name,abn,email,phone,address').eq('id', user.id).single(),
         supabase.from('invoices').select('invoice_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('clients').select('id,business_name,contact_name,email,phone,address,abn').eq('user_id', user.id).order('business_name'),
       ])
       setBiz(bizData ?? null)
+      setClients((clientData ?? []) as ClientRecord[])
       // Derive next number from the last invoice_number (avoids duplicates when invoices are deleted)
       const lastSeq = lastInv?.invoice_number
         ? parseInt(lastInv.invoice_number.split('-').pop() ?? '0', 10)
@@ -341,6 +361,29 @@ export default function InvoicePage() {
     })
   }
 
+  async function handleSaveNewClient() {
+    if (!form.client_name.trim()) return
+    setSavingClient(true)
+    try {
+      const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      await supabase.from('clients').insert({
+        user_id:       user.id,
+        business_name: form.client_name.trim(),
+        abn:           form.client_abn.replace(/\s/g, '') || null,
+        email:         form.client_email.trim() || null,
+        address:       form.client_address.trim() || null,
+      })
+      setClientSaved(true)
+      toast(`${form.client_name} saved to your client list`, 'success')
+    } catch {
+      toast('Could not save client', 'error')
+    } finally {
+      setSavingClient(false)
+    }
+  }
+
   async function handleSendEmail() {
     if (!emailTo.trim()) { toast('Enter an email address', 'error'); return }
     setEmailSending(true)
@@ -414,6 +457,25 @@ export default function InvoicePage() {
           </div>
           {emailSent && <p style={{ fontSize: '0.75rem', color: '#22c55e', marginTop: '0.5rem' }}>Invoice emailed to {emailTo}</p>}
         </div>
+        {!selectedClientId && form.client_name && !clientSaved && (
+          <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1.25rem', marginBottom: '1rem', textAlign: 'left' }}>
+            <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.375rem' }}>
+              Save &ldquo;{form.client_name}&rdquo; to your client list?
+            </p>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text2)', marginBottom: '0.875rem' }}>
+              Auto-fill their details next time you create an invoice.
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button onClick={handleSaveNewClient} disabled={savingClient} className="btn btn-char" style={{ fontSize: '0.8125rem', padding: '0.4rem 0.875rem' }}>
+                {savingClient ? 'Saving…' : 'Save client'}
+              </button>
+              <button onClick={() => setClientSaved(true)} className="btn btn-ghost" style={{ fontSize: '0.8125rem', padding: '0.4rem 0.875rem' }}>
+                Not now
+              </button>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <button onClick={handleDownloadPDF} className="btn btn-ember" style={{ width: '100%' }}>Download PDF</button>
           <button
@@ -423,6 +485,8 @@ export default function InvoicePage() {
               setMode('ai')
               setEmailTo('')
               setEmailSent(false)
+              setSelectedClientId(null)
+              setClientSaved(false)
               setForm(makeForm(generateInvoiceNumber(parseInt(savedInvoice.number.split('-')[2] ?? '1') + 1)))
             }}
             className="btn btn-outline"
@@ -485,7 +549,31 @@ export default function InvoicePage() {
           <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem' }}>
             <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '1rem' }}>Client Details</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div><label className="sab-label">Client Name <span style={{ color: 'var(--ember)' }}>*</span></label><input className="sab-input" placeholder="Smith Building Co." value={form.client_name} onChange={e => setField('client_name', e.target.value)} /></div>
+              <AutocompleteDropdown
+                label={<>Client Name <span style={{ color: 'var(--ember)' }}>*</span></>}
+                placeholder="Search clients or type a new name…"
+                items={clients.map(c => ({ id: c.id, label: c.business_name, sublabel: c.abn ? `ABN ${c.abn}` : c.email ?? undefined }))}
+                value={form.client_name}
+                onSelect={item => {
+                  const c = clients.find(x => x.id === item.id)
+                  if (!c) return
+                  setSelectedClientId(c.id)
+                  setField('client_name', c.business_name)
+                  setField('client_abn', c.abn ?? '')
+                  setField('client_email', c.email ?? '')
+                  setField('client_address', c.address ?? '')
+                }}
+                onClear={() => { setSelectedClientId(null); setField('client_name', '') }}
+                onAddNew={() => { setAddClientName(form.client_name); setShowAddClient(true) }}
+                addNewLabel="+ Add new client"
+              />
+              {selectedClientId && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', color: '#15803d', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
+                  <span>✓</span>
+                  <span><strong>{form.client_name}</strong> loaded from client list</span>
+                  <button onClick={() => { setSelectedClientId(null); setField('client_name', '') }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8125rem', color: '#15803d', textDecoration: 'underline' }}>Change</button>
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
                 <div><label className="sab-label">Client ABN <span style={{ color: 'var(--text3)' }}>(optional)</span></label><input className="sab-input" placeholder="12 345 678 901" value={form.client_abn} onChange={e => setField('client_abn', e.target.value)} /></div>
                 <div><label className="sab-label">Client Email <span style={{ color: 'var(--text3)' }}>(optional)</span></label><input className="sab-input" placeholder="accounts@client.com.au" value={form.client_email} onChange={e => setField('client_email', e.target.value)} /></div>
@@ -571,6 +659,48 @@ export default function InvoicePage() {
           .line-items-row { min-width: 450px; }
         }
       `}</style>
+
+      {/* Add Client Quick Modal */}
+      <Modal open={showAddClient} onClose={() => setShowAddClient(false)} title="Add Client" maxWidth="480px">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+          <div>
+            <label className="sab-label">Business Name <span style={{ color: 'var(--ember)' }}>*</span></label>
+            <input className="sab-input" placeholder="Acme Pty Ltd" value={addClientName} onChange={e => setAddClientName(e.target.value)} />
+          </div>
+          <div style={{ display: 'flex', gap: '0.625rem' }}>
+            <button
+              onClick={async () => {
+                if (!addClientName.trim()) return
+                setSavingClient(true)
+                try {
+                  const supabase = createBrowserClient()
+                  const { data: { user } } = await supabase.auth.getUser()
+                  if (!user) return
+                  const { data: newClient, error } = await supabase.from('clients').insert({
+                    user_id: user.id, business_name: addClientName.trim(),
+                  }).select('id,business_name,contact_name,email,phone,address,abn').single()
+                  if (error) throw error
+                  setClients(prev => [...prev, newClient as ClientRecord].sort((a, b) => a.business_name.localeCompare(b.business_name)))
+                  setSelectedClientId(newClient.id)
+                  setField('client_name', newClient.business_name)
+                  toast(`${newClient.business_name} added to clients`, 'success')
+                  setShowAddClient(false)
+                } catch {
+                  toast('Could not add client', 'error')
+                } finally {
+                  setSavingClient(false)
+                }
+              }}
+              disabled={savingClient || !addClientName.trim()}
+              className="btn btn-ember"
+              style={{ flex: 1 }}
+            >
+              {savingClient ? 'Saving…' : 'Save Client'}
+            </button>
+            <button onClick={() => setShowAddClient(false)} className="btn btn-outline" style={{ flex: 1 }}>Cancel</button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
