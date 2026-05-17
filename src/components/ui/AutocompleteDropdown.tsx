@@ -15,7 +15,7 @@ interface Props {
   value: string
   onSelect: (item: AutocompleteItem) => void
   onClear: () => void
-  onAddNew: () => void
+  onAddNew?: () => void
   addNewLabel?: string
 }
 
@@ -45,7 +45,7 @@ export default function AutocompleteDropdown({
         it.sublabel?.toLowerCase().includes(query.toLowerCase()))
     : items
 
-  const totalOptions = filtered.length + 1 // +1 for "Add new"
+  const totalOptions = filtered.length + (onAddNew ? 1 : 0)
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (!open) { if (e.key === 'ArrowDown') setOpen(true); return }
@@ -56,7 +56,7 @@ export default function AutocompleteDropdown({
       e.preventDefault()
       if (highlighted >= 0 && highlighted < filtered.length) {
         pick(filtered[highlighted])
-      } else if (highlighted === filtered.length) {
+      } else if (highlighted === filtered.length && onAddNew) {
         onAddNew(); setOpen(false)
       }
     }
@@ -142,19 +142,21 @@ export default function AutocompleteDropdown({
               {item.sublabel && <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>{item.sublabel}</span>}
             </button>
           ))}
-          <button
-            onMouseDown={e => { e.preventDefault(); onAddNew(); setOpen(false) }}
-            onMouseEnter={() => setHighlighted(filtered.length)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '0.375rem',
-              width: '100%', padding: '0.625rem 0.875rem', fontSize: '0.8125rem',
-              background: highlighted === filtered.length ? 'var(--cream)' : 'transparent',
-              color: 'var(--ember)', border: 'none', cursor: 'pointer', fontWeight: 500,
-            }}
-          >
-            <span style={{ fontSize: '1rem', lineHeight: 1 }}>+</span>
-            {addNewLabel}
-          </button>
+          {onAddNew && (
+            <button
+              onMouseDown={e => { e.preventDefault(); onAddNew(); setOpen(false) }}
+              onMouseEnter={() => setHighlighted(filtered.length)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.375rem',
+                width: '100%', padding: '0.625rem 0.875rem', fontSize: '0.8125rem',
+                background: highlighted === filtered.length ? 'var(--cream)' : 'transparent',
+                color: 'var(--ember)', border: 'none', cursor: 'pointer', fontWeight: 500,
+              }}
+            >
+              <span style={{ fontSize: '1rem', lineHeight: 1 }}>+</span>
+              {addNewLabel}
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -570,8 +570,6 @@ export default function InvoicePage() {
                   }))
                 }}
                 onClear={() => { setSelectedClientId(null); setForm(prev => ({ ...prev, client_name: '', client_business_name: '' })) }}
-                onAddNew={() => router.push('/clients')}
-                addNewLabel="+ Add new client"
               />
               {selectedClientId && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', color: '#15803d', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
