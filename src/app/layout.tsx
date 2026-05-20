@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Fraunces, DM_Sans, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import IOSInstallBanner from '@/components/ui/IOSInstallBanner'
 import './globals.css'
 
 // Fraunces: serif display font for headings and logo
@@ -40,6 +41,12 @@ export const metadata: Metadata = {
     shortcut: '/favicon.ico',
   },
   manifest: '/manifest.json',
+  other: {
+    'apple-mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-status-bar-style': 'black-translucent',
+    'apple-mobile-web-app-title': 'SAB Account AI',
+    'mobile-web-app-capable': 'yes',
+  },
   openGraph: {
     title: 'SAB Account AI',
     description: 'AI-powered invoicing for Australian small business',
@@ -57,6 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className={`${fraunces.variable} ${dmSans.variable} ${jetbrainsMono.variable} antialiased`}
       >
         {children}
+        <IOSInstallBanner />
         <Analytics />
       </body>
     </html>
