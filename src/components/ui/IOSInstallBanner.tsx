@@ -98,11 +98,10 @@ export default function IOSInstallBanner() {
             }}>1</div>
             <div>
               <div style={{ color: '#fff', fontWeight: 600, fontSize: '0.875rem', marginBottom: 2 }}>
-                Tap the Share button
+                Tap <span style={{ letterSpacing: 2 }}>•••</span> at the bottom of Safari
               </div>
               <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem' }}>
-                The{' '}
-                {/* iOS share icon inline */}
+                Then tap{' '}
                 <svg style={{ display: 'inline', verticalAlign: 'middle' }}
                   width="13" height="13" viewBox="0 0 24 24" fill="none"
                   stroke="rgba(255,255,255,0.6)" strokeWidth={2.5}
@@ -111,7 +110,7 @@ export default function IOSInstallBanner() {
                   <polyline points="16 6 12 2 8 6" />
                   <line x1="12" y1="2" x2="12" y2="15" />
                 </svg>
-                {' '}icon at the bottom of Safari
+                {' '}<strong style={{ color: 'rgba(255,255,255,0.7)' }}>Share</strong> in the menu
               </div>
             </div>
           </div>
