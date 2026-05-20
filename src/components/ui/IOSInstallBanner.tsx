@@ -22,6 +22,18 @@ export default function IOSInstallBanner() {
     setVisible(false)
   }
 
+  async function openShareSheet() {
+    try {
+      await navigator.share({
+        title: 'SAB Account AI',
+        text: 'AI-powered invoicing for Australian small business',
+        url: window.location.href,
+      })
+    } catch {
+      // user cancelled or share not supported — do nothing
+    }
+  }
+
   if (!visible) return null
 
   return (
@@ -46,25 +58,37 @@ export default function IOSInstallBanner() {
         style={{ width: 44, height: 44, borderRadius: 10, flexShrink: 0 }}
       />
 
-      {/* Text */}
+      {/* Text + share button */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ color: '#fff', fontWeight: 600, fontSize: '0.875rem', marginBottom: 3 }}>
+        <div style={{ color: '#fff', fontWeight: 600, fontSize: '0.875rem', marginBottom: 6 }}>
           Install SAB Account AI
         </div>
-        <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.8125rem', lineHeight: 1.4 }}>
-          Tap{' '}
-          <svg
-            style={{ display: 'inline', verticalAlign: 'middle', margin: '0 2px' }}
-            width="15" height="15" viewBox="0 0 24 24"
-            fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={2}
-            strokeLinecap="round" strokeLinejoin="round"
-          >
+        <button
+          onClick={openShareSheet}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            background: '#C84B2F',
+            border: 'none',
+            borderRadius: 8,
+            color: '#fff',
+            cursor: 'pointer',
+            fontSize: '0.8125rem',
+            fontWeight: 600,
+            padding: '6px 12px',
+          }}
+        >
+          {/* iOS share icon */}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth={2.5}
+            strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
             <polyline points="16 6 12 2 8 6" />
             <line x1="12" y1="2" x2="12" y2="15" />
           </svg>
-          {' '}then <strong style={{ color: 'rgba(255,255,255,0.8)' }}>"Add to Home Screen"</strong>
-        </div>
+          Tap Share → Add to Home Screen
+        </button>
       </div>
 
       {/* Dismiss */}
