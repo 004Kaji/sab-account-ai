@@ -7,7 +7,7 @@ import { useToast } from '@/components/ui/Toast'
 import { formatDateAU, validateABN, formatABN } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────
-type TabKey = 'business' | 'subscription' | 'invoices' | 'notifications' | 'ato'
+type TabKey = 'business' | 'subscription' | 'invoices' | 'notifications' | 'ato' | 'referrals'
 
 interface BizSettings {
   business_name:        string
@@ -41,11 +41,12 @@ const EMPTY: BizSettings = {
 }
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'business',      label: 'Business Profile' },
-  { key: 'subscription',  label: 'Subscription'     },
-  { key: 'invoices',      label: 'Invoice Defaults' },
-  { key: 'notifications', label: 'Notifications'    },
-  { key: 'ato',           label: 'ATO & Compliance' },
+  { key: 'business',      label: 'Business'      },
+  { key: 'subscription',  label: 'Subscription'  },
+  { key: 'invoices',      label: 'Invoices'      },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'ato',           label: 'ATO'           },
+  { key: 'referrals',     label: 'Referrals 🎁'  },
 ]
 
 const INDUSTRIES = [
@@ -659,12 +660,379 @@ export default function SettingsPage() {
     )
   }
 
+  function ReferralsTab() {
+    type ReferralStatus = {
+      code: string
+      link: string
+      totalReferrals: number
+      convertedReferrals: number
+      freeMonthsEarned: number
+      freeMonthsRemaining: number
+      lifetimePro: boolean
+      nextReward: string
+    }
+    type ReferralRecord = {
+      id: string
+      created_at: string
+      referred_email: string
+      status: string
+    }
+
+    const [refData, setRefData] = useState<ReferralStatus | null>(null)
+    const [referrals, setReferrals] = useState<ReferralRecord[]>([])
+    const [refLoading, setRefLoading] = useState(true)
+    const [copiedLink, setCopiedLink] = useState(false)
+    const [copiedTemplate, setCopiedTemplate] = useState<string | null>(null)
+
+    useEffect(() => {
+      async function loadReferrals() {
+        const supabase = createBrowserClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) { setRefLoading(false); return }
+
+        // Ensure code exists (creates if needed)
+        await fetch('/api/referral/ensure-code', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+        })
+
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { setRefLoading(false); return }
+
+        const [{ data: rc }, { data: refs }] = await Promise.all([
+          supabase.from('referral_codes').select('*').eq('user_id', user.id).maybeSingle(),
+          supabase.from('referrals').select('id, created_at, referred_email, status')
+            .eq('referrer_id', user.id).order('created_at', { ascending: false }),
+        ])
+
+        if (rc) {
+          const converted = (rc.converted_referrals as number) ?? 0
+          const earned = (rc.free_months_earned as number) ?? 0
+          const used = (rc.free_months_used as number) ?? 0
+          let nextReward = '1 converted friend = 1 month free'
+          if (rc.lifetime_pro) {
+            nextReward = 'You have Lifetime Pro!'
+          } else if (converted >= 3) {
+            const n = 10 - converted
+            nextReward = `${n} more converting friend${n === 1 ? '' : 's'} = Lifetime Pro`
+          } else if (converted >= 1) {
+            const n = 3 - converted
+            nextReward = `${n} more converting friend${n === 1 ? '' : 's'} = 3 months free`
+          }
+          setRefData({
+            code: rc.code as string,
+            link: `https://sabaccountai.com/signup?ref=${rc.code}`,
+            totalReferrals: (rc.total_referrals as number) ?? 0,
+            convertedReferrals: converted,
+            freeMonthsEarned: earned,
+            freeMonthsRemaining: earned - used,
+            lifetimePro: (rc.lifetime_pro as boolean) ?? false,
+            nextReward,
+          })
+        }
+        setReferrals((refs ?? []) as ReferralRecord[])
+        setRefLoading(false)
+      }
+      loadReferrals()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    function copyLink() {
+      if (!refData?.link) return
+      navigator.clipboard.writeText(refData.link).then(() => {
+        setCopiedLink(true)
+        setTimeout(() => setCopiedLink(false), 2000)
+      })
+    }
+
+    function copyTemplate(id: string, text: string) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedTemplate(id)
+        setTimeout(() => setCopiedTemplate(null), 2000)
+      })
+    }
+
+    function maskEmail(email: string): string {
+      const parts = email.split('@')
+      if (parts.length !== 2) return email
+      return `${parts[0].slice(0, 3)}***@${parts[1]}`
+    }
+
+    if (refLoading) {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem' }}>
+          <div className="spinner" style={{ width: '1.25rem', height: '1.25rem', borderWidth: '2px', borderColor: 'var(--cream3)', borderTopColor: 'var(--ember)' }} />
+        </div>
+      )
+    }
+
+    const tiers = [
+      { label: 'Refer 1 friend', reward: '1 month free', emoji: '🎁', threshold: 1 },
+      { label: 'Refer 3 friends', reward: '3 months free', emoji: '🎁', threshold: 3 },
+      { label: 'Refer 10 friends', reward: 'Pro for life', emoji: '👑', threshold: 10 },
+    ]
+    const converted = refData?.convertedReferrals ?? 0
+    const link = refData?.link ?? ''
+    const code = refData?.code ?? ''
+
+    const shareTemplates = [
+      {
+        id: 'facebook',
+        label: 'Facebook / Instagram',
+        text: `Running a small business or freelancing in Australia?\nI've been using SAB Account AI for invoicing and ATO-compliant payslips. It generates professional invoices from plain English in 30 seconds.\nFree plan available 👇\n${link}`,
+      },
+      {
+        id: 'whatsapp',
+        label: 'WhatsApp',
+        text: `Hey! Check out this free Australian invoicing tool — SAB Account AI. Describe your job, it makes the invoice. Also does payslips with correct PAYG/super calculations.\nTry free: ${link}`,
+      },
+      {
+        id: 'email',
+        label: 'Email',
+        text: `Subject: Free invoicing tool for Australian business\n\nHi,\nI thought you might find this useful — SAB Account AI generates ATO-compliant invoices and payslips instantly. It handles GST, PAYG, super, and ABN contractor payments.\nFree to try: ${link}`,
+      },
+    ]
+
+    const tweetText = encodeURIComponent(`I've been using SAB Account AI for ATO-compliant invoices and payslips — try it free:\nhttps://sabaccountai.com/signup?ref=${code}\n#australia #smallbusiness #freelance`)
+    const waText = encodeURIComponent(`Hey! Try SAB Account AI for invoicing and payslips. Use my link for a free bonus: ${link}`)
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+
+        {/* Hero */}
+        <div style={{ textAlign: 'center', paddingBottom: '0.5rem' }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🎁</div>
+          <h2 className="font-display" style={{ fontSize: '1.375rem', color: 'var(--char)', marginBottom: '0.375rem' }}>
+            Refer friends, get free months
+          </h2>
+          <p style={{ color: 'var(--text2)', fontSize: '0.875rem' }}>
+            Share SAB Account AI and earn rewards when your friends upgrade
+          </p>
+        </div>
+
+        {/* Tier cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.875rem' }}>
+          {tiers.map((tier) => {
+            const earned = converted >= tier.threshold
+            const isCurrent = !earned && (
+              (tier.threshold === 1 && converted < 1) ||
+              (tier.threshold === 3 && converted >= 1 && converted < 3) ||
+              (tier.threshold === 10 && converted >= 3 && converted < 10)
+            )
+            return (
+              <div
+                key={tier.threshold}
+                style={{
+                  borderRadius: 'var(--r)',
+                  border: earned
+                    ? '2px solid rgba(34,197,94,0.5)'
+                    : isCurrent
+                    ? '2px solid var(--ember)'
+                    : '1px solid var(--border)',
+                  padding: '1.25rem',
+                  background: earned ? 'rgba(34,197,94,0.05)' : '#fff',
+                  textAlign: 'center',
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}
+              >
+                {isCurrent && (
+                  <div style={{
+                    position: 'absolute', top: '0.5rem', right: '0.5rem',
+                    width: '8px', height: '8px', borderRadius: '50%',
+                    background: 'var(--ember)',
+                    animation: 'pulse 1.5s ease-in-out infinite',
+                  }} />
+                )}
+                <div style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>{tier.emoji}</div>
+                <p style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--char)', marginBottom: '0.25rem' }}>
+                  {tier.label}
+                </p>
+                <p style={{ fontSize: '0.8125rem', color: earned ? '#15803d' : 'var(--text2)', fontWeight: earned ? 600 : 400 }}>
+                  {tier.reward}
+                </p>
+                {earned ? (
+                  <div style={{ marginTop: '0.625rem', fontSize: '0.75rem', color: '#15803d', fontWeight: 600 }}>✓ Earned</div>
+                ) : isCurrent ? (
+                  <div style={{ marginTop: '0.625rem', fontSize: '0.75rem', color: 'var(--ember)', fontWeight: 600 }}>In progress</div>
+                ) : (
+                  <div style={{ marginTop: '0.625rem', fontSize: '0.75rem', color: 'var(--text3)' }}>🔒 Locked</div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Referral link */}
+        <div>
+          <label className="sab-label" style={{ marginBottom: '0.5rem' }}>Your unique referral link</label>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <input
+              readOnly
+              value={link}
+              className="sab-input"
+              style={{ flex: 1, minWidth: '200px', fontFamily: 'var(--font-mono)', fontSize: '0.8125rem', cursor: 'text' }}
+            />
+            <button onClick={copyLink} className="btn btn-ember" style={{ fontSize: '0.875rem', whiteSpace: 'nowrap' }}>
+              {copiedLink ? 'Copied! ✓' : 'Copy link'}
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.625rem', flexWrap: 'wrap' }}>
+            <a
+              href={`https://twitter.com/intent/tweet?text=${tweetText}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-outline"
+              style={{ fontSize: '0.8125rem', textDecoration: 'none' }}
+            >
+              Share on X / Twitter
+            </a>
+            <a
+              href={`https://wa.me/?text=${waText}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-outline"
+              style={{ fontSize: '0.8125rem', textDecoration: 'none' }}
+            >
+              Share on WhatsApp
+            </a>
+          </div>
+        </div>
+
+        {/* Stats row */}
+        {refData && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.875rem' }}>
+            {[
+              { label: 'Friends signed up', value: refData.totalReferrals },
+              { label: 'Converted to paid', value: refData.convertedReferrals },
+              { label: 'Months earned', value: refData.freeMonthsEarned },
+              { label: 'Months remaining', value: refData.freeMonthsRemaining },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ background: 'var(--cream)', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1rem', textAlign: 'center' }}>
+                <p style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--char)', fontFamily: 'var(--font-mono)' }}>{value}</p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.125rem' }}>{label}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Progress bar */}
+        {refData && !refData.lifetimePro && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
+              <p style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--char)' }}>Progress to next reward</p>
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text2)' }}>{refData.nextReward}</p>
+            </div>
+            <div style={{ height: '8px', background: 'var(--cream2)', borderRadius: '999px', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                borderRadius: '999px',
+                background: 'var(--ember)',
+                width: `${Math.min(100, (converted / (converted < 1 ? 1 : converted < 3 ? 3 : 10)) * 100)}%`,
+                transition: 'width 500ms ease',
+              }} />
+            </div>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.375rem' }}>
+              {converted} / {converted < 1 ? 1 : converted < 3 ? 3 : 10} paid friends
+            </p>
+          </div>
+        )}
+        {refData?.lifetimePro && (
+          <div style={{ background: 'rgba(200,75,47,0.08)', border: '1px solid rgba(200,75,47,0.25)', borderRadius: 'var(--r)', padding: '1rem', textAlign: 'center' }}>
+            <p style={{ fontWeight: 700, color: 'var(--ember)', fontSize: '1.125rem' }}>👑 Lifetime Pro Active</p>
+            <p style={{ color: 'var(--text2)', fontSize: '0.875rem', marginTop: '0.25rem' }}>You'll never be billed again. Thank you for sharing SAB Account AI!</p>
+          </div>
+        )}
+
+        {/* Friends list */}
+        {referrals.length > 0 && (
+          <div>
+            <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.75rem' }}>Referred friends</p>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r)', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
+                <thead>
+                  <tr style={{ background: 'var(--cream2)' }}>
+                    {['Email', 'Joined', 'Status', 'Reward'].map(h => (
+                      <th key={h} style={{ padding: '0.625rem 0.875rem', textAlign: 'left', fontWeight: 600, color: 'var(--text2)', fontSize: '0.75rem' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {referrals.map((r, i) => (
+                    <tr key={r.id} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)', background: '#fff' }}>
+                      <td style={{ padding: '0.625rem 0.875rem', color: 'var(--char)' }}>{maskEmail(r.referred_email ?? '')}</td>
+                      <td style={{ padding: '0.625rem 0.875rem', color: 'var(--text2)' }}>
+                        {new Date(r.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </td>
+                      <td style={{ padding: '0.625rem 0.875rem' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '0.15rem 0.5rem',
+                          borderRadius: '999px',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          background: r.status === 'converted' ? 'rgba(34,197,94,0.12)' : 'rgba(201,147,58,0.15)',
+                          color: r.status === 'converted' ? '#15803d' : '#92400e',
+                        }}>
+                          {r.status === 'converted' ? 'Upgraded to paid' : 'Signed up'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.625rem 0.875rem', color: r.status === 'converted' ? '#15803d' : 'var(--text3)', fontWeight: r.status === 'converted' ? 600 : 400 }}>
+                        {r.status === 'converted' ? '1 month earned' : 'Pending upgrade'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Share templates */}
+        <div>
+          <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.75rem' }}>Ready-to-send templates</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+            {shareTemplates.map((tmpl) => (
+              <div key={tmpl.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r)', overflow: 'hidden' }}>
+                <div style={{ background: 'var(--cream2)', padding: '0.5rem 0.875rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--char)' }}>{tmpl.label}</span>
+                  <button
+                    onClick={() => copyTemplate(tmpl.id, tmpl.text)}
+                    style={{
+                      padding: '0.25rem 0.625rem', borderRadius: '6px',
+                      border: '1px solid var(--border)', background: copiedTemplate === tmpl.id ? 'rgba(34,197,94,0.1)' : '#fff',
+                      color: copiedTemplate === tmpl.id ? '#15803d' : 'var(--char)',
+                      fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    {copiedTemplate === tmpl.id ? 'Copied! ✓' : 'Copy'}
+                  </button>
+                </div>
+                <div style={{ padding: '0.875rem', background: '#fff', fontSize: '0.8125rem', color: 'var(--text2)', lineHeight: 1.7, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                  {tmpl.text}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <style>{`
+          @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+          }
+        `}</style>
+      </div>
+    )
+  }
+
   const tabContent: Record<TabKey, React.ReactNode> = {
     business:      <BusinessTab />,
     subscription:  <SubscriptionTab />,
     invoices:      <InvoiceDefaultsTab />,
     notifications: <NotificationsTab />,
     ato:           <AtoTab />,
+    referrals:     <ReferralsTab />,
   }
 
   return (
@@ -685,7 +1053,7 @@ export default function SettingsPage() {
             key={t.key}
             onClick={() => setTab(t.key)}
             style={{
-              padding: '0.5rem 1rem',
+              padding: '0.4rem 0.75rem',
               borderRadius: '8px',
               fontSize: '0.8125rem',
               fontWeight: 500,

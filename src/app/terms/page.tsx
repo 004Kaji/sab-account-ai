@@ -5,9 +5,11 @@ export const metadata: Metadata = {
   title: 'Terms of Service — SAB Account AI',
 }
 
-const UPDATED = '11 May 2025'
-const COMPANY = 'SAB Account AI'
-const EMAIL   = 'support@sabaccountai.com'
+const UPDATED  = '20 May 2026'
+const COMPANY  = 'SAB Account AI'
+const EMAIL    = 'basnet@sabaccountai.com'
+const OPERATOR = 'Sanjog Basnet'
+const ABN      = '49 541 449 108'
 
 export default function TermsPage() {
   return (
@@ -34,7 +36,7 @@ export default function TermsPage() {
         </p>
 
         <Section title="1. About the Service">
-          <p>{COMPANY} is an Australian-based software-as-a-service (SaaS) platform that helps small businesses and sole traders create tax invoices, generate PAYG payslips, track income and expenses, and estimate GST obligations. The service is operated in accordance with Australian law.</p>
+          <p>{COMPANY} is an Australian-based software-as-a-service (SaaS) platform that helps small businesses and sole traders create tax invoices, generate PAYG payslips, track income and expenses, and estimate GST obligations. The service is operated by {OPERATOR} (ABN {ABN}) in accordance with Australian law.</p>
         </Section>
 
         <Section title="2. Eligibility">

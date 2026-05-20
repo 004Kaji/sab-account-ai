@@ -6,6 +6,7 @@ import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
 import AutocompleteDropdown from '@/components/ui/AutocompleteDropdown'
+import ReferralBanner from '@/components/ui/ReferralBanner'
 import {
   formatCurrency, formatDateAU, todayISO, addDays,
   uid, generateInvoiceNumber, formatABN,
@@ -189,6 +190,7 @@ export default function InvoicePage() {
   const [emailTo, setEmailTo] = useState('')
   const [emailSending, setEmailSending] = useState(false)
   const [emailSent, setEmailSent] = useState(false)
+  const [pdfDownloaded, setPdfDownloaded] = useState(false)
 
   const totals = calcTotals(form.line_items)
 
@@ -359,6 +361,7 @@ export default function InvoicePage() {
       account_number: form.account_number,
       notes: form.notes,
     })
+    setPdfDownloaded(true)
   }
 
   async function handleSaveNewClient() {
@@ -668,6 +671,20 @@ export default function InvoicePage() {
         }
       `}</style>
 
+      <ReferralBanner
+        triggerId="invoice_saved"
+        trigger={!!savedInvoice}
+        emoji="🎉"
+        title="First invoice saved! Love SAB Account AI?"
+        description="Share with a friend → get 1 month FREE"
+      />
+      <ReferralBanner
+        triggerId="pdf_downloaded"
+        trigger={pdfDownloaded}
+        emoji="📄"
+        title="Invoice PDF downloaded!"
+        description="Know other freelancers who'd love this? Share your link → get 1 month free"
+      />
     </div>
   )
 }

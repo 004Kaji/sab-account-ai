@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Fraunces, DM_Sans, JetBrains_Mono } from 'next/font/google'
+import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 
 // Fraunces: serif display font for headings and logo
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className={`${fraunces.variable} ${dmSans.variable} ${jetbrainsMono.variable} antialiased`}
       >
         {children}
+        <Analytics />
       </body>
     </html>
   )

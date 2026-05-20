@@ -3,10 +3,10 @@
 // The signup form — handles all field state, validation, and Supabase auth.
 // Displayed by the signup page.tsx server component.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
-import { validateABN, validateEmail } from '@/lib/utils'
+import { validateABN, validateEmail, safeStorage } from '@/lib/utils'
 
 type Plan = 'free' | 'starter' | 'pro'
 
@@ -52,7 +52,7 @@ function DocIcon({ color = 'currentColor', size = 24 }: { color?: string; size?:
   )
 }
 
-export default function SignupForm({ initialPlan }: { initialPlan: Plan }) {
+export default function SignupForm({ initialPlan, initialRef }: { initialPlan: Plan; initialRef: string | null }) {
   const router = useRouter()
 
   // Form field state
@@ -69,6 +69,13 @@ export default function SignupForm({ initialPlan }: { initialPlan: Plan }) {
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+
+  // Store referral code in localStorage on mount
+  useEffect(() => {
+    if (initialRef) {
+      safeStorage.set('referral_ref', initialRef)
+    }
+  }, [initialRef])
 
   // Validate all fields — returns true only if everything is correct
   function validate(): boolean {
@@ -158,6 +165,21 @@ export default function SignupForm({ initialPlan }: { initialPlan: Plan }) {
             business_name: businessName.trim(),
             abn: abn.trim() || null,
           })
+
+          // Track referral signup if a ref code exists
+          const refCode = safeStorage.get('referral_ref') || initialRef
+          if (refCode) {
+            fetch('/api/referral/track-signup', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${data.session.access_token}`,
+              },
+              body: JSON.stringify({ refCode }),
+            }).catch(() => {})
+            safeStorage.remove('referral_ref')
+          }
+
           router.push('/dashboard')
           return
         }
@@ -269,6 +291,30 @@ export default function SignupForm({ initialPlan }: { initialPlan: Plan }) {
             <DocIcon color="var(--ember)" size={22} />
             <span className="font-display" style={{ fontWeight: 600, color: 'var(--char)', fontSize: '0.9375rem' }}>SAB Account AI</span>
           </div>
+
+          {/* Referral banner */}
+          {initialRef && (
+            <div style={{
+              background: 'rgba(34,197,94,0.1)',
+              border: '1.5px solid rgba(34,197,94,0.35)',
+              borderRadius: 'var(--r)',
+              padding: '0.875rem 1rem',
+              marginBottom: '1.25rem',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.625rem',
+            }}>
+              <span style={{ fontSize: '1.25rem', lineHeight: 1, flexShrink: 0 }}>🎉</span>
+              <div>
+                <p style={{ fontWeight: 600, color: '#15803d', fontSize: '0.875rem', marginBottom: '0.125rem' }}>
+                  You were referred by a friend!
+                </p>
+                <p style={{ fontSize: '0.8125rem', color: '#166534' }}>
+                  Sign up to give them a free month reward.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Tab bar */}
           <div style={{ display: 'inline-flex', gap: '0.25rem', background: 'var(--cream2)', borderRadius: 'var(--r)', padding: '0.25rem', marginBottom: '2rem' }}>

@@ -143,8 +143,7 @@ function AddRecordModal({ open, onClose, onSaved, defaultType }: {
         {/* Type toggle */}
         <div style={{ display: 'inline-flex', gap: '0.25rem', background: 'var(--cream2)', borderRadius: 'var(--r)', padding: '0.25rem', alignSelf: 'flex-start' }}>
           {(['income', 'expense'] as RecordType[]).map(t => (
-            <button
-              key={t}
+            <button key={t}
               type="button"
               onClick={() => setField('type', t)}
               style={{
@@ -355,8 +354,7 @@ export default function RecordsPage() {
             {/* Filter tabs */}
             <div style={{ padding: '0.875rem 1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               {(['all', 'income', 'expense'] as FilterTab[]).map(tab => (
-                <button
-                  key={tab}
+                <button key={tab}
                   onClick={() => setFilter(tab)}
                   style={{
                     padding: '0.3rem 0.875rem',
@@ -402,7 +400,7 @@ export default function RecordsPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
-                      {['Type', 'Date', 'Description', 'Category', 'Amount', 'GST', ''].map(h => (
+                      {(['Type', 'Date', 'Description', 'Category', 'Amount', 'GST', ''] as string[]).map((h, i) => (
                         <th key={h} style={{
                           padding: '0.625rem 1rem',
                           textAlign: h === 'Amount' || h === 'GST' ? 'right' : 'left',

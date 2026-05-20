@@ -126,8 +126,7 @@ export default function AutocompleteDropdown({
             </p>
           )}
           {filtered.map((item, i) => (
-            <button
-              key={item.id}
+            <button key={item.id ?? i}
               onMouseDown={e => { e.preventDefault(); pick(item) }}
               onMouseEnter={() => setHighlighted(i)}
               style={{

@@ -5,6 +5,8 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createServiceClient } from '@/lib/supabase'
+import { applyReferralReward } from '@/lib/referral'
+import { sendFriendConvertedEmail } from '@/lib/referral-emails'
 
 export async function POST(request: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -61,6 +63,75 @@ export async function POST(request: NextRequest) {
         }).eq('id', userId)
 
         console.log(`✅ User ${userId} upgraded to ${plan}`)
+
+        // ── Referral conversion tracking ──────────────────────
+        const { data: referral } = await supabase
+          .from('referrals')
+          .select('id, referrer_id, referral_code, referred_email')
+          .eq('referred_user_id', userId)
+          .eq('status', 'signed_up')
+          .maybeSingle()
+
+        if (referral) {
+          const referrerId = referral.referrer_id as string
+          const refCode = referral.referral_code as string
+
+          // Mark referral as converted
+          await supabase.from('referrals').update({
+            status: 'converted',
+            converted_at: new Date().toISOString(),
+            reward_applied: true,
+          }).eq('id', referral.id)
+
+          // Increment converted_referrals
+          const { data: rc } = await supabase
+            .from('referral_codes')
+            .select('converted_referrals')
+            .eq('user_id', referrerId)
+            .single()
+
+          const newConverted = ((rc?.converted_referrals as number) ?? 0) + 1
+          await supabase
+            .from('referral_codes')
+            .update({ converted_referrals: newConverted })
+            .eq('user_id', referrerId)
+
+          // Apply reward (reads updated count)
+          const { additionalMonths, lifetimePro } = await applyReferralReward(referrerId)
+
+          // Send reward email
+          try {
+            const { data: { user: referrerUser } } = await supabase.auth.admin.getUserById(referrerId)
+            const referrerEmail = referrerUser?.email ?? ''
+            const referrerName = (referrerUser?.user_metadata?.full_name as string | undefined)
+              || referrerEmail.split('@')[0]
+
+            const { data: updatedProfile } = await supabase
+              .from('profiles')
+              .select('billing_cycle_end')
+              .eq('id', referrerId)
+              .single()
+
+            const newBillingDate = updatedProfile?.billing_cycle_end
+              ? new Date(updatedProfile.billing_cycle_end as string).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+              : 'updated'
+
+            await sendFriendConvertedEmail({
+              referrerEmail,
+              referrerName,
+              referredEmail: (referral.referred_email as string) ?? '',
+              code: refCode,
+              convertedReferrals: newConverted,
+              additionalMonths,
+              lifetimePro,
+              newBillingDate,
+            })
+          } catch (emailErr) {
+            console.error('Referral reward email failed:', emailErr)
+          }
+
+          console.log(`✅ Referral converted: ${referrerId} earned ${additionalMonths} months`)
+        }
         break
       }
 

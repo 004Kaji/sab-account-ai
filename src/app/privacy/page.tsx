@@ -5,9 +5,11 @@ export const metadata: Metadata = {
   title: 'Privacy Policy — SAB Account AI',
 }
 
-const UPDATED = '11 May 2025'
-const COMPANY = 'SAB Account AI'
-const EMAIL   = 'support@sabaccountai.com'
+const UPDATED  = '20 May 2026'
+const COMPANY  = 'SAB Account AI'
+const EMAIL    = 'basnet@sabaccountai.com'
+const OPERATOR = 'Sanjog Basnet'
+const ABN      = '49 541 449 108'
 
 export default function PrivacyPage() {
   return (
@@ -34,7 +36,7 @@ export default function PrivacyPage() {
         </p>
 
         <Section title="1. Who We Are">
-          <p>{COMPANY} is an Australian software-as-a-service business that provides invoicing, payroll, and financial record-keeping tools for small businesses. References to "we", "us", or "our" in this policy refer to {COMPANY}.</p>
+          <p>{COMPANY} is an Australian software-as-a-service business operated by {OPERATOR} (ABN {ABN}) that provides invoicing, payroll, and financial record-keeping tools for small businesses. References to "we", "us", or "our" in this policy refer to {COMPANY}.</p>
         </Section>
 
         <Section title="2. What Personal Information We Collect">

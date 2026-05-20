@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase'
 import { ProfileContext, type Profile } from './profile-context'
-import { initials } from '@/lib/utils'
+import { initials, safeStorage } from '@/lib/utils'
 import { ToastProvider } from '@/components/ui/Toast'
 
 const NAV_ITEMS = [
@@ -51,6 +51,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   })
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [showReferralModal, setShowReferralModal] = useState(false)
+  const [referralLink, setReferralLink] = useState('')
 
   useEffect(() => {
     const supabase = createBrowserClient()
@@ -63,9 +65,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           return
         }
 
-        const [{ data: prof }, { data: biz }] = await Promise.all([
+        const [{ data: prof }, { data: biz }, { data: { session } }] = await Promise.all([
           supabase.from('profiles').select('plan, subscription_status, trial_ends_at').eq('id', user.id).single(),
           supabase.from('business_profiles').select('business_name').eq('id', user.id).single(),
+          supabase.auth.getSession(),
         ])
 
         setProfile({
@@ -76,6 +79,40 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           trial_ends_at:       prof?.trial_ends_at ?? null,
           business_name:       biz?.business_name ?? null,
         })
+
+        if (session?.access_token) {
+          // Silently ensure referral code exists
+          fetch('/api/referral/ensure-code', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${session.access_token}` },
+          }).then(async (res) => {
+            if (res.ok) {
+              const { code } = await res.json() as { code: string }
+              if (code) setReferralLink(`https://sabaccountai.com/signup?ref=${code}`)
+            }
+          }).catch(() => {})
+
+          // Track referral signup if pending from email-confirm flow
+          const pendingRef = safeStorage.get('referral_ref')
+          if (pendingRef) {
+            fetch('/api/referral/track-signup', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({ refCode: pendingRef }),
+            }).then(() => safeStorage.remove('referral_ref')).catch(() => {})
+          }
+        }
+
+        // Track login count for 5th-login referral nudge
+        const loginKey = `login_count_${user.id}`
+        const count = parseInt(safeStorage.get(loginKey) ?? '0', 10) + 1
+        safeStorage.set(loginKey, String(count))
+        if (count === 5 && !safeStorage.get(`ref_modal_shown_${user.id}`)) {
+          setShowReferralModal(true)
+        }
       } catch {
         router.replace('/login')
       } finally {
@@ -353,7 +390,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div style={{ display: 'flex', gap: '1rem' }}>
               <Link href="/terms"   style={{ color: 'var(--text3)', textDecoration: 'none' }}>Terms</Link>
               <Link href="/privacy" style={{ color: 'var(--text3)', textDecoration: 'none' }}>Privacy</Link>
-              <a href="mailto:support@sabaccountai.com" style={{ color: 'var(--text3)', textDecoration: 'none' }}>Support</a>
+              <a href="mailto:basnet@sabaccountai.com" style={{ color: 'var(--text3)', textDecoration: 'none' }}>Support</a>
             </div>
           </footer>
 
@@ -413,6 +450,65 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             .app-footer { display: none !important; }
           }
         `}</style>
+
+        {/* 5th-login referral modal */}
+        {showReferralModal && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 500,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '1.5rem',
+          }}>
+            <div style={{
+              background: '#fff', borderRadius: 'var(--r)',
+              padding: '2rem', maxWidth: '420px', width: '100%',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+              textAlign: 'center',
+            }}>
+              <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🎁</div>
+              <h2 className="font-display" style={{ fontSize: '1.375rem', color: 'var(--char)', marginBottom: '0.625rem' }}>
+                You've been using SAB Account AI for a while!
+              </h2>
+              <p style={{ color: 'var(--text2)', fontSize: '0.875rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
+                Have you shared it with a friend yet? Refer 1 friend and get <strong>1 month FREE</strong> when they upgrade.
+              </p>
+              {referralLink && (
+                <div style={{
+                  background: 'var(--cream)', borderRadius: 'var(--r)',
+                  border: '1px solid var(--border)', padding: '0.625rem 0.875rem',
+                  fontSize: '0.8125rem', fontFamily: 'var(--font-mono)',
+                  color: 'var(--char)', marginBottom: '1rem',
+                  wordBreak: 'break-all', textAlign: 'left',
+                }}>
+                  {referralLink}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: '0.625rem' }}>
+                <button
+                  onClick={() => {
+                    if (referralLink) navigator.clipboard.writeText(referralLink)
+                    safeStorage.set(`ref_modal_shown_${profile.id}`, '1')
+                    setShowReferralModal(false)
+                  }}
+                  className="btn btn-ember"
+                  style={{ flex: 1, fontSize: '0.875rem' }}
+                >
+                  Copy my link
+                </button>
+                <button
+                  onClick={() => {
+                    safeStorage.set(`ref_modal_shown_${profile.id}`, '1')
+                    setShowReferralModal(false)
+                  }}
+                  className="btn btn-outline"
+                  style={{ fontSize: '0.875rem' }}
+                >
+                  Maybe later
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </ToastProvider>
     </ProfileContext.Provider>
   )

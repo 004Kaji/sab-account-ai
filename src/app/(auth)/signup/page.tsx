@@ -10,10 +10,10 @@ export const metadata: Metadata = { title: 'Create Account' }
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ plan?: string }>
+  searchParams: Promise<{ plan?: string; ref?: string }>
 }) {
-  const { plan } = await searchParams
+  const { plan, ref } = await searchParams
   // Only accept known plan values; default to 'free'
   const validPlan = plan === 'starter' || plan === 'pro' ? plan : 'free'
-  return <SignupForm initialPlan={validPlan} />
+  return <SignupForm initialPlan={validPlan} initialRef={ref ?? null} />
 }

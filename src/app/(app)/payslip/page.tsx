@@ -6,6 +6,7 @@ import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
 import PlanGate from '@/components/ui/PlanGate'
+import ReferralBanner from '@/components/ui/ReferralBanner'
 import AutocompleteDropdown from '@/components/ui/AutocompleteDropdown'
 import { calculatePayslip, isMedicareExemptByResidency, type PayslipNumbers, type ResidencyStatus } from '@/lib/ato'
 import { formatCurrency, formatDateAU, todayISO, addDays, formatABN } from '@/lib/utils'
@@ -833,8 +834,7 @@ export default function PayslipPage() {
                 {/* Pay basis switcher */}
                 <div style={{ display: 'flex', background: 'var(--cream2)', borderRadius: '8px', padding: '3px', gap: '2px' }}>
                   {(['salary', 'hourly'] as PayBasis[]).map(basis => (
-                    <button
-                      key={basis}
+                    <button key={basis}
                       type="button"
                       onClick={() => setField('pay_basis', basis)}
                       style={{
@@ -995,6 +995,13 @@ export default function PayslipPage() {
         `}</style>
       </div>
 
+      <ReferralBanner
+        triggerId="payslip_saved"
+        trigger={!!savedSlip}
+        emoji="🧾"
+        title="Payslip generated!"
+        description="Help a fellow business owner → Share SAB Account AI → earn free months"
+      />
     </PlanGate>
   )
 }
