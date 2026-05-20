@@ -11,10 +11,7 @@ export default function IOSInstallBanner() {
     const isSafari = /safari/i.test(navigator.userAgent) && !/chrome|crios|fxios/i.test(navigator.userAgent)
     const isStandalone = (navigator as Navigator & { standalone?: boolean }).standalone === true
     const dismissed = safeStorage.get('ios-install-dismissed')
-
-    if (isIOS && isSafari && !isStandalone && !dismissed) {
-      setVisible(true)
-    }
+    if (isIOS && isSafari && !isStandalone && !dismissed) setVisible(true)
   }, [])
 
   function dismiss() {
@@ -22,96 +19,140 @@ export default function IOSInstallBanner() {
     setVisible(false)
   }
 
-  async function openShareSheet() {
-    try {
-      await navigator.share({
-        title: 'SAB Account AI',
-        text: 'AI-powered invoicing for Australian small business',
-        url: window.location.href,
-      })
-    } catch {
-      // user cancelled or share not supported — do nothing
-    }
-  }
-
   if (!visible) return null
 
   return (
-    <div style={{
-      position: 'fixed',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      zIndex: 9999,
-      background: '#1C1917',
-      borderTop: '1px solid rgba(255,255,255,0.1)',
-      padding: '16px 20px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '14px',
-      boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
-    }}>
-      {/* App icon */}
-      <img
-        src="/apple-touch-icon.png"
-        alt="SAB Account AI"
-        style={{ width: 44, height: 44, borderRadius: 10, flexShrink: 0 }}
+    <>
+      <style>{`
+        @keyframes bounce-down {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(6px); }
+        }
+        .ios-arrow { animation: bounce-down 1.2s ease-in-out infinite; }
+      `}</style>
+
+      {/* Overlay backdrop */}
+      <div
+        onClick={dismiss}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 9998,
+          background: 'rgba(0,0,0,0.45)',
+        }}
       />
 
-      {/* Text + share button */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ color: '#fff', fontWeight: 600, fontSize: '0.875rem', marginBottom: 6 }}>
-          Install SAB Account AI
-        </div>
-        <button
-          onClick={openShareSheet}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            background: '#C84B2F',
-            border: 'none',
-            borderRadius: 8,
-            color: '#fff',
-            cursor: 'pointer',
-            fontSize: '0.8125rem',
-            fontWeight: 600,
-            padding: '6px 12px',
-          }}
-        >
-          {/* iOS share icon */}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth={2.5}
-            strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
-            <polyline points="16 6 12 2 8 6" />
-            <line x1="12" y1="2" x2="12" y2="15" />
-          </svg>
-          Tap Share → Add to Home Screen
-        </button>
-      </div>
+      {/* Banner */}
+      <div style={{
+        position: 'fixed',
+        bottom: 0, left: 0, right: 0,
+        zIndex: 9999,
+        background: '#1C1917',
+        borderRadius: '20px 20px 0 0',
+        padding: '24px 24px 36px',
+        boxShadow: '0 -8px 40px rgba(0,0,0,0.5)',
+      }}>
+        {/* Drag handle */}
+        <div style={{
+          width: 36, height: 4, borderRadius: 2,
+          background: 'rgba(255,255,255,0.2)',
+          margin: '0 auto 20px',
+        }} />
 
-      {/* Dismiss */}
-      <button
-        onClick={dismiss}
-        aria-label="Dismiss"
-        style={{
-          background: 'rgba(255,255,255,0.08)',
-          border: 'none',
-          borderRadius: 8,
-          color: 'rgba(255,255,255,0.5)',
-          cursor: 'pointer',
-          fontSize: '1.1rem',
-          width: 32,
-          height: 32,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        ×
-      </button>
-    </div>
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
+          <img
+            src="/apple-touch-icon.png"
+            alt="SAB Account AI"
+            style={{ width: 52, height: 52, borderRadius: 12, flexShrink: 0 }}
+          />
+          <div>
+            <div style={{ color: '#fff', fontWeight: 700, fontSize: '1rem' }}>
+              Install SAB Account AI
+            </div>
+            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.8125rem', marginTop: 2 }}>
+              Add to your home screen — works like an app
+            </div>
+          </div>
+          <button
+            onClick={dismiss}
+            style={{
+              marginLeft: 'auto', background: 'rgba(255,255,255,0.1)',
+              border: 'none', borderRadius: '50%', color: 'rgba(255,255,255,0.6)',
+              cursor: 'pointer', width: 28, height: 28, fontSize: '1rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}
+          >×</button>
+        </div>
+
+        {/* Steps */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 28 }}>
+          {/* Step 1 */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 14,
+            background: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: '14px 16px',
+          }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%',
+              background: '#C84B2F', color: '#fff',
+              fontWeight: 800, fontSize: '0.875rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>1</div>
+            <div>
+              <div style={{ color: '#fff', fontWeight: 600, fontSize: '0.875rem', marginBottom: 2 }}>
+                Tap the Share button
+              </div>
+              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem' }}>
+                The{' '}
+                {/* iOS share icon inline */}
+                <svg style={{ display: 'inline', verticalAlign: 'middle' }}
+                  width="13" height="13" viewBox="0 0 24 24" fill="none"
+                  stroke="rgba(255,255,255,0.6)" strokeWidth={2.5}
+                  strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
+                  <polyline points="16 6 12 2 8 6" />
+                  <line x1="12" y1="2" x2="12" y2="15" />
+                </svg>
+                {' '}icon at the bottom of Safari
+              </div>
+            </div>
+          </div>
+
+          {/* Step 2 */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 14,
+            background: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: '14px 16px',
+          }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%',
+              background: '#C84B2F', color: '#fff',
+              fontWeight: 800, fontSize: '0.875rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>2</div>
+            <div>
+              <div style={{ color: '#fff', fontWeight: 600, fontSize: '0.875rem', marginBottom: 2 }}>
+                Tap "Add to Home Screen"
+              </div>
+              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem' }}>
+                Scroll down in the share menu to find it
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bouncing arrow pointing down to Safari toolbar */}
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginBottom: 8 }}>
+            Share button is down here
+          </div>
+          <div className="ios-arrow" style={{ color: '#C84B2F' }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth={2.5}
+              strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <polyline points="19 12 12 19 5 12" />
+            </svg>
+          </div>
+        </div>
+      </div>
+    </>
   )
 }
