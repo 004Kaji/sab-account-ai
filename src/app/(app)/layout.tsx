@@ -403,6 +403,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             background: 'var(--char)',
             borderTop: '1px solid rgba(255,255,255,0.08)',
             padding: '0.5rem 0',
+            paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))',
             zIndex: 100,
           }} className="mobile-bottom-nav">
             {NAV_ITEMS.map((item) => {
@@ -446,7 +447,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             .desktop-nav { display: none !important; }
             .mobile-menu-btn { display: flex !important; }
             .mobile-bottom-nav { display: flex !important; }
-            main { padding-bottom: 4rem; }
+            main { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
             .app-footer { display: none !important; }
           }
         `}</style>
