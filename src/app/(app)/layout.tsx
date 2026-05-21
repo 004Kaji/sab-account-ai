@@ -19,6 +19,15 @@ const NAV_ITEMS = [
   { label: 'Settings',       href: '/settings',      proOnly: false },
 ]
 
+// Bottom nav limited to 5 items so they all fit on small screens
+const MOBILE_NAV_ITEMS = [
+  { label: 'Dashboard',      href: '/dashboard'    },
+  { label: 'Invoice',        href: '/invoice'      },
+  { label: 'Payslips',       href: '/payslip'      },
+  { label: 'Records',        href: '/records'      },
+  { label: 'Settings',       href: '/settings'     },
+]
+
 const PLAN_STYLES: Record<string, { bg: string; color: string; label: string }> = {
   free:    { bg: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.7)', label: 'Free'    },
   starter: { bg: 'rgba(201,147,58,0.25)', color: '#E8B86D',               label: 'Starter' },
@@ -154,6 +163,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             position: 'sticky',
             top: 0,
             zIndex: 100,
+            paddingTop: 'env(safe-area-inset-top)',
           }}>
             <div style={{
               maxWidth: '1280px',
@@ -406,8 +416,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))',
             zIndex: 100,
           }} className="mobile-bottom-nav">
-            {NAV_ITEMS.map((item) => {
-              const isActive = pathname === item.href
+            {MOBILE_NAV_ITEMS.map((item) => {
+              const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+              const icons: Record<string, string> = {
+                'Dashboard': '◻',
+                'Invoice':   '📄',
+                'Payslips':  '💵',
+                'Records':   '📊',
+                'Settings':  '⚙',
+              }
               return (
                 <Link
                   key={item.href}
@@ -425,17 +442,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     color: isActive ? '#ffffff' : 'rgba(255,255,255,0.45)',
                   }}
                 >
-                  <span style={{ fontSize: '1.25rem' }}>
-                    {item.label === 'Dashboard'      && '◻'}
-                    {item.label === 'Create Invoice' && '📄'}
-                    {item.label === 'Payslips'       && '💵'}
-                    {item.label === 'ABN Pay'        && '🤝'}
-                    {item.label === 'Records'        && '📊'}
-                    {item.label === 'Clients'        && '👥'}
-                    {item.label === 'Employees'      && '👤'}
-                    {item.label === 'Settings'       && '⚙'}
-                  </span>
-                  {item.label === 'Create Invoice' ? 'Invoice' : item.label}
+                  <span style={{ fontSize: '1.25rem' }}>{icons[item.label]}</span>
+                  {item.label}
                 </Link>
               )
             })}
