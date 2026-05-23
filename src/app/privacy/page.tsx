@@ -4,7 +4,7 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'Privacy Policy — SAB Account AI',
   description: 'Privacy Policy for SAB Account AI. Learn how we collect, use and protect your data in accordance with the Australian Privacy Act 1988.',
-  alternates: { canonical: 'https://sabaccountai.com.au/privacy' },
+  alternates: { canonical: 'https://sabaccountai.com/privacy' },
 }
 
 const UPDATED  = '20 May 2026'

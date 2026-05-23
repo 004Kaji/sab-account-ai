@@ -4,11 +4,11 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'GST Invoice Template Australia: What Every Tax Invoice Must Include',
   description: 'The ATO has strict rules about what makes a valid GST tax invoice. Missing even one field means clients can\'t claim GST credits. Here\'s the complete 2025 checklist.',
-  alternates: { canonical: 'https://sabaccountai.com.au/blog/gst-invoice-template-australia' },
+  alternates: { canonical: 'https://sabaccountai.com/blog/gst-invoice-template-australia' },
   openGraph: {
     title: 'GST Invoice Template Australia: What Every Tax Invoice Must Include',
     description: 'The ATO has strict rules about what makes a valid GST tax invoice. Missing even one field means clients can\'t claim GST credits.',
-    url: 'https://sabaccountai.com.au/blog/gst-invoice-template-australia',
+    url: 'https://sabaccountai.com/blog/gst-invoice-template-australia',
     siteName: 'SAB Account AI',
     locale: 'en_AU',
     type: 'article',
@@ -22,9 +22,9 @@ const ARTICLE_SCHEMA = {
   description: 'The ATO has strict rules about what makes a valid GST tax invoice. Missing even one field means clients can\'t claim GST credits. Here\'s the complete 2025 checklist.',
   datePublished: '2026-05-15',
   dateModified: '2026-05-15',
-  author: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com.au' },
-  publisher: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com.au' },
-  mainEntityOfPage: { '@type': 'WebPage', '@id': 'https://sabaccountai.com.au/blog/gst-invoice-template-australia' },
+  author: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com' },
+  publisher: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com' },
+  mainEntityOfPage: { '@type': 'WebPage', '@id': 'https://sabaccountai.com/blog/gst-invoice-template-australia' },
 }
 
 export default function GstInvoicePage() {

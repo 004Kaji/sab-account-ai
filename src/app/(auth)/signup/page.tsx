@@ -8,7 +8,7 @@ import SignupForm from './SignupForm'
 export const metadata: Metadata = {
   title: 'Create free account — SAB Account AI',
   description: 'Sign up free. Create ATO-compliant invoices with AI in 30 seconds. No credit card required.',
-  alternates: { canonical: 'https://sabaccountai.com.au/signup' },
+  alternates: { canonical: 'https://sabaccountai.com/signup' },
 }
 
 export default async function SignupPage({

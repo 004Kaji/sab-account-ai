@@ -4,11 +4,11 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'Australian Tax Guides — SAB Account AI Blog',
   description: 'Free guides for Australian small businesses and sole traders: GST invoices, PAYG withholding, Medicare levy, superannuation, and ABN contractor tax explained clearly.',
-  alternates: { canonical: 'https://sabaccountai.com.au/blog' },
+  alternates: { canonical: 'https://sabaccountai.com/blog' },
   openGraph: {
     title: 'Australian Tax Guides — SAB Account AI Blog',
     description: 'Free guides for Australian small businesses and sole traders: GST, PAYG, Medicare levy, super, and ABN contractor tax.',
-    url: 'https://sabaccountai.com.au/blog',
+    url: 'https://sabaccountai.com/blog',
     siteName: 'SAB Account AI',
     locale: 'en_AU',
     type: 'website',

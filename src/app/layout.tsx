@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     template: '%s | SAB Account AI',
   },
   description: 'Create professional tax invoices in 30 seconds with AI. ATO-verified PAYG payslips for Australian small businesses, freelancers and international workers. Free plan available.',
-  metadataBase: new URL('https://sabaccountai.com.au'),
+  metadataBase: new URL('https://sabaccountai.com'),
   alternates: {
     canonical: '/',
   },
@@ -72,13 +72,13 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'SAB Account AI',
     description: 'AI-powered invoicing and ATO-compliant payslips for Australian small businesses and freelancers.',
-    url: 'https://sabaccountai.com.au',
+    url: 'https://sabaccountai.com',
     siteName: 'SAB Account AI',
     locale: 'en_AU',
     type: 'website',
     images: [
       {
-        url: 'https://sabaccountai.com.au/og-image.png',
+        url: 'https://sabaccountai.com/og-image.png',
         width: 1200,
         height: 630,
         alt: 'SAB Account AI — Smart Invoicing for Australian Business',
@@ -89,7 +89,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'SAB Account AI — Smart Invoicing for Australian Business',
     description: 'AI-powered invoicing and ATO-compliant payslips for Australian small businesses and freelancers.',
-    images: ['https://sabaccountai.com.au/og-image.png'],
+    images: ['https://sabaccountai.com/og-image.png'],
     creator: '@sabaccountai',
   },
 }

@@ -4,11 +4,11 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'Super Guarantee Rate Australia 2025–26: What Employers Must Pay',
   description: 'The Super Guarantee rate rose to 12% on 1 July 2025. This guide explains who must pay it, how to calculate it correctly, and the schedule for future increases.',
-  alternates: { canonical: 'https://sabaccountai.com.au/blog/super-guarantee-rate-australia-2025' },
+  alternates: { canonical: 'https://sabaccountai.com/blog/super-guarantee-rate-australia-2025' },
   openGraph: {
     title: 'Super Guarantee Rate Australia 2025–26: What Employers Must Pay',
     description: 'The Super Guarantee rate rose to 12% on 1 July 2025. Learn who must pay, how to calculate it, and the full schedule.',
-    url: 'https://sabaccountai.com.au/blog/super-guarantee-rate-australia-2025',
+    url: 'https://sabaccountai.com/blog/super-guarantee-rate-australia-2025',
     siteName: 'SAB Account AI',
     locale: 'en_AU',
     type: 'article',
@@ -22,9 +22,9 @@ const ARTICLE_SCHEMA = {
   description: 'The Super Guarantee rate rose to 12% on 1 July 2025. This guide explains who must pay it and how to calculate it.',
   datePublished: '2026-05-02',
   dateModified: '2026-05-02',
-  author: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com.au' },
-  publisher: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com.au' },
-  mainEntityOfPage: { '@type': 'WebPage', '@id': 'https://sabaccountai.com.au/blog/super-guarantee-rate-australia-2025' },
+  author: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com' },
+  publisher: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com' },
+  mainEntityOfPage: { '@type': 'WebPage', '@id': 'https://sabaccountai.com/blog/super-guarantee-rate-australia-2025' },
 }
 
 export default function SuperPage() {

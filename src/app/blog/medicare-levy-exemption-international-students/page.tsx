@@ -4,11 +4,11 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'Medicare Levy Exemption for International Students in Australia',
   description: 'Most temporary visa holders are exempt from the 2% Medicare levy — but only if you apply correctly. Learn who qualifies, how to apply, and what to put on your tax return.',
-  alternates: { canonical: 'https://sabaccountai.com.au/blog/medicare-levy-exemption-international-students' },
+  alternates: { canonical: 'https://sabaccountai.com/blog/medicare-levy-exemption-international-students' },
   openGraph: {
     title: 'Medicare Levy Exemption for International Students in Australia',
     description: 'Most temporary visa holders are exempt from the 2% Medicare levy — but only if you apply correctly.',
-    url: 'https://sabaccountai.com.au/blog/medicare-levy-exemption-international-students',
+    url: 'https://sabaccountai.com/blog/medicare-levy-exemption-international-students',
     siteName: 'SAB Account AI',
     locale: 'en_AU',
     type: 'article',
@@ -22,9 +22,9 @@ const ARTICLE_SCHEMA = {
   description: 'Most temporary visa holders are exempt from the 2% Medicare levy. Learn who qualifies, how to apply, and what to do on your tax return.',
   datePublished: '2026-05-08',
   dateModified: '2026-05-08',
-  author: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com.au' },
-  publisher: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com.au' },
-  mainEntityOfPage: { '@type': 'WebPage', '@id': 'https://sabaccountai.com.au/blog/medicare-levy-exemption-international-students' },
+  author: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com' },
+  publisher: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com' },
+  mainEntityOfPage: { '@type': 'WebPage', '@id': 'https://sabaccountai.com/blog/medicare-levy-exemption-international-students' },
 }
 
 export default function MedicarePage() {

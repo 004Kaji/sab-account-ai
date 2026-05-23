@@ -67,7 +67,30 @@
       "Bash(grep -E \"^pg$|^postgres$|^@neondatabase\")",
       "Bash(security find-generic-password *)",
       "Bash(security find-internet-password *)",
-      "Bash(npx supabase *)"
+      "Bash(npx supabase *)",
+      "Bash(claude mcp *)",
+      "Bash(xargs kill -9)",
+      "Bash(echo \"started PID $!\")",
+      "Bash(echo \"restarted PID $!\")",
+      "Bash(sed -n '576,580p' /Users/sanjogbasnet/Desktop/sab-account-ai-project/src/app/\\\\\\(app\\\\\\)/settings/page.tsx)",
+      "Bash(sed -n '683,687p' /Users/sanjogbasnet/Desktop/sab-account-ai-project/src/app/\\\\\\(app\\\\\\)/settings/page.tsx)",
+      "Bash(sed -n '643,648p' /Users/sanjogbasnet/Desktop/sab-account-ai-project/src/app/\\\\\\(app\\\\\\)/settings/page.tsx)",
+      "Bash(sed -n '429,432p' /Users/sanjogbasnet/Desktop/sab-account-ai-project/src/app/\\\\\\(app\\\\\\)/settings/page.tsx)",
+      "Bash(sed -n '454,458p' /Users/sanjogbasnet/Desktop/sab-account-ai-project/src/app/\\\\\\(app\\\\\\)/settings/page.tsx)",
+      "Bash(grep -n \"features\\\\|price\\\\|\\\\$9\\\\|\\\\$19\\\\|\\\\$0\\\\|free\\\\|starter\\\\|pro\" /Users/sanjogbasnet/Desktop/sab-account-ai-project/src/app/\\\\\\(app\\\\\\)/settings/page.tsx)",
+      "Bash(pandoc --version)",
+      "Bash(npx md-to-pdf *)",
+      "Skill(vercel:deploy)",
+      "Bash(xargs cat)",
+      "Bash(dig NS sabaccountai.com +short)",
+      "Bash(dig MX sabaccountai.com +short)",
+      "Bash(dig MX *)",
+      "Bash(pip3 install *)",
+      "Bash(grep -i \"price\\\\|19\\\\|29\\\\|\\\\$\")",
+      "WebFetch(domain:www.googleapis.com)",
+      "WebFetch(domain:sabaccountai.com.au)",
+      "WebFetch(domain:sabaccountai.com)",
+      "Bash(xargs sed -i '' 's|https://sabaccountai\\\\.com\\\\.au|https://sabaccountai.com|g')"
     ]
   }
 }

@@ -4,11 +4,11 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'PAYG Withholding Calculator Australia: How to Work Out the Right Amount',
   description: 'Get PAYG wrong and your employees face a big tax bill at year end. This guide walks through the ATO tax scales with real worked examples for 2025–26.',
-  alternates: { canonical: 'https://sabaccountai.com.au/blog/payg-withholding-calculator-australia' },
+  alternates: { canonical: 'https://sabaccountai.com/blog/payg-withholding-calculator-australia' },
   openGraph: {
     title: 'PAYG Withholding Calculator Australia: How to Work Out the Right Amount',
     description: 'Get PAYG wrong and your employees face a big tax bill at year end. This guide walks through the ATO tax scales with real worked examples.',
-    url: 'https://sabaccountai.com.au/blog/payg-withholding-calculator-australia',
+    url: 'https://sabaccountai.com/blog/payg-withholding-calculator-australia',
     siteName: 'SAB Account AI',
     locale: 'en_AU',
     type: 'article',
@@ -22,9 +22,9 @@ const ARTICLE_SCHEMA = {
   description: 'Get PAYG wrong and your employees face a big tax bill at year end. This guide walks through the ATO tax scales with real worked examples for 2025–26.',
   datePublished: '2026-05-12',
   dateModified: '2026-05-12',
-  author: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com.au' },
-  publisher: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com.au' },
-  mainEntityOfPage: { '@type': 'WebPage', '@id': 'https://sabaccountai.com.au/blog/payg-withholding-calculator-australia' },
+  author: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com' },
+  publisher: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com' },
+  mainEntityOfPage: { '@type': 'WebPage', '@id': 'https://sabaccountai.com/blog/payg-withholding-calculator-australia' },
 }
 
 export default function PaygPage() {

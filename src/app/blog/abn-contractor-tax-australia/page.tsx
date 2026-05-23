@@ -4,11 +4,11 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'ABN Contractor Tax Australia: How to Handle Tax When You\'re Self-Employed',
   description: 'As an ABN contractor you\'re responsible for your own tax. Learn how to set aside the right amount, lodge your BAS, manage GST, and avoid ATO surprises at year end.',
-  alternates: { canonical: 'https://sabaccountai.com.au/blog/abn-contractor-tax-australia' },
+  alternates: { canonical: 'https://sabaccountai.com/blog/abn-contractor-tax-australia' },
   openGraph: {
     title: 'ABN Contractor Tax Australia: How to Handle Tax When You\'re Self-Employed',
     description: 'As an ABN contractor you\'re responsible for your own tax. Learn how to set aside the right amount and avoid ATO surprises.',
-    url: 'https://sabaccountai.com.au/blog/abn-contractor-tax-australia',
+    url: 'https://sabaccountai.com/blog/abn-contractor-tax-australia',
     siteName: 'SAB Account AI',
     locale: 'en_AU',
     type: 'article',
@@ -22,9 +22,9 @@ const ARTICLE_SCHEMA = {
   description: 'As an ABN contractor you\'re responsible for your own tax. Learn how to set aside the right amount, lodge your BAS, and avoid ATO surprises.',
   datePublished: '2026-04-28',
   dateModified: '2026-04-28',
-  author: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com.au' },
-  publisher: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com.au' },
-  mainEntityOfPage: { '@type': 'WebPage', '@id': 'https://sabaccountai.com.au/blog/abn-contractor-tax-australia' },
+  author: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com' },
+  publisher: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com' },
+  mainEntityOfPage: { '@type': 'WebPage', '@id': 'https://sabaccountai.com/blog/abn-contractor-tax-australia' },
 }
 
 export default function AbnContractorPage() {

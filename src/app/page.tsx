@@ -6,7 +6,7 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'SAB Account AI — ATO-Compliant Invoicing for Australian Small Business',
   description: 'Create professional tax invoices in 30 seconds with AI. ATO-verified PAYG payslips for Australian small businesses, freelancers and international workers. Free plan available.',
-  alternates: { canonical: 'https://sabaccountai.com.au' },
+  alternates: { canonical: 'https://sabaccountai.com' },
 }
 
 const FEATURES = [
@@ -117,8 +117,8 @@ const SOFTWARE_SCHEMA = {
     { '@type': 'Offer', price: '19', priceCurrency: 'AUD', name: 'Pro'     },
   ],
   description: 'AI-powered invoicing and ATO-compliant payslips for Australian small businesses and freelancers.',
-  url: 'https://sabaccountai.com.au',
-  screenshot: 'https://sabaccountai.com.au/og-image.png',
+  url: 'https://sabaccountai.com',
+  screenshot: 'https://sabaccountai.com/og-image.png',
   featureList: [
     'AI invoice generation',
     'ATO-compliant PAYG calculation',
@@ -179,11 +179,11 @@ const ORG_SCHEMA = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
   name: 'SAB Account AI',
-  url: 'https://sabaccountai.com.au',
-  logo: 'https://sabaccountai.com.au/icon-512.png',
+  url: 'https://sabaccountai.com',
+  logo: 'https://sabaccountai.com/icon-512.png',
   contactPoint: {
     '@type': 'ContactPoint',
-    email: 'support@sabaccountai.com.au',
+    email: 'support@sabaccountai.com',
     contactType: 'customer support',
   },
   areaServed: 'AU',
@@ -453,7 +453,7 @@ export default function HomePage() {
             <div>
               <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--char)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '0.625rem' }}>Contact</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                <a href="mailto:support@sabaccountai.com.au" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>support@sabaccountai.com.au</a>
+                <a href="mailto:support@sabaccountai.com" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>support@sabaccountai.com</a>
               </div>
             </div>
           </div>
