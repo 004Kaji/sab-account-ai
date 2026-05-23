@@ -3,6 +3,8 @@ import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
   title: 'Privacy Policy — SAB Account AI',
+  description: 'Privacy Policy for SAB Account AI. Learn how we collect, use and protect your data in accordance with the Australian Privacy Act 1988.',
+  alternates: { canonical: 'https://sabaccountai.com.au/privacy' },
 }
 
 const UPDATED  = '20 May 2026'
@@ -54,7 +56,7 @@ export default function PrivacyPage() {
           <ul>
             <li><strong>Directly from you</strong> when you create an account, enter business or financial data, or contact us.</li>
             <li><strong>Automatically</strong> through cookies, server logs, and analytics tools as you use the service.</li>
-            <li><strong>From third-party services</strong> such as Supabase (authentication and database), Stripe (payments), and Resend (email delivery), which process data on our behalf.</li>
+            <li><strong>From third-party services</strong> such as Supabase (authentication and database), Stripe (payments), Resend (email delivery), and Vercel (hosting and edge network), which process data on our behalf.</li>
           </ul>
         </Section>
 
@@ -74,7 +76,7 @@ export default function PrivacyPage() {
         <Section title="5. Disclosure of Your Information">
           <p>We may share your personal information with:</p>
           <ul>
-            <li><strong>Sub-processors</strong> that help us operate the service, including Supabase (database/auth, servers in Australia and US), Stripe (payment processing), Resend (email delivery), and Anthropic (AI generation — only the content of your invoice prompts). Each is bound by confidentiality obligations and their own privacy policies.</li>
+            <li><strong>Sub-processors</strong> that help us operate the service, including Supabase (database/auth, servers in Australia and US), Stripe (payment processing), Resend (email delivery), Anthropic (AI generation — only the content of your invoice prompts), and Vercel (application hosting and global CDN — processes request metadata including IP addresses). Each is bound by confidentiality obligations and their own privacy policies.</li>
             <li><strong>Legal authorities</strong> where required by Australian law, a court order, or to protect our legal rights.</li>
             <li><strong>Business transfers:</strong> in the event of a merger, acquisition, or sale of assets, your information may be transferred, subject to the same privacy protections.</li>
           </ul>

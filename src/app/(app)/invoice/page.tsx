@@ -41,10 +41,25 @@ interface ClientRecord {
 
 const PAYMENT_TERMS = ['7 days', '14 days', '30 days', 'On receipt'] as const
 
+// Creates one blank line item with a unique ID.
+// Called when the page loads (first empty row) and when user clicks "+ Add Line".
+// uid() generates a random ID so React can track each row separately.
 function defaultItem(): LineItem {
   return { id: uid(), description: '', qty: 1, unit_price: 0, has_gst: true, amount: 0 }
 }
 
+// Calculates the three totals shown at the bottom of the invoice.
+// Called automatically every time any line item changes (live, as the user types).
+//
+// ⚠️  NEVER CHANGE THE GST FORMULA. GST in Australia is always 10% ON TOP of the
+//     ex-GST price. The formula is: amount x 10 / 100 (same as amount x 0.10).
+//     Do not change this to 1/11 — that would calculate GST from an inc-GST amount,
+//     which is the wrong direction for this app.
+//
+// Real example: 3 days labour at $550/day (GST applies)
+//   amount = 3 x $550 = $1,650 (ex GST)
+//   GST = $1,650 x 10 / 100 = $165
+//   Total inc GST = $1,650 + $165 = $1,815
 function calcTotals(items: LineItem[]) {
   const subtotal_ex_gst = items.reduce((s, it) => s + it.amount, 0)
   const total_gst = items.reduce((s, it) => s + (it.has_gst ? Math.round(it.amount * 10) / 100 : 0), 0)
@@ -56,6 +71,9 @@ function calcTotals(items: LineItem[]) {
   }
 }
 
+// Converts a payment terms string into a number of days.
+// Used to auto-calculate the due date when the user picks payment terms.
+// "On receipt" returns 0 because the due date equals the issue date.
 function termsToDays(terms: string): number {
   if (terms === '7 days') return 7
   if (terms === '14 days') return 14
@@ -148,6 +166,9 @@ function InvoicePreview({ form, biz, totals }: {
   )
 }
 
+// Creates a fresh blank invoice form with today's date and a 14-day due date.
+// Called when the page loads and when the user clicks "Create Another Invoice".
+// invoiceNumber is passed in so the form starts with the correct next number.
 function makeForm(invoiceNumber: string) {
   const today = todayISO()
   return {
@@ -172,28 +193,45 @@ type InvoiceForm = ReturnType<typeof makeForm>
 
 export default function InvoicePage() {
   const router = useRouter()
-  const profile = useProfile()
-  const { toast } = useToast()
+  const profile = useProfile()   // Reads the logged-in user's plan (free/pro) and business name
+  const { toast } = useToast()   // The function that shows popup notification messages
+
+  // Set the browser tab title when the page loads
   useEffect(() => { document.title = 'Create Invoice — SAB Account AI' }, [])
 
-  const [biz, setBiz] = useState<BizProfile | null>(null)
-  const [clients, setClients] = useState<ClientRecord[]>([])
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
-  const [savingClient, setSavingClient] = useState(false)
-  const [clientSaved, setClientSaved] = useState(false)
-  const [form, setForm] = useState<InvoiceForm>(makeForm('INV-…'))
-  const [mode, setMode] = useState<'ai' | 'manual'>('ai')
-  const [aiPrompt, setAiPrompt] = useState('')
-  const [aiLoading, setAiLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [savedInvoice, setSavedInvoice] = useState<{ id: string; number: string } | null>(null)
-  const [emailTo, setEmailTo] = useState('')
-  const [emailSending, setEmailSending] = useState(false)
-  const [emailSent, setEmailSent] = useState(false)
-  const [pdfDownloaded, setPdfDownloaded] = useState(false)
+  // ── WHITEBOARD (useState) ─────────────────────────────────────────────
+  // Each line below is one "slot" on the whiteboard.
+  // Format: const [currentValue, functionToUpdateIt] = useState(startingValue)
+  // When any value changes, React redraws the parts of the screen that use it.
 
+  const [biz, setBiz] = useState<BizProfile | null>(null)           // Your business profile (name, ABN, etc)
+  const [clients, setClients] = useState<ClientRecord[]>([])         // Your saved client list for autocomplete
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null) // Which saved client is selected (if any)
+  const [savingClient, setSavingClient] = useState(false)            // True while "Save client" button is working
+  const [clientSaved, setClientSaved] = useState(false)             // True after client has been saved to list
+  const [form, setForm] = useState<InvoiceForm>(makeForm('INV-…'))  // All the invoice form fields — the main whiteboard
+  const [mode, setMode] = useState<'ai' | 'manual'>('ai')           // Which tab is active: AI mode or Manual mode
+  const [aiPrompt, setAiPrompt] = useState('')                       // The text the user typed in the AI description box
+  const [aiLoading, setAiLoading] = useState(false)                  // True while waiting for Claude to respond
+  const [saving, setSaving] = useState(false)                        // True while saving to Supabase
+  const [savedInvoice, setSavedInvoice] = useState<{ id: string; number: string } | null>(null) // Set after save — triggers success screen
+  const [emailTo, setEmailTo] = useState('')                         // Email address to send the invoice to
+  const [emailSending, setEmailSending] = useState(false)           // True while the email is sending
+  const [emailSent, setEmailSent] = useState(false)                 // True after email sent successfully
+  const [pdfDownloaded, setPdfDownloaded] = useState(false)         // True after PDF downloaded (triggers referral banner)
+
+  // ── LIVE TOTALS ───────────────────────────────────────────────────────
+  // This line recalculates subtotal, GST, and total every time form.line_items changes.
+  // It is NOT in a useState — it recalculates automatically on every render.
+  // This is what makes the preview update live as you type.
   const totals = calcTotals(form.line_items)
 
+  // ── ON PAGE LOAD: fetch data from database ────────────────────────────
+  // useEffect with [] at the end means "run this once, when the page first opens."
+  // It fetches three things at the same time (Promise.all = fetch all three in parallel):
+  //   1. Your business profile (name, ABN, email, phone, address)
+  //   2. Your most recent invoice (to calculate the next invoice number)
+  //   3. Your saved client list (for the autocomplete dropdown)
   useEffect(() => {
     async function load() {
       const supabase = createBrowserClient()
@@ -216,6 +254,9 @@ export default function InvoicePage() {
     load()
   }, [])
 
+  // Updates a single field in the form (e.g. setField('client_name', 'John Smith')).
+  // Also auto-recalculates the due date whenever payment terms or issue date changes.
+  // This is called by every input's onChange handler.
   const setField = useCallback(<K extends keyof InvoiceForm>(key: K, value: InvoiceForm[K]) => {
     setForm(prev => {
       const next = { ...prev, [key]: value }
@@ -226,6 +267,8 @@ export default function InvoicePage() {
     })
   }, [])
 
+  // Updates one line item (e.g. changing quantity or unit price).
+  // Also recalculates that line's amount (qty x unit_price) automatically.
   function updateItem(id: string, patch: Partial<LineItem>) {
     setForm(prev => ({
       ...prev,
@@ -238,10 +281,12 @@ export default function InvoicePage() {
     }))
   }
 
+  // Adds a new blank row to the line items list when user clicks "+ Add Line"
   function addItem() {
     setForm(prev => ({ ...prev, line_items: [...prev.line_items, defaultItem()] }))
   }
 
+  // Removes a line item by its ID. Won't remove the last row — minimum is always 1.
   function removeItem(id: string) {
     setForm(prev => ({
       ...prev,
@@ -249,6 +294,11 @@ export default function InvoicePage() {
     }))
   }
 
+  // ── AI GENERATION ────────────────────────────────────────────────────
+  // Called when the user clicks "Generate Invoice".
+  // Gets the user's session token, sends the text description to
+  // /api/invoice/generate, and fills the form with Claude's response.
+  // If anything fails (no credit, network error), shows a red toast.
   async function handleGenerate() {
     if (!aiPrompt.trim()) return
     setAiLoading(true)
@@ -276,6 +326,16 @@ export default function InvoicePage() {
     }
   }
 
+  // ── SAVE INVOICE ─────────────────────────────────────────────────────
+  // Called when user clicks "Save Invoice" (status='pending') or
+  // "Save as Draft" (status='draft').
+  //
+  // It does three things in order:
+  //   1. Validates — checks client name and line items are filled in
+  //   2. Free plan check — blocks if the user has already made 3 invoices this month
+  //   3. Saves to Supabase — inserts a new row into the invoices table
+  //
+  // After saving, sets savedInvoice which triggers the success screen.
   async function handleSave(status: 'draft' | 'pending') {
     if (!form.client_name.trim()) { toast('Client name is required', 'error'); return }
     if (form.line_items.every(it => !it.description.trim())) { toast('Add at least one line item', 'error'); return }
@@ -334,6 +394,14 @@ export default function InvoicePage() {
     }
   }
 
+  // ── DOWNLOAD PDF ──────────────────────────────────────────────────────
+  // Generates a PDF from the current form data and triggers a browser download.
+  // This runs entirely in the browser — no server involved.
+  // The pdf.ts library is loaded "lazily" (only when needed) to keep the app fast.
+  //
+  // ⚠️  The PDF is generated from the CURRENT form data, not from the database.
+  //     If the user hasn't saved yet, the PDF won't appear in their invoice records.
+  //     Always save the invoice before downloading if you want it in your records.
   async function handleDownloadPDF() {
     const { downloadInvoicePDF } = await import('@/lib/pdf')
     await downloadInvoicePDF({

@@ -4,7 +4,9 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'SAB Account AI — Smart Invoicing for Australian Small Business',
+  title: 'SAB Account AI — ATO-Compliant Invoicing for Australian Small Business',
+  description: 'Create professional tax invoices in 30 seconds with AI. ATO-verified PAYG payslips for Australian small businesses, freelancers and international workers. Free plan available.',
+  alternates: { canonical: 'https://sabaccountai.com.au' },
 }
 
 const FEATURES = [
@@ -103,9 +105,97 @@ function Check({ highlight }: { highlight: boolean }) {
   )
 }
 
+const SOFTWARE_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'SAB Account AI',
+  applicationCategory: 'BusinessApplication',
+  operatingSystem: 'Web Browser',
+  offers: [
+    { '@type': 'Offer', price: '0',  priceCurrency: 'AUD', name: 'Free'    },
+    { '@type': 'Offer', price: '9',  priceCurrency: 'AUD', name: 'Starter' },
+    { '@type': 'Offer', price: '19', priceCurrency: 'AUD', name: 'Pro'     },
+  ],
+  description: 'AI-powered invoicing and ATO-compliant payslips for Australian small businesses and freelancers.',
+  url: 'https://sabaccountai.com.au',
+  screenshot: 'https://sabaccountai.com.au/og-image.png',
+  featureList: [
+    'AI invoice generation',
+    'ATO-compliant PAYG calculation',
+    'Medicare levy exemption for international workers',
+    'ABN contractor payments',
+    'BAS estimate calculator',
+  ],
+}
+
+const FAQ_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: [
+    {
+      '@type': 'Question',
+      name: 'How much does SAB Account AI cost?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Free plan includes 3 invoices per month. Starter plan is $9/month with unlimited invoices and AI generation. Pro plan is $19/month and adds ATO-compliant PAYG payslips, superannuation tracking, and BAS estimates.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Is SAB Account AI ATO compliant?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Yes. PAYG calculations are verified across 19 ATO tax scenarios including Medicare levy, LITO, HELP/HECS debt repayment, and all visa types including working holiday makers and international students.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Can international students use SAB Account AI?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Yes. SAB Account AI correctly handles Medicare levy exemption for international students and other temporary visa holders. The payslip calculator applies the ATO-approved exemption automatically.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Does it handle working holiday maker tax?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Yes. Working holiday maker visa 417 and 462 tax (ATO Scale 15 — 15% flat rate on the first $45,000) is built in and applied automatically when you select the WHM visa type.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'How long does it take to create an invoice?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'About 30 seconds. Describe your job in plain English and the AI generates a professional ATO-compliant tax invoice with correct GST calculations instantly.',
+      },
+    },
+  ],
+}
+
+const ORG_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'SAB Account AI',
+  url: 'https://sabaccountai.com.au',
+  logo: 'https://sabaccountai.com.au/icon-512.png',
+  contactPoint: {
+    '@type': 'ContactPoint',
+    email: 'support@sabaccountai.com.au',
+    contactType: 'customer support',
+  },
+  areaServed: 'AU',
+  knowsAbout: ['Australian tax', 'PAYG withholding', 'GST', 'Superannuation', 'ATO compliance'],
+}
+
 export default function HomePage() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--cream)' }}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(SOFTWARE_SCHEMA) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_SCHEMA) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ORG_SCHEMA) }} />
 
       {/* ── Navigation ─────────────────────────────────────────── */}
       <nav style={{
@@ -132,6 +222,7 @@ export default function HomePage() {
         {/* Nav links */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
           <a href="#pricing" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Pricing</a>
+          <a href="/blog" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Blog</a>
           <a href="/login" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Sign in</a>
           <a href="/signup" className="btn btn-ember" style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
             Get started free
@@ -193,6 +284,11 @@ export default function HomePage() {
 
         <p style={{ marginTop: '1rem', fontSize: '0.8125rem', color: 'var(--text3)' }}>
           No credit card required · 14-day free trial on paid plans
+        </p>
+        <p style={{ marginTop: '0.75rem', fontSize: '0.8125rem' }}>
+          <a href="/blog" style={{ color: 'var(--ember)', textDecoration: 'none' }}>
+            Read our Australian tax guides →
+          </a>
         </p>
       </section>
 
@@ -315,24 +411,62 @@ export default function HomePage() {
       {/* ── Footer ─────────────────────────────────────────────── */}
       <footer style={{
         borderTop: '1px solid var(--border)',
-        padding: '2rem 1.5rem',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '1rem',
+        padding: '2.5rem 1.5rem',
         maxWidth: '1000px',
         margin: '0 auto',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--ember)" strokeWidth={1.75}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-          </svg>
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)' }}>SAB Account AI</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>
+          {/* Brand */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--ember)" strokeWidth={1.75}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+              </svg>
+              <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--char)' }}>SAB Account AI</span>
+            </div>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', lineHeight: 1.6 }}>
+              ATO-compliant invoicing and payroll<br />for Australian small businesses.
+            </p>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', marginTop: '0.375rem' }}>
+              ABN: 49 541 449 108
+            </p>
+          </div>
+
+          {/* Links */}
+          <div style={{ display: 'flex', gap: '3rem', flexWrap: 'wrap' }}>
+            <div>
+              <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--char)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '0.625rem' }}>Product</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                <a href="#pricing" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Pricing</a>
+                <a href="/signup" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Sign up free</a>
+                <a href="/login" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Sign in</a>
+              </div>
+            </div>
+            <div>
+              <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--char)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '0.625rem' }}>Resources</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                <a href="/blog" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Australian tax guides</a>
+                <a href="/terms" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Terms of Service</a>
+                <a href="/privacy" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Privacy Policy</a>
+              </div>
+            </div>
+            <div>
+              <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--char)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '0.625rem' }}>Contact</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                <a href="mailto:support@sabaccountai.com.au" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>support@sabaccountai.com.au</a>
+              </div>
+            </div>
+          </div>
         </div>
-        <p style={{ fontSize: '0.8125rem', color: 'var(--text3)' }}>
-          © {new Date().getFullYear()} SAB Account AI. For productivity purposes only — not a registered tax agent.
-        </p>
+
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1.25rem', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text3)' }}>
+            © {new Date().getFullYear()} SAB Account AI. For productivity purposes only — not a registered tax agent.
+          </p>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text3)' }}>
+            Made in Australia 🇦🇺
+          </p>
+        </div>
       </footer>
     </div>
   )

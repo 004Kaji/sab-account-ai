@@ -3,6 +3,8 @@ import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
   title: 'Terms of Service — SAB Account AI',
+  description: 'Terms of Service for SAB Account AI — ATO-compliant invoicing and payslip software for Australian small businesses.',
+  alternates: { canonical: 'https://sabaccountai.com.au/terms' },
 }
 
 const UPDATED  = '20 May 2026'

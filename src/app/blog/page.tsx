@@ -1,0 +1,167 @@
+import Link from 'next/link'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Australian Tax Guides — SAB Account AI Blog',
+  description: 'Free guides for Australian small businesses and sole traders: GST invoices, PAYG withholding, Medicare levy, superannuation, and ABN contractor tax explained clearly.',
+  alternates: { canonical: 'https://sabaccountai.com.au/blog' },
+  openGraph: {
+    title: 'Australian Tax Guides — SAB Account AI Blog',
+    description: 'Free guides for Australian small businesses and sole traders: GST, PAYG, Medicare levy, super, and ABN contractor tax.',
+    url: 'https://sabaccountai.com.au/blog',
+    siteName: 'SAB Account AI',
+    locale: 'en_AU',
+    type: 'website',
+  },
+}
+
+const POSTS = [
+  {
+    slug: 'gst-invoice-template-australia',
+    title: 'GST Invoice Template Australia: What Every Tax Invoice Must Include',
+    excerpt: 'The ATO has strict rules about what makes a valid tax invoice. Missing even one required field means your clients can\'t claim GST credits. Here\'s exactly what to include.',
+    date: '15 May 2026',
+    readTime: '6 min read',
+    tag: 'GST',
+  },
+  {
+    slug: 'payg-withholding-calculator-australia',
+    title: 'PAYG Withholding Calculator Australia: How to Work Out the Right Amount',
+    excerpt: 'Get PAYG wrong and your employees face a big tax bill at year end — or you face ATO penalties. This guide walks through the ATO tax scales with real worked examples.',
+    date: '12 May 2026',
+    readTime: '8 min read',
+    tag: 'PAYG',
+  },
+  {
+    slug: 'medicare-levy-exemption-international-students',
+    title: 'Medicare Levy Exemption for International Students in Australia',
+    excerpt: 'Most temporary visa holders are exempt from the 2% Medicare levy — but only if you apply correctly. We explain who qualifies, how to apply, and what to do on your tax return.',
+    date: '8 May 2026',
+    readTime: '5 min read',
+    tag: 'Medicare',
+  },
+  {
+    slug: 'super-guarantee-rate-australia-2025',
+    title: 'Super Guarantee Rate Australia 2025–26: What Employers Must Pay',
+    excerpt: 'The Super Guarantee rate rose to 12% on 1 July 2025. This guide explains who must pay it, how to calculate it correctly, and when it rises again.',
+    date: '2 May 2026',
+    readTime: '5 min read',
+    tag: 'Super',
+  },
+  {
+    slug: 'abn-contractor-tax-australia',
+    title: 'ABN Contractor Tax Australia: How to Handle Tax When You\'re Self-Employed',
+    excerpt: 'As an ABN contractor you\'re responsible for your own tax — no employer withholds it for you. Learn how to set aside the right amount, lodge your BAS, and avoid ATO surprises.',
+    date: '28 Apr 2026',
+    readTime: '7 min read',
+    tag: 'ABN',
+  },
+]
+
+const TAG_COLORS: Record<string, string> = {
+  GST: '#d97706',
+  PAYG: '#2563eb',
+  Medicare: '#059669',
+  Super: '#7c3aed',
+  ABN: '#dc2626',
+}
+
+export default function BlogPage() {
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--cream)' }}>
+      {/* Nav */}
+      <header style={{ background: 'var(--char)', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '0 1.5rem', height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
+          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="var(--ember)" strokeWidth={1.75}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+          </svg>
+          <span style={{ color: '#fff', fontWeight: 600, fontSize: '0.9375rem' }}>SAB Account AI</span>
+        </Link>
+        <div style={{ display: 'flex', gap: '1rem', fontSize: '0.875rem', alignItems: 'center' }}>
+          <Link href="#pricing" style={{ color: 'rgba(255,255,255,0.6)', textDecoration: 'none' }}>Pricing</Link>
+          <Link href="/login" style={{ color: 'rgba(255,255,255,0.6)', textDecoration: 'none' }}>Sign In</Link>
+          <Link href="/signup" style={{ color: 'var(--ember)', textDecoration: 'none', fontWeight: 600 }}>Get started free</Link>
+        </div>
+      </header>
+
+      <main style={{ maxWidth: '780px', margin: '0 auto', padding: '3rem 1.5rem 5rem' }}>
+        <h1 style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--char)', marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>
+          Australian Tax Guides
+        </h1>
+        <p style={{ fontSize: '1rem', color: 'var(--text2)', marginBottom: '2.5rem', lineHeight: 1.6 }}>
+          Plain-English guides for Australian small businesses and sole traders — GST, PAYG, super, and more.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {POSTS.map((post) => (
+            <Link
+              key={post.slug}
+              href={`/blog/${post.slug}`}
+              style={{ textDecoration: 'none', display: 'block' }}
+            >
+              <article style={{
+                background: '#ffffff',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r)',
+                padding: '1.5rem',
+                transition: 'box-shadow 0.15s',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                  <span style={{
+                    fontSize: '0.6875rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
+                    color: TAG_COLORS[post.tag] ?? 'var(--ember)',
+                    background: `${TAG_COLORS[post.tag] ?? 'var(--ember)'}18`,
+                    padding: '0.2rem 0.5rem',
+                    borderRadius: '4px',
+                  }}>
+                    {post.tag}
+                  </span>
+                  <span style={{ fontSize: '0.8125rem', color: 'var(--text3)' }}>{post.date} · {post.readTime}</span>
+                </div>
+                <h2 style={{ fontSize: '1.0625rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.5rem', lineHeight: 1.4 }}>
+                  {post.title}
+                </h2>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text2)', lineHeight: 1.6 }}>
+                  {post.excerpt}
+                </p>
+                <p style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: 'var(--ember)', fontWeight: 500 }}>
+                  Read guide →
+                </p>
+              </article>
+            </Link>
+          ))}
+        </div>
+
+        <div style={{ marginTop: '3rem', padding: '1.5rem', background: 'var(--ember-p)', borderRadius: 'var(--r)', textAlign: 'center' }}>
+          <p style={{ fontSize: '0.9375rem', color: 'var(--char)', fontWeight: 600, marginBottom: '0.5rem' }}>
+            Ready to put this into practice?
+          </p>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text2)', marginBottom: '1rem' }}>
+            SAB Account AI handles GST invoices, PAYG payslips, and expense tracking — all ATO-compliant.
+          </p>
+          <Link href="/signup" style={{
+            display: 'inline-block',
+            background: 'var(--ember)',
+            color: '#fff',
+            padding: '0.625rem 1.25rem',
+            borderRadius: 'var(--r)',
+            fontSize: '0.875rem',
+            fontWeight: 600,
+            textDecoration: 'none',
+          }}>
+            Start free — no credit card
+          </Link>
+        </div>
+      </main>
+
+      <footer style={{ borderTop: '1px solid var(--border)', padding: '1.5rem', textAlign: 'center', fontSize: '0.8125rem', color: 'var(--text3)' }}>
+        © {new Date().getFullYear()} SAB Account AI ·{' '}
+        <Link href="/terms" style={{ color: 'var(--text3)' }}>Terms</Link> ·{' '}
+        <Link href="/privacy" style={{ color: 'var(--text3)' }}>Privacy</Link>
+      </footer>
+    </div>
+  )
+}

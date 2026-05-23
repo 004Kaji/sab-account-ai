@@ -1,0 +1,18 @@
+User-agent: *
+Disallow: /dashboard
+Disallow: /invoice
+Disallow: /payslip
+Disallow: /records
+Disallow: /settings
+Disallow: /clients
+Disallow: /employees
+Disallow: /employers
+Disallow: /abn-payments
+Disallow: /api/
+Allow: /
+Allow: /blog
+Allow: /pricing
+Allow: /terms
+Allow: /privacy
+
+Sitemap: https://sabaccountai.com.au/sitemap.xml
