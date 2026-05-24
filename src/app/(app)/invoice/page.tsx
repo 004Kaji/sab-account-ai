@@ -730,12 +730,14 @@ export default function InvoicePage() {
       </div>
 
       <style>{`
-        @media (max-width: 900px) { .invoice-grid { grid-template-columns: 1fr !important; } }
-        @media (max-width: 640px) {
-          .invoice-preview-col { display: none !important; }
+        @media (max-width: 1024px) { .invoice-grid { grid-template-columns: 1fr !important; } }
+        @media (max-width: 1024px) {
           .form-grid-2 { grid-template-columns: 1fr !important; }
           .line-items-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
           .line-items-row { min-width: 450px; }
+        }
+        @media (max-width: 640px) {
+          .invoice-preview-col { display: none !important; }
         }
       `}</style>
 

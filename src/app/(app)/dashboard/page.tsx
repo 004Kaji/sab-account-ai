@@ -648,7 +648,7 @@ export default function DashboardPage() {
       )}
 
       <style>{`
-        @media (max-width: 900px) {
+        @media (max-width: 1024px) {
           .dashboard-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
