@@ -259,6 +259,7 @@ export interface InvoicePDFData {
   bsb: string
   account_number: string
   notes: string
+  payment_link?: string
 }
 
 async function buildInvoiceDoc(data: InvoicePDFData) {
@@ -460,6 +461,23 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
     doc.setTextColor(28, 25, 23)
     const noteLines = doc.splitTextToSize(data.notes, cW)
     doc.text(noteLines, margin, y)
+    y += noteLines.length * 5
+  }
+
+  // ── Pay online ─────────────────────────────────────────────────────
+  if (data.payment_link) {
+    y += 6
+    doc.setFillColor(200, 75, 47, 0.08)
+    doc.setDrawColor(200, 75, 47)
+    doc.roundedRect(margin, y, cW, 12, 2, 2, 'S')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.setTextColor(200, 75, 47)
+    doc.text('Pay online:', margin + 4, y + 7.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(28, 25, 23)
+    doc.text(data.payment_link, margin + 26, y + 7.5)
+    y += 15
   }
 
   // ── Footer ─────────────────────────────────────────────────────────

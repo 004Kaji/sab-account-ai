@@ -295,6 +295,7 @@ export default function DashboardPage() {
   const [kpis, setKpis]             = useState<KPIs>({ invoicedThisMonth: 0, outstanding: 0, gstToRemit: 0, superOwing: 0 })
   const [loading, setLoading]       = useState(true)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   // Keep gstCredits and superOwing stable so KPIs can be recalculated on status change
   const gstCreditsRef  = useRef(0)
@@ -495,7 +496,7 @@ export default function DashboardPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
-                    {['Invoice', 'Client', 'Issued', 'Due', 'Amount', 'Status'].map(h => (
+                    {['Invoice', 'Client', 'Issued', 'Due', 'Amount', 'Status', ''].map(h => (
                       <th key={h} style={{
                         padding: '0.625rem 1rem',
                         textAlign: 'left',
@@ -538,6 +539,32 @@ export default function DashboardPage() {
                           onStatusChange={handleStatusChange}
                           updating={updatingId === inv.id}
                         />
+                      </td>
+                      <td style={{ padding: '0.875rem 0.75rem', whiteSpace: 'nowrap' }}>
+                        {inv.status !== 'draft' && (
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${window.location.origin}/pay/${inv.id}`)
+                              setCopiedId(inv.id)
+                              setTimeout(() => setCopiedId(null), 2000)
+                            }}
+                            title="Copy payment link"
+                            style={{
+                              fontSize: '0.75rem',
+                              fontWeight: 500,
+                              padding: '0.25rem 0.625rem',
+                              borderRadius: '6px',
+                              border: '1px solid var(--border)',
+                              background: copiedId === inv.id ? 'rgba(34,197,94,0.08)' : 'transparent',
+                              color: copiedId === inv.id ? '#15803d' : 'var(--text2)',
+                              cursor: 'pointer',
+                              transition: 'all 150ms',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {copiedId === inv.id ? '✓ Copied' : '💳 Copy link'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

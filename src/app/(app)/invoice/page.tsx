@@ -219,6 +219,7 @@ export default function InvoicePage() {
   const [emailSending, setEmailSending] = useState(false)           // True while the email is sending
   const [emailSent, setEmailSent] = useState(false)                 // True after email sent successfully
   const [pdfDownloaded, setPdfDownloaded] = useState(false)         // True after PDF downloaded (triggers referral banner)
+  const [linkCopied, setLinkCopied] = useState(false)              // True for 2s after copying payment link
 
   // ── LIVE TOTALS ───────────────────────────────────────────────────────
   // This line recalculates subtotal, GST, and total every time form.line_items changes.
@@ -385,6 +386,11 @@ export default function InvoicePage() {
         notes: form.notes,
       }).select('id').single()
       if (error) throw error
+
+      // Store payment link URL in DB (no Stripe call needed — URL is deterministic)
+      const paymentLink = `${window.location.origin}/pay/${data.id}`
+      await supabase.from('invoices').update({ stripe_payment_link: paymentLink }).eq('id', data.id)
+
       setSavedInvoice({ id: data.id, number: form.invoice_number })
       if (form.client_email) setEmailTo(form.client_email)
     } catch (err) {
@@ -428,6 +434,7 @@ export default function InvoicePage() {
       bsb: form.bsb,
       account_number: form.account_number,
       notes: form.notes,
+      payment_link: savedInvoice ? `${window.location.origin}/pay/${savedInvoice.id}` : undefined,
     })
     setPdfDownloaded(true)
   }
@@ -485,6 +492,7 @@ export default function InvoicePage() {
         bsb: form.bsb,
         account_number: form.account_number,
         notes: form.notes,
+        payment_link: savedInvoice ? `${window.location.origin}/pay/${savedInvoice.id}` : undefined,
       })
       const supabase = createBrowserClient()
       const { data: { session } } = await supabase.auth.getSession()
@@ -549,6 +557,27 @@ export default function InvoicePage() {
           </div>
         )}
 
+        {/* Copy payment link */}
+        <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1.25rem', marginBottom: '1rem', textAlign: 'left' }}>
+          <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.375rem' }}>
+            💳 Online payment link
+          </p>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text2)', marginBottom: '0.875rem', lineHeight: 1.5 }}>
+            Share this link so your client can pay online by card via Stripe.
+          </p>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(`${window.location.origin}/pay/${savedInvoice.id}`)
+              setLinkCopied(true)
+              setTimeout(() => setLinkCopied(false), 2000)
+            }}
+            className="btn btn-outline"
+            style={{ width: '100%', justifyContent: 'center', color: linkCopied ? '#15803d' : 'var(--char)' }}
+          >
+            {linkCopied ? '✓ Link copied!' : '💳 Copy payment link'}
+          </button>
+        </div>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <button onClick={handleDownloadPDF} className="btn btn-ember" style={{ width: '100%' }}>Download PDF</button>
           <button
@@ -558,6 +587,7 @@ export default function InvoicePage() {
               setMode('ai')
               setEmailTo('')
               setEmailSent(false)
+              setLinkCopied(false)
               setSelectedClientId(null)
               setClientSaved(false)
               setForm(makeForm(generateInvoiceNumber(parseInt(savedInvoice.number.split('-')[2] ?? '1') + 1)))

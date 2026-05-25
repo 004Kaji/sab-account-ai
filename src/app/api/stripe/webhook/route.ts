@@ -44,6 +44,48 @@ export async function POST(request: NextRequest) {
 
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
+
+        // ── Invoice payment (one-off) ──────────────────────────────────
+        if (session.metadata?.type === 'invoice_payment') {
+          const invoiceId     = session.metadata.invoiceId
+          const invoiceNumber = session.metadata.invoiceNumber
+          const businessName  = session.metadata.businessName ?? ''
+          const businessEmail = session.metadata.businessEmail ?? ''
+          const clientName    = session.metadata.clientName ?? ''
+          const clientEmail   = session.metadata.clientEmail ?? ''
+          const amount        = session.amount_total != null
+            ? '$' + (session.amount_total / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+            : ''
+
+          await supabase.from('invoices')
+            .update({ status: 'paid', paid_at: new Date().toISOString() })
+            .eq('id', invoiceId)
+
+          const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
+
+          // Email business owner
+          if (businessEmail) {
+            await fetch(`${base}/api/email/payment-received`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ to: businessEmail, businessName, clientName, invoiceNumber, amount }),
+            })
+          }
+
+          // Email client
+          if (clientEmail) {
+            await fetch(`${base}/api/email/payment-confirmed`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ to: clientEmail, clientName, businessName, invoiceNumber, amount }),
+            })
+          }
+
+          console.log(`✅ Invoice ${invoiceNumber} paid by ${clientName}`)
+          break
+        }
+
+        // ── Subscription checkout ──────────────────────────────────────
         const userId = session.metadata?.userId
         const plan = session.metadata?.plan
         if (!userId || !plan) break
