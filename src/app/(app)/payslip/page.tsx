@@ -590,6 +590,26 @@ export default function PayslipPage() {
           )}
         </div>
 
+        {/* Payday Super — due this pay run */}
+        <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.35)', borderRadius: 'var(--r)', padding: '1.25rem', marginBottom: '1rem', textAlign: 'left' }}>
+          <p style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#92400e', marginBottom: '0.75rem' }}>
+            ⚡ Payday Super — Due This Pay Run
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {[
+              { label: 'Amount',  value: formatCurrency(displayNumbers.totalSuper) },
+              { label: 'Due',     value: 'Within 7 business days of payment date' },
+              { label: 'Pay to',  value: form.super_fund_name || 'See employee super fund details' },
+              { label: 'Method',  value: 'SuperStream' },
+            ].map(row => (
+              <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', fontSize: '0.8125rem' }}>
+                <span style={{ color: '#78350f', fontWeight: 500, flexShrink: 0 }}>{row.label}</span>
+                <span style={{ color: '#92400e', textAlign: 'right', fontFamily: row.label === 'Amount' ? 'var(--font-mono)' : 'inherit', fontWeight: row.label === 'Amount' ? 700 : 400 }}>{row.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <button onClick={handleDownloadPDF} className="btn btn-ember" style={{ width: '100%' }}>
             Download PDF
@@ -621,6 +641,28 @@ export default function PayslipPage() {
   return (
     <PlanGate requiredPlan="pro">
       <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+
+        {/* Payday Super urgent banner */}
+        <div style={{
+          background: 'rgba(234,179,8,0.1)',
+          border: '1px solid rgba(234,179,8,0.4)',
+          borderRadius: 'var(--r)',
+          padding: '1rem 1.25rem',
+          marginBottom: '1.5rem',
+          display: 'flex',
+          gap: '0.875rem',
+          alignItems: 'flex-start',
+        }}>
+          <span style={{ fontSize: '1.25rem', lineHeight: 1, flexShrink: 0 }}>⚡</span>
+          <div>
+            <p style={{ fontSize: '0.875rem', fontWeight: 700, color: '#92400e', marginBottom: '0.25rem' }}>
+              New law from 1 July 2026: Super must be paid every payday — not quarterly.
+            </p>
+            <p style={{ fontSize: '0.8125rem', color: '#78350f', lineHeight: 1.6 }}>
+              The ATO&apos;s own clearing house closes 1 July 2026. SAB Account AI calculates your exact super amount per pay run automatically — so you always know what&apos;s due and when.
+            </p>
+          </div>
+        </div>
 
         {/* Header */}
         <div style={{ marginBottom: '1.75rem' }}>

@@ -35,6 +35,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.3,
     },
     {
+      url: `${BASE}/payday-super`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.8,
+    },
+    {
       url: `${BASE}/blog`,
       lastModified: new Date(),
       changeFrequency: 'weekly',

@@ -576,9 +576,10 @@ export default function DashboardPage() {
             <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.875rem' }}>ATO Deadlines</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {[
-                { label: 'Quarterly BAS', value: nextBasDue(),        icon: '📋' },
-                { label: 'Monthly BAS',   value: nextMonthlyBasDue(), icon: '🗓' },
-                { label: 'Super due',     value: nextSuperDue(),      icon: '🏦' },
+                { label: 'Quarterly BAS',  value: nextBasDue(),        icon: '📋' },
+                { label: 'Monthly BAS',    value: nextMonthlyBasDue(), icon: '🗓' },
+                { label: 'Super due',      value: nextSuperDue(),      icon: '🏦' },
+                { label: 'Payday Super',   value: 'Within 7 business days of each payday — from 1 Jul 2026', icon: '⚡' },
               ].map(item => (
                 <div key={item.label} style={{
                   display: 'flex', alignItems: 'flex-start', gap: '0.625rem',
