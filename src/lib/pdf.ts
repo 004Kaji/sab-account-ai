@@ -485,39 +485,6 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
   doc.text(formatCurrency(data.total_inc_gst), pageW - margin - 2, y + 6.5, { align: 'right' })
   y += 16
 
-  // ── Terms & Conditions + Thank you (left) ─────────────────────────────
-  if (data.notes?.trim()) {
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7.5)
-    doc.setTextColor(28, 25, 23)
-    doc.text('TERMS AND CONDITIONS', margin, y)
-    y += 5
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
-    doc.setTextColor(100, 95, 90)
-    const noteLines = doc.splitTextToSize(data.notes, cW * 0.55)
-    doc.text(noteLines, margin, y)
-    y += noteLines.length * 4.5 + 5
-  }
-
-  // ── Thank you + contact footer ────────────────────────────────────────
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(8)
-  doc.setTextColor(28, 25, 23)
-  doc.text('THANK YOU FOR YOUR BUSINESS', margin, y)
-  y += 6
-
-  // Pay online link (right side, same row as thank you)
-  if (data.payment_link) {
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8)
-    doc.setTextColor(28, 25, 23)
-    doc.text('Pay online:', pageW - margin, y - 14, { align: 'right' })
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(100, 95, 90)
-    doc.text(data.payment_link, pageW - margin, y - 9, { align: 'right' })
-  }
-
   // ── Footer ───────────────────────────────────────────────────────────
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.5)
