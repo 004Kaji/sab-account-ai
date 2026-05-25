@@ -129,9 +129,13 @@ export default function PaydaySuperPage() {
           Payday Super Calculator 2026
         </h1>
 
-        <p style={{ fontSize: '1.0625rem', color: 'var(--text2)', lineHeight: 1.7, marginBottom: '2.5rem' }}>
+        <p style={{ fontSize: '1.0625rem', color: 'var(--text2)', lineHeight: 1.7, marginBottom: '1.25rem' }}>
           From <strong>1 July 2026</strong>, Australian employers must pay super every payday — not quarterly. Calculate exactly how much super you owe per pay run, and see what changes for your business.
         </p>
+
+        <Link href="/blog/payday-super-2026" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.875rem', color: 'var(--ember)', fontWeight: 500, textDecoration: 'none', marginBottom: '2.5rem' }}>
+          Read the full Payday Super 2026 employer guide →
+        </Link>
 
         {/* Calculator */}
         <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1.75rem', marginBottom: '2rem' }}>
@@ -326,6 +330,18 @@ export default function PaydaySuperPage() {
           </Link>
           <p style={{ fontSize: '0.8125rem', color: 'rgba(255,255,255,0.4)', marginTop: '0.75rem' }}>No credit card required · Free plan available</p>
         </div>
+
+        {/* Further reading */}
+        <Link href="/blog/payday-super-2026" style={{ textDecoration: 'none', display: 'block', marginBottom: '2.5rem' }}>
+          <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+            <div>
+              <p style={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#7c3aed', marginBottom: '0.375rem' }}>Full guide</p>
+              <p style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.25rem' }}>Payday Super 2026: What Every Australian Employer Must Know Before 1 July</p>
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text2)' }}>7-day rule, SuperStream, penalties, preparation checklist — 9 min read</p>
+            </div>
+            <span style={{ color: 'var(--ember)', fontSize: '1.25rem', flexShrink: 0 }}>→</span>
+          </div>
+        </Link>
 
         {/* FAQ */}
         <h2 style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--char)', marginBottom: '1.25rem', letterSpacing: '-0.02em' }}>

@@ -8,7 +8,7 @@ import { useToast } from '@/components/ui/Toast'
 import PlanGate from '@/components/ui/PlanGate'
 import ReferralBanner from '@/components/ui/ReferralBanner'
 import AutocompleteDropdown from '@/components/ui/AutocompleteDropdown'
-import { calculatePayslip, isMedicareExemptByResidency, type PayslipNumbers, type ResidencyStatus } from '@/lib/ato'
+import { calculatePayslip, isMedicareExemptByResidency, getPaygScaleLabel, type PayslipNumbers, type ResidencyStatus } from '@/lib/ato'
 import { formatCurrency, formatDateAU, todayISO, addDays, formatABN } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -199,10 +199,13 @@ function PayslipPreview({ form, biz, numbers, ytdIsActual }: {
           </p>
           <p style={{ fontSize: '0.75rem', color: '#A09590' }}>Payment: {form.payment_date ? formatDateAU(form.payment_date) : '—'}</p>
           <p style={{ fontSize: '0.75rem', color: '#A09590' }}>
-            {form.residency_status === 'whm' ? 'Scale 15 (WHM)' : form.claiming_threshold ? 'Scale 1' : 'Scale 2'}
-            {isMedicareExemptByResidency(form.residency_status) ? ' — Medicare exempt' : ''}
-            {form.has_help ? ' + HELP' : ''}
+            {getPaygScaleLabel(form.claiming_threshold, form.residency_status, form.medicare_exemption)}
           </p>
+          {form.residency_status !== 'whm' && (
+            <p style={{ fontSize: '0.75rem', color: '#A09590' }}>
+              Threshold: {form.claiming_threshold ? 'Yes' : 'No'} · HELP/HECS: {form.has_help ? 'Yes' : 'No'}
+            </p>
+          )}
         </div>
       </div>
 
@@ -670,8 +673,7 @@ export default function PayslipPage() {
             Generate Payslip
           </h1>
           <p style={{ color: 'var(--text3)', fontSize: '0.875rem' }}>
-            {form.payslip_number} · ATO Scale {form.residency_status === 'whm' ? '15 (WHM)' : form.claiming_threshold ? '1' : '2'}
-            {isMedicareExemptByResidency(form.residency_status) ? ' · Medicare exempt' : ''}
+            {form.payslip_number} · {getPaygScaleLabel(form.claiming_threshold, form.residency_status, form.medicare_exemption)}
             {' '}· Super {form.use_new_super_rate ? '12%' : '11.5%'}
           </p>
         </div>
@@ -806,10 +808,10 @@ export default function PayslipPage() {
                 {form.residency_status === 'whm' && (
                   <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.35)', borderRadius: '8px', padding: '0.875rem 1rem' }}>
                     <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#92400e', marginBottom: '0.25rem' }}>
-                      Working holiday maker rates apply
+                      Working holiday maker — Schedule 15 rates apply
                     </p>
                     <p style={{ fontSize: '0.75rem', color: '#78350f', lineHeight: 1.5 }}>
-                      Employer must be registered with the ATO for working holiday maker tax. Rate: 15% on first $45,000, then standard upper rates. No LITO. No Medicare levy.
+                      Employer must be registered with the ATO for WHM tax. Rate: 15% on first $45,000, then 30% to $135,000, 37% to $190,000, 45% above. No tax-free threshold. No LITO. No Medicare levy.
                     </p>
                   </div>
                 )}
@@ -840,8 +842,8 @@ export default function PayslipPage() {
 
                 {form.residency_status !== 'whm' && (
                   <Toggle
-                    label="Claiming tax-free threshold (Scale 1)"
-                    hint="Most Australian residents claim this. Untick for second jobs or non-residents (Scale 2)."
+                    label="Claiming tax-free threshold (Scale 2)"
+                    hint="Most Australian residents claim this. Untick for second jobs or non-residents (Scale 1)."
                     checked={form.claiming_threshold}
                     onChange={v => setField('claiming_threshold', v)}
                   />
@@ -909,6 +911,7 @@ export default function PayslipPage() {
                       <input type="number" min={0} step={1000} className="sab-input" placeholder="75000"
                         value={form.annual_salary || ''}
                         onChange={e => setField('annual_salary', parseFloat(e.target.value) || 0)}
+                        onWheel={e => (e.target as HTMLInputElement).blur()}
                         style={{ paddingLeft: '1.5rem' }} />
                     </div>
                     {form.annual_salary > 0 && (
@@ -930,6 +933,7 @@ export default function PayslipPage() {
                       <input type="number" min={0} step={0.5} className="sab-input" placeholder="35.00"
                         value={form.hourly_rate || ''}
                         onChange={e => setField('hourly_rate', parseFloat(e.target.value) || 0)}
+                        onWheel={e => (e.target as HTMLInputElement).blur()}
                         style={{ paddingLeft: '1.5rem' }} />
                     </div>
                   </div>
@@ -938,7 +942,8 @@ export default function PayslipPage() {
                     <input type="number" min={0} step={0.5} className="sab-input"
                       placeholder={String(DEFAULT_HOURS[form.pay_cycle])}
                       value={form.ordinary_hours || ''}
-                      onChange={e => setField('ordinary_hours', parseFloat(e.target.value) || 0)} />
+                      onChange={e => setField('ordinary_hours', parseFloat(e.target.value) || 0)}
+                      onWheel={e => (e.target as HTMLInputElement).blur()} />
                   </div>
                   {form.hourly_rate > 0 && form.ordinary_hours > 0 && (
                     <p style={{ gridColumn: '1 / -1', fontSize: '0.75rem', color: 'var(--text3)', marginTop: '-0.25rem' }}>
@@ -956,6 +961,7 @@ export default function PayslipPage() {
                     <input type="number" min={0} step={form.pay_basis === 'salary' ? 100 : 10} className="sab-input" placeholder="0"
                       value={form.salary_sacrifice || ''}
                       onChange={e => setField('salary_sacrifice', parseFloat(e.target.value) || 0)}
+                      onWheel={e => (e.target as HTMLInputElement).blur()}
                       style={{ paddingLeft: '1.5rem' }} />
                   </div>
                 </div>
@@ -963,7 +969,8 @@ export default function PayslipPage() {
                   <label className="sab-label">Overtime Hours (this period)</label>
                   <input type="number" min={0} step={0.5} className="sab-input" placeholder="0"
                     value={form.overtime_hours || ''}
-                    onChange={e => setField('overtime_hours', parseFloat(e.target.value) || 0)} />
+                    onChange={e => setField('overtime_hours', parseFloat(e.target.value) || 0)}
+                    onWheel={e => (e.target as HTMLInputElement).blur()} />
                 </div>
                 {form.overtime_hours > 0 && (
                   <div>
@@ -973,6 +980,7 @@ export default function PayslipPage() {
                       <input type="number" min={0} step={0.5} className="sab-input" placeholder="0"
                         value={form.overtime_rate || ''}
                         onChange={e => setField('overtime_rate', parseFloat(e.target.value) || 0)}
+                        onWheel={e => (e.target as HTMLInputElement).blur()}
                         style={{ paddingLeft: '1.5rem' }} />
                     </div>
                   </div>

@@ -198,11 +198,25 @@ export default function HomePage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ORG_SCHEMA) }} />
 
       {/* ── Navigation ─────────────────────────────────────────── */}
-      <nav style={{
+      <style>{`
+        .landing-nav {
+          padding-top: max(1rem, env(safe-area-inset-top));
+          padding-bottom: 1rem;
+          padding-left: 2rem;
+          padding-right: 2rem;
+        }
+        @media (max-width: 640px) {
+          .landing-nav { padding-left: 1rem; padding-right: 1rem; }
+          .nav-desktop { display: none !important; }
+          .nav-cta-full { display: none !important; }
+          .nav-cta-short { display: inline-flex !important; }
+        }
+        .nav-cta-short { display: none; }
+      `}</style>
+      <nav className="landing-nav" style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '1rem 2rem',
         borderBottom: '1px solid var(--border)',
         background: '#ffffff',
         position: 'sticky',
@@ -221,11 +235,16 @@ export default function HomePage() {
 
         {/* Nav links */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-          <a href="#pricing" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Pricing</a>
-          <a href="/blog" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Blog</a>
+          <a href="#pricing" className="nav-desktop" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Pricing</a>
+          <a href="/blog" className="nav-desktop" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Blog</a>
           <a href="/login" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Sign in</a>
-          <a href="/signup" className="btn btn-ember" style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
+          {/* Desktop: full label */}
+          <a href="/signup" className="btn btn-ember nav-cta-full" style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
             Get started free
+          </a>
+          {/* Mobile: shorter label */}
+          <a href="/signup" className="btn btn-ember nav-cta-short" style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
+            Get started
           </a>
         </div>
       </nav>
@@ -284,6 +303,11 @@ export default function HomePage() {
 
         <p style={{ marginTop: '1rem', fontSize: '0.8125rem', color: 'var(--text3)' }}>
           No credit card required · 14-day free trial on paid plans
+        </p>
+        <p style={{ marginTop: '0.5rem', fontSize: '0.8125rem' }}>
+          <a href="/ato-verification" style={{ color: 'var(--text3)', textDecoration: 'none' }}>
+            ✓ ATO NAT 1004 verified — 25 May 2026
+          </a>
         </p>
         <p style={{ marginTop: '0.75rem', fontSize: '0.8125rem' }}>
           <a href="/blog" style={{ color: 'var(--ember)', textDecoration: 'none' }}>

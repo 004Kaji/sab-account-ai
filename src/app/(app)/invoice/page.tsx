@@ -7,6 +7,7 @@ import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
 import AutocompleteDropdown from '@/components/ui/AutocompleteDropdown'
 import ReferralBanner from '@/components/ui/ReferralBanner'
+import AbnVerifyBadge from '@/components/ui/AbnVerifyBadge'
 import {
   formatCurrency, formatDateAU, todayISO, addDays,
   uid, generateInvoiceNumber, formatABN,
@@ -654,7 +655,11 @@ export default function InvoicePage() {
                 <input className="sab-input" placeholder="Acme Pty Ltd" value={form.client_business_name} onChange={e => setField('client_business_name', e.target.value)} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
-                <div><label className="sab-label">Client ABN <span style={{ color: 'var(--text3)' }}>(optional)</span></label><input className="sab-input" placeholder="12 345 678 901" value={form.client_abn} onChange={e => setField('client_abn', e.target.value)} /></div>
+                <div>
+                  <label className="sab-label">Client ABN <span style={{ color: 'var(--text3)' }}>(optional)</span></label>
+                  <input className="sab-input" placeholder="12 345 678 901" value={form.client_abn} onChange={e => setField('client_abn', e.target.value)} />
+                  <AbnVerifyBadge abn={form.client_abn} />
+                </div>
                 <div><label className="sab-label">Client Email <span style={{ color: 'var(--text3)' }}>(optional)</span></label><input className="sab-input" placeholder="accounts@client.com.au" value={form.client_email} onChange={e => setField('client_email', e.target.value)} /></div>
               </div>
               <div><label className="sab-label">Client Address <span style={{ color: 'var(--text3)' }}>(optional)</span></label><textarea className="sab-input" rows={2} placeholder="123 Main St, Sydney NSW 2000" value={form.client_address} onChange={e => setField('client_address', e.target.value)} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} /></div>
@@ -664,15 +669,15 @@ export default function InvoicePage() {
           <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem' }}>
             <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '1rem' }}>Line Items</h3>
             <div className="line-items-scroll">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 100px 50px 36px', gap: '0.5rem', marginBottom: '0.375rem' }} className="line-items-row">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 100px 50px 36px', gap: '0.5rem', marginBottom: '0.375rem' }} className="line-items-row line-items-header">
                 {['Description', 'Qty', 'Unit Price (ex GST)', 'GST', ''].map(h => <span key={h} className="sab-label" style={{ margin: 0, fontSize: '0.6875rem' }}>{h}</span>)}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.875rem' }}>
                 {form.line_items.map((item) => (
                   <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '1fr 70px 100px 50px 36px', gap: '0.5rem', alignItems: 'center' }} className="line-items-row">
-                    <input className="sab-input" placeholder="e.g. Labour — Deck Construction" value={item.description} onChange={e => updateItem(item.id, { description: e.target.value })} style={{ fontSize: '0.8125rem' }} />
-                    <input type="number" min={0} step="0.5" className="sab-input" value={item.qty} onChange={e => updateItem(item.id, { qty: Math.max(0, parseFloat(e.target.value) || 0) })} style={{ fontSize: '0.8125rem', textAlign: 'right' }} />
-                    <input type="number" min={0} step="0.01" className="sab-input" value={item.unit_price} onChange={e => updateItem(item.id, { unit_price: Math.max(0, parseFloat(e.target.value) || 0) })} style={{ fontSize: '0.8125rem', textAlign: 'right' }} />
+                    <input className="sab-input line-item-desc" placeholder="e.g. Labour — Deck Construction" value={item.description} onChange={e => updateItem(item.id, { description: e.target.value })} style={{ fontSize: '0.8125rem' }} />
+                    <input type="number" min={0} step="0.5" className="sab-input" value={item.qty} onWheel={e => (e.target as HTMLInputElement).blur()} onChange={e => updateItem(item.id, { qty: Math.max(0, parseFloat(e.target.value) || 0) })} style={{ fontSize: '0.8125rem', textAlign: 'right' }} />
+                    <input type="number" min={0} step="0.01" className="sab-input" value={item.unit_price} onWheel={e => (e.target as HTMLInputElement).blur()} onChange={e => updateItem(item.id, { unit_price: Math.max(0, parseFloat(e.target.value) || 0) })} style={{ fontSize: '0.8125rem', textAlign: 'right' }} />
                     <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><input type="checkbox" checked={item.has_gst} onChange={e => updateItem(item.id, { has_gst: e.target.checked })} style={{ accentColor: 'var(--ember)', width: '1rem', height: '1rem' }} /></label>
                     <button onClick={() => removeItem(item.id)} disabled={form.line_items.length === 1} style={{ width: '28px', height: '28px', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text3)', borderRadius: '4px', fontSize: '1.125rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: form.line_items.length === 1 ? 0.3 : 1 }} title="Remove line">×</button>
                   </div>
@@ -709,7 +714,7 @@ export default function InvoicePage() {
             <div><label className="sab-label">Notes <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text3)' }}>(optional)</span></label><textarea className="sab-input" rows={2} placeholder="e.g. Thank you for your business. Please reference the invoice number when paying." value={form.notes} onChange={e => setField('notes', e.target.value)} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} /></div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.75rem', paddingBottom: '2rem' }}>
+          <div className="invoice-save-btns" style={{ display: 'flex', gap: '0.75rem', paddingBottom: '2rem' }}>
             <button onClick={() => handleSave('pending')} disabled={saving} className="btn btn-ember" style={{ flex: 1 }}>
               {saving && <span className="spinner" style={{ width: '0.875rem', height: '0.875rem', borderWidth: '2px' }} />}
               {saving ? 'Saving…' : 'Save Invoice'}
@@ -730,14 +735,30 @@ export default function InvoicePage() {
       </div>
 
       <style>{`
-        @media (max-width: 1024px) { .invoice-grid { grid-template-columns: 1fr !important; } }
         @media (max-width: 1024px) {
+          .invoice-grid { grid-template-columns: 1fr !important; }
           .form-grid-2 { grid-template-columns: 1fr !important; }
           .line-items-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
           .line-items-row { min-width: 450px; }
         }
         @media (max-width: 640px) {
           .invoice-preview-col { display: none !important; }
+
+          /* Line items: stack description above qty/price/gst/delete */
+          .line-items-scroll { overflow-x: unset !important; }
+          .line-items-header { display: none !important; }
+          .line-items-row {
+            grid-template-columns: 1fr 72px 44px 36px !important;
+            min-width: unset !important;
+            background: var(--cream2);
+            border-radius: var(--r);
+            padding: 0.625rem !important;
+          }
+          .line-item-desc { grid-column: 1 / -1; }
+
+          /* Save buttons stack vertically */
+          .invoice-save-btns { flex-direction: column !important; }
+          .invoice-save-btns > button { width: 100%; }
         }
       `}</style>
 

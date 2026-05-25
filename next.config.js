@@ -50,8 +50,6 @@ module.exports = withSentryConfig(nextConfig, {
   silent: true,
   widenClientFileUpload: true,
   hideSourceMaps: true,
-  webpack: {
-    treeshake: { removeDebugLogging: true },
-    automaticVercelMonitors: true,
-  },
+  disableLogger: true,
+  automaticVercelMonitors: true,
 })

@@ -32,7 +32,6 @@ const PLANS: Array<{
     price: '$9/mo',
     desc: 'For freelancers who invoice regularly.',
     features: ['Unlimited invoices', 'AI generation', 'Income & expense records'],
-    recommended: true,
   },
   {
     id: 'pro',
@@ -40,6 +39,7 @@ const PLANS: Array<{
     price: '$19/mo',
     desc: 'Full ATO compliance for growing businesses.',
     features: ['Everything in Starter', 'ATO payslips', 'BAS estimates', 'Super tracking'],
+    recommended: true,
   },
 ]
 

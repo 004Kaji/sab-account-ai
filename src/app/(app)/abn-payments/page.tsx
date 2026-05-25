@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/Toast'
 import { formatCurrency, formatDateAU, todayISO } from '@/lib/utils'
 import { downloadABNRemittancePDF, downloadNoABNWithholdingPDF, getABNRemittancePDFBase64, getNoABNWithholdingPDFBase64, type ABNRemittancePDFData, type NoABNWithholdingPDFData } from '@/lib/pdf'
 import PlanGate from '@/components/ui/PlanGate'
+import AbnVerifyBadge from '@/components/ui/AbnVerifyBadge'
 
 // ── Constants ─────────────────────────────────────────────────────────────
 const WITHHOLDING_RATE = 0.47
@@ -460,6 +461,7 @@ function ABNBuilder({
             <label className="sab-label">ABN</label>
             <input className="sab-input" placeholder="12 345 678 901" value={form.contractor_abn}
               onChange={e => onChange('contractor_abn', e.target.value)} />
+            <AbnVerifyBadge abn={form.contractor_abn} />
           </div>
         </div>
 
@@ -1204,7 +1206,6 @@ export default function ABNPaymentsPage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? `Send failed (${res.status})`)
-      console.log('[ABN email] sent, Resend id:', json.id)
       setEmailSent(true)
       toast('Statement sent successfully!', 'success')
     } catch (err) {

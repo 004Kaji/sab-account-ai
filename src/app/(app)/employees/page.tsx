@@ -5,6 +5,7 @@ import { createBrowserClient } from '@/lib/supabase'
 import { useToast } from '@/components/ui/Toast'
 import Modal from '@/components/ui/Modal'
 import PlanGate from '@/components/ui/PlanGate'
+import AbnVerifyBadge from '@/components/ui/AbnVerifyBadge'
 
 interface Employee {
   id: string
@@ -327,6 +328,7 @@ export default function EmployeesPage() {
                 <span style={{ color: 'var(--text3)', fontWeight: 400 }}> (or TFN)</span>
               </label>
               <input className="sab-input" placeholder="XX XXX XXX XXX" value={form.abn} onChange={e => setForm(f => ({ ...f, abn: e.target.value }))} />
+              <AbnVerifyBadge abn={form.abn} />
             </div>
           </div>
           <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '-0.5rem' }}>
@@ -366,7 +368,7 @@ export default function EmployeesPage() {
               <label className="sab-label">Annual Salary <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.875rem' }}>$</span>
-                <input type="number" min={0} step={1000} className="sab-input" placeholder="75000" value={form.annual_salary} onChange={e => setForm(f => ({ ...f, annual_salary: e.target.value }))} style={{ paddingLeft: '1.5rem' }} />
+                <input type="number" min={0} step={1000} className="sab-input" placeholder="75000" value={form.annual_salary} onChange={e => setForm(f => ({ ...f, annual_salary: e.target.value }))} onWheel={e => (e.target as HTMLInputElement).blur()} style={{ paddingLeft: '1.5rem' }} />
               </div>
             </div>
           ) : (
@@ -375,12 +377,12 @@ export default function EmployeesPage() {
                 <label className="sab-label">Hourly Rate <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
                 <div style={{ position: 'relative' }}>
                   <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.875rem' }}>$</span>
-                  <input type="number" min={0} step={0.5} className="sab-input" placeholder="35.00" value={form.hourly_rate} onChange={e => setForm(f => ({ ...f, hourly_rate: e.target.value }))} style={{ paddingLeft: '1.5rem' }} />
+                  <input type="number" min={0} step={0.5} className="sab-input" placeholder="35.00" value={form.hourly_rate} onChange={e => setForm(f => ({ ...f, hourly_rate: e.target.value }))} onWheel={e => (e.target as HTMLInputElement).blur()} style={{ paddingLeft: '1.5rem' }} />
                 </div>
               </div>
               <div>
                 <label className="sab-label">Ordinary Hours/Period <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
-                <input type="number" min={0} step={0.5} className="sab-input" placeholder="76" value={form.ordinary_hours} onChange={e => setForm(f => ({ ...f, ordinary_hours: e.target.value }))} />
+                <input type="number" min={0} step={0.5} className="sab-input" placeholder="76" value={form.ordinary_hours} onChange={e => setForm(f => ({ ...f, ordinary_hours: e.target.value }))} onWheel={e => (e.target as HTMLInputElement).blur()} />
               </div>
             </div>
           )}

@@ -4,6 +4,8 @@ import { useEffect, useState, useMemo } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import { useToast } from '@/components/ui/Toast'
 import Modal from '@/components/ui/Modal'
+import BankImportModal, { type ImportedRecord } from '@/components/ui/BankImportModal'
+import AbnVerifyBadge from '@/components/ui/AbnVerifyBadge'
 import { formatCurrency, formatDateAU, todayISO } from '@/lib/utils'
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -22,6 +24,8 @@ interface Record {
   amount: number
   gst_amount: number
   supplier_abn: string | null
+  source?: string
+  import_batch_id?: string | null
   created_at: string
 }
 
@@ -35,14 +39,20 @@ interface RecordForm {
   supplier_abn: string
 }
 
+interface LastImport {
+  batchId: string
+  count: number
+  date: string
+}
+
 function fyRange() {
   const now   = new Date()
   const month = now.getMonth() + 1
   const yr    = month >= 7 ? now.getFullYear() : now.getFullYear() - 1
   return {
-    start:    `${yr}-07-01`,
-    end:      `${yr + 1}-06-30`,
-    label:    `FY${yr}–${String(yr + 1).slice(2)}`,
+    start: `${yr}-07-01`,
+    end:   `${yr + 1}-06-30`,
+    label: `FY${yr}–${String(yr + 1).slice(2)}`,
   }
 }
 
@@ -82,7 +92,6 @@ function AddRecordModal({ open, onClose, onSaved, defaultType }: {
   const [form, setForm]     = useState<RecordForm>(defaultForm(defaultType))
   const [saving, setSaving] = useState(false)
 
-  // Reset when modal opens, using the caller's requested type
   useEffect(() => { if (open) setForm(defaultForm(defaultType)) }, [open, defaultType])
 
   function setField<K extends keyof RecordForm>(key: K, value: RecordForm[K]) {
@@ -97,9 +106,9 @@ function AddRecordModal({ open, onClose, onSaved, defaultType }: {
     })
   }
 
-  const amt     = parseFloat(form.amount) || 0
-  const gstAmt  = form.has_gst ? Math.round(amt / 11 * 100) / 100 : 0
-  const exGst   = form.has_gst ? Math.round((amt - gstAmt) * 100) / 100 : amt
+  const amt    = parseFloat(form.amount) || 0
+  const gstAmt = form.has_gst ? Math.round(amt / 11 * 100) / 100 : 0
+  const exGst  = form.has_gst ? Math.round((amt - gstAmt) * 100) / 100 : amt
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -121,6 +130,7 @@ function AddRecordModal({ open, onClose, onSaved, defaultType }: {
         amount:       amt,
         gst_amount:   gstAmt,
         supplier_abn: form.supplier_abn.trim() || null,
+        source:       'manual',
       }).select('*').single()
 
       if (error) throw error
@@ -140,7 +150,6 @@ function AddRecordModal({ open, onClose, onSaved, defaultType }: {
     <Modal open={open} onClose={onClose} title="Add Record">
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
-        {/* Type toggle */}
         <div style={{ display: 'inline-flex', gap: '0.25rem', background: 'var(--cream2)', borderRadius: 'var(--r)', padding: '0.25rem', alignSelf: 'flex-start' }}>
           {(['income', 'expense'] as RecordType[]).map(t => (
             <button key={t}
@@ -190,13 +199,10 @@ function AddRecordModal({ open, onClose, onSaved, defaultType }: {
           <div style={{ position: 'relative' }}>
             <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.875rem' }}>$</span>
             <input
-              type="number"
-              min={0}
-              step="0.01"
-              className="sab-input"
-              placeholder="0.00"
+              type="number" min={0} step="0.01" className="sab-input" placeholder="0.00"
               value={form.amount}
               onChange={e => setField('amount', e.target.value)}
+              onWheel={e => (e.target as HTMLInputElement).blur()}
               style={{ paddingLeft: '1.5rem' }}
               required
             />
@@ -224,6 +230,7 @@ function AddRecordModal({ open, onClose, onSaved, defaultType }: {
             <input className="sab-input" placeholder="12 345 678 901"
               value={form.supplier_abn}
               onChange={e => setField('supplier_abn', e.target.value)} />
+            <AbnVerifyBadge abn={form.supplier_abn} />
           </div>
         )}
 
@@ -245,12 +252,16 @@ function AddRecordModal({ open, onClose, onSaved, defaultType }: {
 export default function RecordsPage() {
   const { toast } = useToast()
   useEffect(() => { document.title = 'Records — SAB Account AI' }, [])
-  const [records, setRecords]   = useState<Record[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [modalOpen, setModalOpen] = useState(false)
-  const [filter, setFilter]     = useState<FilterTab>('all')
+
+  const [records, setRecords]       = useState<Record[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [modalOpen, setModalOpen]   = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [filter, setFilter]         = useState<FilterTab>('all')
   const [defaultType, setDefaultType] = useState<RecordType>('income')
   const [w4Withholding, setW4Withholding] = useState(0)
+  const [lastImport, setLastImport] = useState<LastImport | null>(null)
+  const [undoing, setUndoing]       = useState(false)
 
   const fy = fyRange()
 
@@ -285,9 +296,38 @@ export default function RecordsPage() {
     toast('Record deleted', 'info')
   }
 
+  async function handleUndoImport() {
+    if (!lastImport) return
+    setUndoing(true)
+    try {
+      const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
+      const { error } = await supabase
+        .from('records')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('import_batch_id', lastImport.batchId)
+      if (error) throw error
+      setRecords(prev => prev.filter(r => r.import_batch_id !== lastImport.batchId))
+      setLastImport(null)
+      toast(`Removed ${lastImport.count} imported records`, 'info')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Undo failed', 'error')
+    } finally {
+      setUndoing(false)
+    }
+  }
+
   function openModal(type: RecordType) {
     setDefaultType(type)
     setModalOpen(true)
+  }
+
+  function handleImported(imported: ImportedRecord[], batchId: string) {
+    const asRecords = imported as unknown as Record[]
+    setRecords(prev => [...asRecords, ...prev].sort((a, b) => b.date.localeCompare(a.date)))
+    setLastImport({ batchId, count: imported.length, date: new Date().toLocaleDateString('en-AU') })
   }
 
   // Derived figures
@@ -317,7 +357,36 @@ export default function RecordsPage() {
         defaultType={defaultType}
       />
 
+      <BankImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={handleImported}
+      />
+
       <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+
+        {/* Undo banner */}
+        {lastImport && (
+          <div style={{
+            background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)',
+            borderRadius: 'var(--r)', padding: '0.75rem 1.25rem',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem',
+          }}>
+            <p style={{ fontSize: '0.875rem', color: '#15803d', fontWeight: 500 }}>
+              ✓ Imported {lastImport.count} transactions on {lastImport.date}
+            </p>
+            <button
+              onClick={handleUndoImport}
+              disabled={undoing}
+              className="btn btn-outline"
+              style={{ fontSize: '0.8125rem', padding: '0.3rem 0.875rem', borderColor: 'rgba(34,197,94,0.4)', color: '#15803d' }}
+            >
+              {undoing && <span className="spinner" style={{ width: '0.75rem', height: '0.75rem', borderWidth: '2px' }} />}
+              {undoing ? 'Undoing…' : 'Undo import'}
+            </button>
+          </div>
+        )}
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
@@ -327,7 +396,10 @@ export default function RecordsPage() {
             </h1>
             <p style={{ color: 'var(--text3)', fontSize: '0.875rem' }}>{fy.label} · Income & expense tracking</p>
           </div>
-          <div style={{ display: 'flex', gap: '0.625rem' }}>
+          <div style={{ display: 'flex', gap: '0.625rem', flexWrap: 'wrap' }}>
+            <button onClick={() => setImportOpen(true)} className="btn btn-outline" style={{ fontSize: '0.875rem', padding: '0.45rem 1rem' }}>
+              ↑ Import bank CSV
+            </button>
             <button onClick={() => openModal('expense')} className="btn btn-outline" style={{ fontSize: '0.875rem', padding: '0.45rem 1rem' }}>
               ↓ Add Expense
             </button>
@@ -339,13 +411,13 @@ export default function RecordsPage() {
 
         {/* KPI row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-          <KpiCard label="Total Income"    value={formatCurrency(totalIncome)}   sub={`${income.length} records`}   color="#15803d" />
-          <KpiCard label="Total Expenses"  value={formatCurrency(totalExpenses)} sub={`${expenses.length} records`} color="var(--ember)" />
-          <KpiCard label="Net Profit"      value={formatCurrency(netProfit)}     sub="Income minus expenses"        color={netProfit >= 0 ? 'var(--char)' : 'var(--ember)'} />
-          <KpiCard label="GST to Remit"    value={formatCurrency(netGst)}        sub="Collected minus credits" />
+          <KpiCard label="Total Income"   value={formatCurrency(totalIncome)}   sub={`${income.length} records`}   color="#15803d" />
+          <KpiCard label="Total Expenses" value={formatCurrency(totalExpenses)} sub={`${expenses.length} records`} color="var(--ember)" />
+          <KpiCard label="Net Profit"     value={formatCurrency(netProfit)}     sub="Income minus expenses"        color={netProfit >= 0 ? 'var(--char)' : 'var(--ember)'} />
+          <KpiCard label="GST to Remit"  value={formatCurrency(netGst)}        sub="Collected minus credits" />
         </div>
 
-        {/* Main grid: table + BAS */}
+        {/* Main grid */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '1.5rem', alignItems: 'start' }} className="records-grid">
 
           {/* Records table */}
@@ -386,7 +458,10 @@ export default function RecordsPage() {
                 <p style={{ color: 'var(--text3)', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
                   Track your income and expenses to generate BAS estimates.
                 </p>
-                <div style={{ display: 'flex', gap: '0.625rem', justifyContent: 'center' }}>
+                <div style={{ display: 'flex', gap: '0.625rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button onClick={() => setImportOpen(true)} className="btn btn-outline" style={{ fontSize: '0.875rem', padding: '0.45rem 1rem' }}>
+                    ↑ Import bank CSV
+                  </button>
                   <button onClick={() => openModal('income')} className="btn btn-ember" style={{ fontSize: '0.875rem', padding: '0.45rem 1rem' }}>
                     ↑ Add Income
                   </button>
@@ -400,16 +475,12 @@ export default function RecordsPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
-                      {(['Type', 'Date', 'Description', 'Category', 'Amount', 'GST', ''] as string[]).map((h, i) => (
+                      {(['Type', 'Date', 'Description', 'Category', 'Amount', 'GST', ''] as string[]).map(h => (
                         <th key={h} style={{
                           padding: '0.625rem 1rem',
                           textAlign: h === 'Amount' || h === 'GST' ? 'right' : 'left',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          color: 'var(--text3)',
-                          letterSpacing: '0.03em',
-                          textTransform: 'uppercase',
-                          whiteSpace: 'nowrap',
+                          fontSize: '0.75rem', fontWeight: 600, color: 'var(--text3)',
+                          letterSpacing: '0.03em', textTransform: 'uppercase', whiteSpace: 'nowrap',
                         }}>
                           {h}
                         </th>
@@ -418,20 +489,24 @@ export default function RecordsPage() {
                   </thead>
                   <tbody>
                     {filtered.map((rec, i) => (
-                      <tr key={rec.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                      <tr
+                        key={rec.id}
+                        style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none' }}
+                      >
                         <td style={{ padding: '0.75rem 1rem' }}>
-                          <span style={{
-                            fontSize: '0.6875rem',
-                            fontWeight: 700,
-                            letterSpacing: '0.04em',
-                            textTransform: 'uppercase',
-                            padding: '0.2rem 0.5rem',
-                            borderRadius: '999px',
-                            background: rec.type === 'income' ? 'rgba(34,197,94,0.1)' : 'rgba(200,75,47,0.08)',
-                            color: rec.type === 'income' ? '#15803d' : 'var(--ember)',
-                          }}>
-                            {rec.type}
-                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                            <span style={{
+                              fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
+                              padding: '0.2rem 0.5rem', borderRadius: '999px', display: 'inline-block',
+                              background: rec.type === 'income' ? 'rgba(34,197,94,0.1)' : 'rgba(200,75,47,0.08)',
+                              color: rec.type === 'income' ? '#15803d' : 'var(--ember)',
+                            }}>
+                              {rec.type}
+                            </span>
+                            {rec.source === 'bank_import' && (
+                              <span style={{ fontSize: '0.625rem', color: 'var(--text3)', paddingLeft: '0.5rem' }}>bank</span>
+                            )}
+                          </div>
                         </td>
                         <td style={{ padding: '0.75rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                           {formatDateAU(rec.date)}
@@ -496,9 +571,7 @@ export default function RecordsPage() {
                     {formatCurrency(netGst)}
                   </span>
                 </div>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.375rem' }}>
-                  Collected minus input tax credits
-                </p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.375rem' }}>Collected minus input tax credits</p>
                 {w4Withholding > 0 && (
                   <p style={{ fontSize: '0.75rem', color: 'var(--ember)', marginTop: '0.25rem' }}>
                     + {formatCurrency(w4Withholding)} W4 withholding to remit
@@ -512,8 +585,8 @@ export default function RecordsPage() {
               <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--char)', marginBottom: '1rem' }}>P&amp;L Summary</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
                 {[
-                  { label: 'Gross Income',    value: totalIncome,   color: '#15803d' },
-                  { label: 'Total Expenses',  value: totalExpenses, color: 'var(--ember)' },
+                  { label: 'Gross Income',   value: totalIncome,   color: '#15803d' },
+                  { label: 'Total Expenses', value: totalExpenses, color: 'var(--ember)' },
                 ].map(({ label, value, color }) => (
                   <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
                     <span style={{ color: 'var(--text2)' }}>{label}</span>
@@ -538,6 +611,9 @@ export default function RecordsPage() {
                 </button>
                 <button onClick={() => openModal('expense')} className="btn btn-outline" style={{ fontSize: '0.8125rem', padding: '0.4rem 0.875rem' }}>
                   ↓ Add Expense
+                </button>
+                <button onClick={() => setImportOpen(true)} className="btn btn-outline" style={{ fontSize: '0.8125rem', padding: '0.4rem 0.875rem' }}>
+                  ↑ Import bank CSV
                 </button>
               </div>
             </div>

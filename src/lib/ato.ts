@@ -1,14 +1,15 @@
-// ATO PAYG withholding calculation for SAB Account AI
-// FY2024-25 — Scale 1 (claiming threshold), Scale 2, Scale 15 (WHM)
+// ATO PAYG withholding — NAT 1004 (Schedule 1) weekly coefficients
+// FY2025-26 — same coefficients as FY2024-25 (Stage 3 rates, confirmed no change per ATO May 2025)
+//
+// Source: Schedule 1 – Statement of formulas for calculating amounts to be withheld (NAT 1004)
+//         Schedule 15 – Tax table for working holiday makers (NAT 75331)
+//         ATO tax rates ato.gov.au/rates (Stage 3: 16%/30%, thresholds $18,200/$45,000/$135,000/$190,000)
 //
 // ⚠️  NEVER CHANGE THE NUMBERS IN THIS FILE without checking ato.gov.au first.
-//     These brackets and percentages come directly from ATO tax tables.
-//     If you change a number, every payslip in the app becomes wrong.
+//     These coefficients come directly from the ATO's published formula tables.
+//     One wrong digit means every payslip in the app becomes wrong.
 
 // ── Residency status ──────────────────────────────────────────────────
-// The different visa/residency types we support.
-// Each one may get different tax treatment — e.g. working holiday makers
-// pay 15% on their first $45,000 instead of the normal scale.
 export type ResidencyStatus =
   | 'citizen_pr'  // Australian citizen or permanent resident
   | 'student'     // International student (student visa)
@@ -17,10 +18,7 @@ export type ResidencyStatus =
   | 'partner'     // Partner or dependent visa (temporary)
   | 'other_temp'  // Other temporary resident
 
-// ── Should this person pay the Medicare Levy? ─────────────────────────
-// Medicare Levy (2% of income) is only paid by Australian citizens and
-// permanent residents. Everyone else is exempt.
-// Returns true (exempt) for anyone who is NOT a citizen/PR.
+// Temporary residents do not pay the Medicare levy (2%).
 export function isMedicareExemptByResidency(status: ResidencyStatus): boolean {
   return status !== 'citizen_pr'
 }
@@ -45,165 +43,202 @@ export type PaygResult = {
   periodTotal: number
 }
 
-// How many pay periods in a year for each pay cycle.
-// Weekly: 52 pays per year. Fortnightly: 26. Monthly: 12.
-// Used to convert annual tax into a per-payslip amount.
-const PERIODS_PER_YEAR: Record<string, number> = {
+type PayCycle = 'weekly' | 'fortnightly' | 'monthly'
+
+const PERIODS_PER_YEAR: Record<PayCycle, number> = {
   weekly:      52,
   fortnightly: 26,
   monthly:     12,
 }
 
-// ── STEP 1 — Scale 1 income tax brackets ─────────────────────────────
-// This is the standard tax table for Australian residents who ARE claiming
-// the tax-free threshold (i.e. this is their main job).
-//
-// ⚠️  NEVER CHANGE THESE NUMBERS. They come from the ATO.
-//     Source: ato.gov.au → Tax rates → Resident tax rates
-//
-// Real example for $75,000 annual salary:
-//   Income is between $45,001 and $120,000 → third bracket applies
-//   Base amount: $5,092 (pre-calculated by ATO for the lower brackets)
-//   Plus: ($75,000 - $45,000) × 32.5%
-//       = $30,000 × 0.325
-//       = $9,750
-//   Total: $5,092 + $9,750 = $14,842 annual income tax (before offsets)
-function taxScale1(income: number): number {
-  if (income <= 18200)  return 0                                    // Tax-free threshold — pay nothing
-  if (income <= 45000)  return (income - 18200) * 0.19             // 19% on income above $18,200
-  if (income <= 120000) return 5092 + (income - 45000) * 0.325     // 32.5% on income above $45,000
-  if (income <= 180000) return 29467 + (income - 120000) * 0.37    // 37% on income above $120,000
-  return 51667 + (income - 180000) * 0.45                          // 45% on income above $180,000
+// ── NAT 1004 coefficient tables ───────────────────────────────────────
+// Format: { limit, a, b } where limit is the UPPER BOUND of the bracket.
+// Find the first bracket where x < limit; apply y = a*x - b.
+// x = Math.floor(weeklyEarnings) + 0.99 (per NAT 1004 Section 3)
+
+type Bracket = { limit: number; a: number; b: number }
+
+// Scale 1 — employee has NOT claimed the tax-free threshold on their TFN declaration.
+// Includes Medicare levy. No LITO. Used for second jobs or employees who don't claim.
+const SCALE_1: Bracket[] = [
+  { limit: 150,      a: 0.1600, b: 0.1600 },
+  { limit: 371,      a: 0.2117, b: 7.7550 },
+  { limit: 515,      a: 0.1890, b: -0.6702 },
+  { limit: 932,      a: 0.3227, b: 68.2367 },
+  { limit: 2246,     a: 0.3200, b: 65.7202 },
+  { limit: 3303,     a: 0.3900, b: 222.9510 },
+  { limit: Infinity, a: 0.4700, b: 487.2587 },
+]
+
+// Scale 2 — employee HAS claimed the tax-free threshold.
+// Includes Medicare levy and LITO phaseout. Primary scale for Australian residents.
+const SCALE_2: Bracket[] = [
+  { limit: 361,      a: 0,      b: 0 },         // nil — below effective withholding threshold
+  { limit: 500,      a: 0.1600, b: 57.8462 },
+  { limit: 625,      a: 0.2600, b: 107.8462 },
+  { limit: 721,      a: 0.1800, b: 57.8462 },
+  { limit: 865,      a: 0.1890, b: 64.3365 },
+  { limit: 1282,     a: 0.3227, b: 180.0385 },
+  { limit: 2596,     a: 0.3200, b: 176.5769 },
+  { limit: 3653,     a: 0.3900, b: 358.3077 },
+  { limit: Infinity, a: 0.4700, b: 650.6154 },
+]
+
+// Scale 3 — foreign residents.
+// No Medicare, no LITO, no tax-free threshold. Higher withholding from first dollar.
+const SCALE_3: Bracket[] = [
+  { limit: 2596,     a: 0.3000, b: 0.3000 },
+  { limit: 3653,     a: 0.3700, b: 181.7308 },
+  { limit: Infinity, a: 0.4500, b: 474.0385 },
+]
+
+// Scale 5 — claiming threshold + FULL Medicare levy exemption.
+// No Medicare levy withheld. Includes LITO. Used for temp residents / international students.
+const SCALE_5: Bracket[] = [
+  { limit: 361,      a: 0,      b: 0 },
+  { limit: 721,      a: 0.1600, b: 57.8462 },
+  { limit: 865,      a: 0.1690, b: 64.3365 },
+  { limit: 1282,     a: 0.3027, b: 180.0385 },
+  { limit: 2596,     a: 0.3000, b: 176.5769 },
+  { limit: 3653,     a: 0.3700, b: 358.3077 },
+  { limit: Infinity, a: 0.4500, b: 650.6154 },
+]
+
+// ── NAT 1004 formula engine ───────────────────────────────────────────
+// Convert period earnings to weekly equivalent (NAT 1004 Section 3 method).
+// Monthly: ATO requires adding 0.01 if the amount ends in exactly 33 cents.
+function toWeeklyEquivalent(periodEarnings: number, payCycle: PayCycle): number {
+  if (payCycle === 'weekly') {
+    return Math.floor(periodEarnings) + 0.99
+  }
+  if (payCycle === 'fortnightly') {
+    return Math.floor(periodEarnings / 2) + 0.99
+  }
+  // Monthly: (amount × 3) ÷ 13 — add 0.01 first if ends in 33 cents
+  const adjusted = Math.round(periodEarnings * 100) % 100 === 33
+    ? periodEarnings + 0.01
+    : periodEarnings
+  return Math.floor(adjusted * 3 / 13) + 0.99
 }
 
-// ── STEP 2 — LITO (Low Income Tax Offset) ────────────────────────────
-// LITO is a tax discount the government gives to low and middle income earners.
-// It reduces the tax calculated in Step 1. It phases out as income rises.
-//
-// Real example for $75,000:
-//   Income is above $66,667 → LITO = $0 (fully phased out)
-//   So for $75,000 there is no LITO benefit.
-//
-// Real example for $35,000:
-//   Income is between $0 and $37,500 → LITO = $700
-//   So the $35,000 earner saves $700 off their tax bill.
-//
-// ⚠️  NEVER CHANGE THESE NUMBERS. They come from the ATO.
-function lito(income: number): number {
-  if (income <= 37500) return 700                                   // Full $700 offset
-  if (income <= 45000) return 700 - (income - 37500) * 0.05        // Phases out 5c per dollar
-  if (income <= 66667) return 325 - (income - 45000) * 0.015       // Phases out 1.5c per dollar
-  return 0                                                          // No offset above $66,667
+function applyScale(periodEarnings: number, payCycle: PayCycle, scale: Bracket[]): number {
+  const x = toWeeklyEquivalent(periodEarnings, payCycle)
+  const bracket = scale.find(b => x < b.limit) ?? scale[scale.length - 1]
+  // Per NAT 1004: round the weekly amount FIRST, then convert to period
+  const weeklyRounded = Math.round(Math.max(0, bracket.a * x - bracket.b))
+  if (payCycle === 'weekly')      return weeklyRounded
+  if (payCycle === 'fortnightly') return weeklyRounded * 2
+  return Math.round(weeklyRounded * 13 / 3)
 }
 
-// ── STEP 3 — Medicare levy (3 bands) ─────────────────────────────────
-// The Medicare Levy funds Australia's public health system.
-// It's 2% of income for most people. Low income earners pay less or nothing.
-// Non-residents are fully exempt (handled by isMedicareExemptByResidency above).
-//
-// Real example for $75,000:
-//   Income is above $33,044 → full 2% applies
-//   $75,000 × 2% = $1,500 Medicare levy
-//
-// ⚠️  NEVER CHANGE THESE NUMBERS.
-function medicareLevy(income: number, exempt: boolean): number {
-  if (exempt) return 0                                              // Non-residents pay nothing
-  if (income <= 26000) return 0                                     // Very low income — no levy
-  if (income <= 33044) return (income - 26000) * 0.10              // Phases in at 10% of excess
-  return income * 0.02                                             // Full 2% for everyone else
+// ── Schedule 15 — Working Holiday Maker ──────────────────────────────
+// Stage 3 rates (from 1 July 2024): 15% → 30% → 37% → 45%
+// No Medicare. No LITO. No tax-free threshold.
+function whmAnnualTax(annual: number): number {
+  if (annual <= 45000)   return annual * 0.15
+  if (annual <= 135000)  return 6750 + (annual - 45000) * 0.30
+  if (annual <= 190000)  return 33750 + (annual - 135000) * 0.37
+  return 54100 + (annual - 190000) * 0.45
 }
 
-// ── STEP 4a — Scale 15: Working holiday maker (no threshold, no LITO) ─
-// Working holiday makers (visa 417 or 462) get no tax-free threshold
-// and no LITO. They pay 15% flat on their first $45,000 earned in Australia.
-//
-// Real example for $40,000:
-//   $40,000 × 15% = $6,000 annual tax (much higher than a resident earning the same)
-//
-// ⚠️  NEVER CHANGE THESE NUMBERS.
-function taxScaleWHM(income: number): number {
-  if (income <= 45000)  return income * 0.15                        // 15% flat on first $45,000
-  if (income <= 120000) return 6750 + (income - 45000) * 0.325     // 32.5% above $45,000
-  if (income <= 180000) return 31125 + (income - 120000) * 0.37    // 37% above $120,000
-  return 53325 + (income - 180000) * 0.45                          // 45% above $180,000
+// ── Medicare levy (informational breakdown only) ──────────────────────
+// Scale 1 and Scale 2 embed Medicare in their coefficients.
+// This function is used only to split the combined withholding into
+// "income tax" and "Medicare levy" line items on the payslip.
+// 2024-25 / 2025-26 thresholds: lower $27,222, shade-in upper $34,028.
+function medicareLevyEstimate(annual: number, exempt: boolean): number {
+  if (exempt)            return 0
+  if (annual <= 27222)   return 0
+  if (annual <= 34028)   return (annual - 27222) * 0.10
+  return annual * 0.02
 }
 
-// ── STEP 4b — Scale 2 (not claiming threshold, no LITO) ──────────────
-// Used when an employee is NOT claiming the tax-free threshold — meaning
-// they have another job where they already claimed it, or they're a foreign
-// resident. No $18,200 tax-free band. Tax starts immediately from $0.
-//
-// Real example for $75,000 (not claiming threshold):
-//   $14,625 + ($75,000 - $45,000) × 32.5%
-//   = $14,625 + $9,750
-//   = $24,375 annual tax (much higher than Scale 1 because no tax-free threshold)
-//
-// ⚠️  NEVER CHANGE THESE NUMBERS.
-function taxScale2(income: number): number {
-  if (income <= 45000)  return income * 0.325                       // 32.5% from dollar one
-  if (income <= 120000) return 14625 + (income - 45000) * 0.325    // 32.5% continues
-  if (income <= 180000) return 39000 + (income - 120000) * 0.37    // 37% above $120,000
-  return 61200 + (income - 180000) * 0.45                          // 45% above $180,000
+// ── HELP / HECS repayment ─────────────────────────────────────────────
+// Calculated separately from the main scale. 2024-25 thresholds.
+// Note: Schedule 8 was updated 24 September 2025; these are the pre-update rates.
+// ⚠️  These thresholds are indexed annually. Check ATO Schedule 8 each July.
+function helpRepayment(annual: number): number {
+  if (annual < 54435)    return 0
+  if (annual <= 62738)   return annual * 0.010
+  if (annual <= 70000)   return annual * 0.020
+  if (annual <= 80000)   return annual * 0.025
+  if (annual <= 92000)   return annual * 0.030
+  if (annual <= 106000)  return annual * 0.035
+  if (annual <= 125000)  return annual * 0.040
+  if (annual <= 151000)  return annual * 0.045
+  return annual * 0.050
 }
 
-// ── STEP 5 — HELP / HECS repayment ───────────────────────────────────
-// If an employee has a university HELP debt (formerly called HECS),
-// extra money is withheld from their pay to repay it. The amount depends
-// on their income — higher earners repay a larger percentage.
-//
-// Real example for $75,000 with HELP debt:
-//   Income is between $70,001 and $80,000 → 2.5% rate
-//   $75,000 × 2.5% = $1,875 per year withheld for HELP repayment
-//
-// ⚠️  NEVER CHANGE THESE NUMBERS. Check ato.gov.au for annual updates.
-//     The $54,435 threshold changes slightly each financial year.
-function helpRepayment(income: number): number {
-  if (income < 54435)   return 0            // Below threshold — no repayment required
-  if (income <= 62738)  return income * 0.010
-  if (income <= 70000)  return income * 0.020
-  if (income <= 80000)  return income * 0.025
-  if (income <= 92000)  return income * 0.030
-  if (income <= 106000) return income * 0.035
-  if (income <= 125000) return income * 0.040
-  if (income <= 151000) return income * 0.045
-  return income * 0.050
+// ── Scale label for UI display ────────────────────────────────────────
+export function getPaygScaleLabel(
+  claimingThreshold: boolean,
+  residencyStatus: ResidencyStatus,
+  medicareLevyExemption: boolean,
+): string {
+  const exempt = medicareLevyExemption || isMedicareExemptByResidency(residencyStatus)
+  if (residencyStatus === 'whm') return 'WHM (Schedule 15)'
+  if (claimingThreshold && !exempt)  return 'Scale 2 (threshold)'
+  if (!claimingThreshold && !exempt) return 'Scale 1 (no threshold)'
+  if (claimingThreshold && exempt)   return 'Scale 5 (Medicare exempt)'
+  return 'Scale 3 (no threshold, exempt)'
 }
 
-// ── STEP 6 — Main PAYG calculation ───────────────────────────────────
-// This is the function everything calls. It takes the employee's details
-// and runs them through Steps 1–5 above, then divides the annual total
-// by the number of pay periods to get the per-payslip withholding amount.
+// ── Main PAYG calculation ─────────────────────────────────────────────
 export function calculatePAYG(input: PaygInput): PaygResult {
-  const { annualSalary, claimingThreshold, hasHELP, medicareLevyExemption, payCycle, residencyStatus = 'citizen_pr' } = input
+  const {
+    annualSalary, claimingThreshold, hasHELP, medicareLevyExemption,
+    payCycle, residencyStatus = 'citizen_pr',
+  } = input
   const periods = PERIODS_PER_YEAR[payCycle]
+  const periodEarnings = annualSalary / periods
 
   const isWHM = residencyStatus === 'whm'
-  const effectiveMedicareExempt = medicareLevyExemption || isMedicareExemptByResidency(residencyStatus)
+  const effectiveMedExempt = medicareLevyExemption || isMedicareExemptByResidency(residencyStatus)
 
-  let annualTax: number
+  // 1. Calculate period tax+Medicare withholding using the correct scale
+  let periodTaxPlusMedicare: number
+  let scaleIncludesMedicare: boolean
+
   if (isWHM) {
-    annualTax = taxScaleWHM(annualSalary)
-  } else if (claimingThreshold) {
-    annualTax = Math.max(0, taxScale1(annualSalary) - lito(annualSalary))
+    // Schedule 15: WHM — annual formula divided by periods (no weekly coefficient method)
+    periodTaxPlusMedicare = Math.round(whmAnnualTax(annualSalary) / periods)
+    scaleIncludesMedicare = false
+  } else if (claimingThreshold && !effectiveMedExempt) {
+    periodTaxPlusMedicare = applyScale(periodEarnings, payCycle, SCALE_2)
+    scaleIncludesMedicare = true
+  } else if (!claimingThreshold && !effectiveMedExempt) {
+    periodTaxPlusMedicare = applyScale(periodEarnings, payCycle, SCALE_1)
+    scaleIncludesMedicare = true
+  } else if (claimingThreshold && effectiveMedExempt) {
+    periodTaxPlusMedicare = applyScale(periodEarnings, payCycle, SCALE_5)
+    scaleIncludesMedicare = false
   } else {
-    annualTax = taxScale2(annualSalary)
+    // Not claiming threshold + Medicare exempt (e.g. temp resident second job)
+    // No exact ATO scale. Scale 3 (foreign resident) is the closest approximation.
+    periodTaxPlusMedicare = applyScale(periodEarnings, payCycle, SCALE_3)
+    scaleIncludesMedicare = false
   }
 
-  const annualMedicare = medicareLevy(annualSalary, effectiveMedicareExempt)
-  const annualHELP     = hasHELP ? helpRepayment(annualSalary) : 0
-  const annualTotal    = annualTax + annualMedicare + annualHELP
+  // 2. Estimate Medicare for the informational breakdown display
+  //    Scale 1/2 embed Medicare; we back-calculate it from the annual formula.
+  const annualMedicareEstimate = effectiveMedExempt ? 0 : medicareLevyEstimate(annualSalary, false)
+  const periodMedicare = scaleIncludesMedicare
+    ? Math.round(annualMedicareEstimate / periods)
+    : 0
 
-  // Single round on the combined annual total — breakdown figures are informational only
-  const periodTotal    = Math.round(annualTotal / periods)
-  const periodTax      = Math.round(annualTax / periods)
-  const periodMedicare = Math.round(annualMedicare / periods)
-  const periodHELP     = Math.round(annualHELP / periods)
+  // 3. HELP repayment — added on top of the scale result
+  const annualHELP = hasHELP ? helpRepayment(annualSalary) : 0
+  const periodHELP = Math.round(annualHELP / periods)
+
+  // 4. Split income tax from the combined amount (for display only)
+  const periodTax = Math.max(0, periodTaxPlusMedicare - periodMedicare)
+  const periodTotal = periodTaxPlusMedicare + periodHELP
 
   return {
-    annualTax:      Math.round(annualTax),
-    annualMedicare: Math.round(annualMedicare),
+    annualTax:      Math.round(periodTax * periods),
+    annualMedicare: Math.round(annualMedicareEstimate),
     annualHELP:     Math.round(annualHELP),
-    annualTotal:    Math.round(annualTotal),
+    annualTotal:    Math.round(periodTotal * periods),
     periodTax,
     periodMedicare,
     periodHELP,
@@ -212,37 +247,18 @@ export function calculatePAYG(input: PaygInput): PaygResult {
 }
 
 // ── Super guarantee ───────────────────────────────────────────────────
-// Returns the correct superannuation rate for the selected financial year.
-//
-// ✅ THIS IS THE ONE NUMBER YOU MAY NEED TO UPDATE EACH YEAR.
-//    The government increases the super rate every July 1.
-//    FY2024-25: 11.5% (useNewRate = false)
-//    FY2025-26: 12.0% (useNewRate = true)
-//
-//    When the rate changes again, update 0.12 to the new rate.
-//    Always verify at ato.gov.au/super before changing.
+// ✅ This is the one number to update each 1 July.
+//    FY2024-25: 11.5%  |  FY2025-26: 12.0%
+//    Verify at ato.gov.au/super before changing.
 export function getSuperRate(useNewRate: boolean): number {
   return useNewRate ? 0.12 : 0.115
 }
 
-// Calculates the employer super contribution for one pay period.
-//
-// Real example: Employee earns $3,000 ordinary earnings this fortnight.
-//   Super = $3,000 x 11.5% = $345 (FY2024-25 rate)
-//   Super = $3,000 x 12.0% = $360 (FY2025-26 rate)
-//
-// Note: Super is calculated on ORDINARY earnings only, not overtime.
 export function calculateSuper(ordinaryEarnings: number, useNewRate: boolean): number {
   return Math.round(ordinaryEarnings * getSuperRate(useNewRate) * 100) / 100
 }
 
 // ── Full payslip calculation ──────────────────────────────────────────
-// The master function that generates all the numbers shown on a payslip.
-// It calls calculatePAYG and calculateSuper internally and assembles
-// everything: gross pay, deductions, net pay, YTD (year-to-date) figures.
-//
-// Called live every time the user changes a field on the payslip page.
-// Do not edit this function directly — change the sub-functions above instead.
 export type PayslipInput = {
   annualSalary: number
   salarySacrifice: number

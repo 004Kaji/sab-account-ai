@@ -4,17 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase'
-
-function formatCurrency(n: number) {
-  return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-}
-
-function formatDateAU(d: string) {
-  if (!d) return '—'
-  const [y, m, day] = d.split('-')
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  return `${parseInt(day)} ${months[parseInt(m) - 1]} ${y}`
-}
+import { formatCurrency, formatDateAU } from '@/lib/utils'
 
 interface Invoice {
   id: string

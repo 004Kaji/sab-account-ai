@@ -47,6 +47,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.8,
     },
     {
+      url: `${BASE}/blog/payday-super-2026`,
+      lastModified: new Date('2026-05-25'),
+      changeFrequency: 'monthly',
+      priority: 0.9,
+    },
+    {
       url: `${BASE}/blog/gst-invoice-template-australia`,
       lastModified: new Date(),
       changeFrequency: 'monthly',
@@ -75,6 +81,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified: new Date(),
       changeFrequency: 'monthly',
       priority: 0.7,
+    },
+    {
+      url: `${BASE}/ato-verification`,
+      lastModified: new Date('2026-05-25'),
+      changeFrequency: 'yearly',
+      priority: 0.6,
     },
   ]
 }

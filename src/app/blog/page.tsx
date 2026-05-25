@@ -17,6 +17,14 @@ export const metadata: Metadata = {
 
 const POSTS = [
   {
+    slug: 'payday-super-2026',
+    title: 'Payday Super 2026: What Every Australian Employer Must Know Before 1 July',
+    excerpt: 'From 1 July 2026, super must be paid within 7 days of every payday — not quarterly. Learn the 7-day rule, SuperStream requirements, penalties for non-compliance, and how to prepare.',
+    date: '25 May 2026',
+    readTime: '9 min read',
+    tag: 'Super',
+  },
+  {
     slug: 'gst-invoice-template-australia',
     title: 'GST Invoice Template Australia: What Every Tax Invoice Must Include',
     excerpt: 'The ATO has strict rules about what makes a valid tax invoice. Missing even one required field means your clients can\'t claim GST credits. Here\'s exactly what to include.',

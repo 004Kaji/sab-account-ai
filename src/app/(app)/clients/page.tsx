@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import { useToast } from '@/components/ui/Toast'
 import Modal from '@/components/ui/Modal'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, validateABN } from '@/lib/utils'
+import AbnVerifyBadge from '@/components/ui/AbnVerifyBadge'
 
 interface Client {
   id: string
@@ -36,10 +37,6 @@ function emptyForm(): ClientForm {
   return { business_name: '', contact_name: '', email: '', phone: '', address: '', abn: '', website: '', notes: '' }
 }
 
-function validateABN(abn: string): boolean {
-  const digits = abn.replace(/\s/g, '')
-  return digits === '' || /^\d{11}$/.test(digits)
-}
 
 export default function ClientsPage() {
   useEffect(() => { document.title = 'Clients — SAB Account AI' }, [])
@@ -94,7 +91,7 @@ export default function ClientsPage() {
     if (!form.contact_name.trim())  { toast('Contact name is required', 'error'); return }
     if (!form.email.trim())         { toast('Email is required', 'error'); return }
     if (!form.phone.trim())         { toast('Phone is required', 'error'); return }
-    if (!validateABN(form.abn)) { toast('ABN must be 11 digits', 'error'); return }
+    if (form.abn && !validateABN(form.abn)) { toast('ABN is invalid — must be 11 digits', 'error'); return }
     setSaving(true)
     try {
       const supabase = createBrowserClient()
@@ -273,6 +270,7 @@ export default function ClientsPage() {
             <div>
               <label className="sab-label">ABN <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
               <input className="sab-input" placeholder="61 234 567 890" value={form.abn} onChange={e => setForm(f => ({ ...f, abn: e.target.value }))} />
+              <AbnVerifyBadge abn={form.abn} />
             </div>
             <div>
               <label className="sab-label">Contact Name <span style={{ color: 'var(--ember)' }}>*</span></label>
