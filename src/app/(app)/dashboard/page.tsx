@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
@@ -576,22 +576,36 @@ export default function DashboardPage() {
             <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.875rem' }}>ATO Deadlines</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {[
-                { label: 'Quarterly BAS',  value: nextBasDue(),        icon: '📋' },
-                { label: 'Monthly BAS',    value: nextMonthlyBasDue(), icon: '🗓' },
-                { label: 'Super due',      value: nextSuperDue(),      icon: '🏦' },
-                { label: 'Payday Super',   value: 'Within 7 business days of each payday — from 1 Jul 2026', icon: '⚡' },
-              ].map(item => (
-                <div key={item.label} style={{
+                { label: 'Quarterly BAS',  value: nextBasDue(),        icon: '📋', href: undefined },
+                { label: 'Monthly BAS',    value: nextMonthlyBasDue(), icon: '🗓', href: undefined },
+                { label: 'Super due',      value: nextSuperDue(),      icon: '🏦', href: undefined },
+                { label: 'Payday Super',   value: 'Within 7 business days of each payday — from 1 Jul 2026', icon: '⚡', href: '/payday-super' },
+              ].map(item => {
+                const inner = (
+                  <>
+                    <span style={{ fontSize: '1rem', lineHeight: 1 }}>{item.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: '0.75rem', color: item.href ? 'var(--ember)' : 'var(--text3)', marginBottom: '0.125rem' }}>{item.label}</p>
+                      <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--char)' }}>{item.value}</p>
+                    </div>
+                    {item.href && <span style={{ fontSize: '0.75rem', color: 'var(--ember)', alignSelf: 'center' }}>→</span>}
+                  </>
+                )
+                const sharedStyle: React.CSSProperties = {
                   display: 'flex', alignItems: 'flex-start', gap: '0.625rem',
                   padding: '0.75rem', background: 'var(--cream)', borderRadius: '8px',
-                }}>
-                  <span style={{ fontSize: '1rem', lineHeight: 1 }}>{item.icon}</span>
-                  <div>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginBottom: '0.125rem' }}>{item.label}</p>
-                    <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--char)' }}>{item.value}</p>
+                  textDecoration: 'none', cursor: item.href ? 'pointer' : 'default',
+                }
+                return item.href ? (
+                  <Link key={item.label} href={item.href} style={sharedStyle}>
+                    {inner}
+                  </Link>
+                ) : (
+                  <div key={item.label} style={sharedStyle}>
+                    {inner}
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
 
