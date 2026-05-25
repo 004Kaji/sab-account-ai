@@ -578,8 +578,10 @@ export default function DashboardPage() {
               {[
                 { label: 'Quarterly BAS',  value: nextBasDue(),        icon: '📋', href: undefined },
                 { label: 'Monthly BAS',    value: nextMonthlyBasDue(), icon: '🗓', href: undefined },
-                { label: 'Super due',      value: nextSuperDue(),      icon: '🏦', href: undefined },
-                { label: 'Payday Super',   value: 'Within 7 business days of each payday — from 1 Jul 2026', icon: '⚡', href: '/payday-super' },
+                ...(new Date() < new Date('2026-07-01')
+                  ? [{ label: 'Super due', value: nextSuperDue(), icon: '🏦', href: undefined }]
+                  : []),
+                { label: 'Payday Super',   value: new Date() < new Date('2026-07-01') ? 'Within 7 business days of each payday — from 1 Jul 2026' : 'Within 7 business days of each payday', icon: '⚡', href: '/payday-super' },
               ].map(item => {
                 const inner = (
                   <>
