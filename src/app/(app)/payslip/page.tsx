@@ -696,11 +696,11 @@ export default function PayslipPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
                 <div>
                   <label className="sab-label">Employer Name</label>
-                  <input className="sab-input" placeholder="Your Business Pty Ltd" value={form.employer_name} onChange={e => setField('employer_name', e.target.value)} />
+                  <input className="sab-input" placeholder="Your Business Pty Ltd" autoComplete="organization" value={form.employer_name} onChange={e => setField('employer_name', e.target.value)} />
                 </div>
                 <div>
                   <label className="sab-label">Employer ABN</label>
-                  <input className="sab-input" placeholder="12 345 678 901" value={form.employer_abn} onChange={e => setField('employer_abn', e.target.value)} />
+                  <input className="sab-input" placeholder="12 345 678 901" autoComplete="off" value={form.employer_abn} onChange={e => setField('employer_abn', e.target.value)} />
                 </div>
               </div>
             </div>
@@ -750,12 +750,12 @@ export default function PayslipPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
                   <div>
                     <label className="sab-label">Employee Name <span style={{ color: 'var(--ember)' }}>*</span></label>
-                    <input className="sab-input" placeholder="Jane Smith" value={form.employee_name}
+                    <input className="sab-input" placeholder="Jane Smith" autoComplete="name" value={form.employee_name}
                       onChange={e => { setField('employee_name', e.target.value); setSelectedEmployeeId(null) }} />
                   </div>
                   <div>
                     <label className="sab-label">Employee Email <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
-                    <input className="sab-input" type="email" placeholder="jane@example.com" value={form.employee_email}
+                    <input className="sab-input" type="email" placeholder="jane@example.com" autoComplete="email" value={form.employee_email}
                       onChange={e => setField('employee_email', e.target.value)} />
                   </div>
                 </div>
@@ -794,12 +794,12 @@ export default function PayslipPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
                   <div>
                     <label className="sab-label">Super Fund Name <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
-                    <input className="sab-input" placeholder="AustralianSuper" value={form.super_fund_name}
+                    <input className="sab-input" placeholder="AustralianSuper" autoComplete="off" value={form.super_fund_name}
                       onChange={e => setField('super_fund_name', e.target.value)} />
                   </div>
                   <div>
                     <label className="sab-label">Member Number <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
-                    <input className="sab-input" placeholder="123456789" value={form.member_number}
+                    <input className="sab-input" placeholder="123456789" autoComplete="off" value={form.member_number}
                       onChange={e => setField('member_number', e.target.value)} />
                   </div>
                 </div>

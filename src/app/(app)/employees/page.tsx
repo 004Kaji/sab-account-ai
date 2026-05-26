@@ -298,18 +298,18 @@ export default function EmployeesPage() {
           {/* Name */}
           <div>
             <label className="sab-label">Full Name <span style={{ color: 'var(--ember)' }}>*</span></label>
-            <input className="sab-input" placeholder="Jane Smith" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+            <input className="sab-input" placeholder="Jane Smith" autoComplete="name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           </div>
 
           {/* Email + Phone */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label className="sab-label">Email <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
-              <input className="sab-input" type="email" placeholder="jane@example.com" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+              <input className="sab-input" type="email" placeholder="jane@example.com" autoComplete="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
             </div>
             <div>
               <label className="sab-label">Phone <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
-              <input className="sab-input" placeholder="04XX XXX XXX" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+              <input className="sab-input" placeholder="04XX XXX XXX" autoComplete="tel" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
             </div>
           </div>
 
@@ -320,14 +320,14 @@ export default function EmployeesPage() {
                 TFN <span style={{ color: 'var(--ember)' }}>*</span>
                 <span style={{ color: 'var(--text3)', fontWeight: 400 }}> (or ABN)</span>
               </label>
-              <input className="sab-input" placeholder="XXX XXX XXX" value={form.tfn} onChange={e => setForm(f => ({ ...f, tfn: e.target.value }))} />
+              <input className="sab-input" placeholder="XXX XXX XXX" autoComplete="off" value={form.tfn} onChange={e => setForm(f => ({ ...f, tfn: e.target.value }))} />
             </div>
             <div>
               <label className="sab-label">
                 ABN <span style={{ color: 'var(--ember)' }}>*</span>
                 <span style={{ color: 'var(--text3)', fontWeight: 400 }}> (or TFN)</span>
               </label>
-              <input className="sab-input" placeholder="XX XXX XXX XXX" value={form.abn} onChange={e => setForm(f => ({ ...f, abn: e.target.value }))} />
+              <input className="sab-input" placeholder="XX XXX XXX XXX" autoComplete="off" value={form.abn} onChange={e => setForm(f => ({ ...f, abn: e.target.value }))} />
               <AbnVerifyBadge abn={form.abn} />
             </div>
           </div>
@@ -404,11 +404,11 @@ export default function EmployeesPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label className="sab-label">Super Fund <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
-              <input className="sab-input" placeholder="AustralianSuper" value={form.super_fund_name} onChange={e => setForm(f => ({ ...f, super_fund_name: e.target.value }))} />
+              <input className="sab-input" placeholder="AustralianSuper" autoComplete="off" value={form.super_fund_name} onChange={e => setForm(f => ({ ...f, super_fund_name: e.target.value }))} />
             </div>
             <div>
               <label className="sab-label">Member Number <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
-              <input className="sab-input" placeholder="123456789" value={form.member_number} onChange={e => setForm(f => ({ ...f, member_number: e.target.value }))} />
+              <input className="sab-input" placeholder="123456789" autoComplete="off" value={form.member_number} onChange={e => setForm(f => ({ ...f, member_number: e.target.value }))} />
             </div>
           </div>
 

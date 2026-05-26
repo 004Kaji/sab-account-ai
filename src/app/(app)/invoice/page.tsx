@@ -530,7 +530,7 @@ export default function InvoicePage() {
         <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1.25rem', marginBottom: '1rem', textAlign: 'left' }}>
           <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.625rem' }}>Send invoice by email</p>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <input className="sab-input" type="email" placeholder="client@example.com" value={emailTo} onChange={e => { setEmailTo(e.target.value); setEmailSent(false) }} style={{ flex: 1 }} />
+            <input className="sab-input" type="email" placeholder="client@example.com" autoComplete="email" value={emailTo} onChange={e => { setEmailTo(e.target.value); setEmailSent(false) }} style={{ flex: 1 }} />
             <button onClick={handleSendEmail} disabled={emailSending || emailSent} className="btn btn-char" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
               {emailSending && <span className="spinner" style={{ width: '0.875rem', height: '0.875rem', borderWidth: '2px' }} />}
               {emailSending ? 'Sending…' : emailSent ? '✓ Sent' : 'Send Email'}
@@ -620,7 +620,7 @@ export default function InvoicePage() {
           <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem' }}>
             <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '1rem' }}>Invoice Details</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.875rem' }} className="form-grid-2">
-              <div><label className="sab-label">Invoice Number</label><input className="sab-input" value={form.invoice_number} onChange={e => setField('invoice_number', e.target.value)} /></div>
+              <div><label className="sab-label">Invoice Number</label><input className="sab-input" autoComplete="off" value={form.invoice_number} onChange={e => setField('invoice_number', e.target.value)} /></div>
               <div><label className="sab-label">Payment Terms</label><select className="sab-input" value={form.payment_terms} onChange={e => setField('payment_terms', e.target.value)}>{PAYMENT_TERMS.map(t => <option key={t}>{t}</option>)}</select></div>
               <div><label className="sab-label">Issue Date</label><input type="date" className="sab-input" value={form.issue_date} onChange={e => setField('issue_date', e.target.value)} /></div>
               <div><label className="sab-label">Due Date</label><input type="date" className="sab-input" value={form.due_date} onChange={e => setField('due_date', e.target.value)} /></div>
@@ -659,15 +659,15 @@ export default function InvoicePage() {
               )}
               <div>
                 <label className="sab-label">Business Name <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
-                <input className="sab-input" placeholder="Acme Pty Ltd" value={form.client_business_name} onChange={e => setField('client_business_name', e.target.value)} />
+                <input className="sab-input" placeholder="Acme Pty Ltd" autoComplete="organization" value={form.client_business_name} onChange={e => setField('client_business_name', e.target.value)} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
                 <div>
                   <label className="sab-label">Client ABN <span style={{ color: 'var(--text3)' }}>(optional)</span></label>
-                  <input className="sab-input" placeholder="12 345 678 901" value={form.client_abn} onChange={e => setField('client_abn', e.target.value)} />
+                  <input className="sab-input" placeholder="12 345 678 901" autoComplete="off" value={form.client_abn} onChange={e => setField('client_abn', e.target.value)} />
                   <AbnVerifyBadge abn={form.client_abn} />
                 </div>
-                <div><label className="sab-label">Client Email <span style={{ color: 'var(--text3)' }}>(optional)</span></label><input className="sab-input" placeholder="accounts@client.com.au" value={form.client_email} onChange={e => setField('client_email', e.target.value)} /></div>
+                <div><label className="sab-label">Client Email <span style={{ color: 'var(--text3)' }}>(optional)</span></label><input className="sab-input" placeholder="accounts@client.com.au" autoComplete="email" value={form.client_email} onChange={e => setField('client_email', e.target.value)} /></div>
               </div>
               <div><label className="sab-label">Client Address <span style={{ color: 'var(--text3)' }}>(optional)</span></label><textarea className="sab-input" rows={2} placeholder="123 Main St, Sydney NSW 2000" value={form.client_address} onChange={e => setField('client_address', e.target.value)} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} /></div>
             </div>
@@ -715,7 +715,7 @@ export default function InvoicePage() {
                 ['bsb', 'BSB', '062-000'],
                 ['account_number', 'Account Number', '1234 5678'],
               ] as const).map(([key, label, placeholder]) => (
-                <div key={key}><label className="sab-label">{label}</label><input className="sab-input" placeholder={placeholder} value={form[key]} onChange={e => setField(key, e.target.value)} /></div>
+                <div key={key}><label className="sab-label">{label}</label><input className="sab-input" placeholder={placeholder} autoComplete="off" value={form[key]} onChange={e => setField(key, e.target.value)} /></div>
               ))}
             </div>
             <div><label className="sab-label">Notes <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text3)' }}>(optional)</span></label><textarea className="sab-input" rows={2} placeholder="e.g. Thank you for your business. Please reference the invoice number when paying." value={form.notes} onChange={e => setField('notes', e.target.value)} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} /></div>

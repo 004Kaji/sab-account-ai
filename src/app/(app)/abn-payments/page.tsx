@@ -454,12 +454,12 @@ function ABNBuilder({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
           <div>
             <label className="sab-label">Contractor Name *</label>
-            <input className="sab-input" placeholder="Jane Smith" value={form.contractor_name}
+            <input className="sab-input" placeholder="Jane Smith" autoComplete="name" value={form.contractor_name}
               onChange={e => onChange('contractor_name', e.target.value)} />
           </div>
           <div>
             <label className="sab-label">ABN</label>
-            <input className="sab-input" placeholder="12 345 678 901" value={form.contractor_abn}
+            <input className="sab-input" placeholder="12 345 678 901" autoComplete="off" value={form.contractor_abn}
               onChange={e => onChange('contractor_abn', e.target.value)} />
             <AbnVerifyBadge abn={form.contractor_abn} />
           </div>
@@ -467,19 +467,19 @@ function ABNBuilder({
 
         <div>
           <label className="sab-label">Address</label>
-          <input className="sab-input" placeholder="123 Main St, Melbourne VIC 3000" value={form.contractor_address}
+          <input className="sab-input" placeholder="123 Main St, Melbourne VIC 3000" autoComplete="street-address" value={form.contractor_address}
             onChange={e => onChange('contractor_address', e.target.value)} />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
           <div>
             <label className="sab-label">Email <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(statement sent here)</span></label>
-            <input className="sab-input" type="email" placeholder="contractor@email.com" value={form.contractor_email}
+            <input className="sab-input" type="email" placeholder="contractor@email.com" autoComplete="email" value={form.contractor_email}
               onChange={e => onChange('contractor_email', e.target.value)} />
           </div>
           <div>
             <label className="sab-label">Phone</label>
-            <input className="sab-input" placeholder="0400 000 000" value={form.contractor_phone}
+            <input className="sab-input" placeholder="0400 000 000" autoComplete="tel" value={form.contractor_phone}
               onChange={e => onChange('contractor_phone', e.target.value)} />
           </div>
         </div>
@@ -606,19 +606,19 @@ function NoABNBuilder({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
           <div>
             <label className="sab-label">Worker Name *</label>
-            <input className="sab-input" placeholder="Full name" value={form.worker_name}
+            <input className="sab-input" placeholder="Full name" autoComplete="name" value={form.worker_name}
               onChange={e => onChange('worker_name', e.target.value)} />
           </div>
           <div>
             <label className="sab-label">Email <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(statement sent here)</span></label>
-            <input className="sab-input" type="email" placeholder="worker@email.com" value={form.worker_email}
+            <input className="sab-input" type="email" placeholder="worker@email.com" autoComplete="email" value={form.worker_email}
               onChange={e => onChange('worker_email', e.target.value)} />
           </div>
         </div>
 
         <div>
           <label className="sab-label">Address (optional)</label>
-          <input className="sab-input" placeholder="Home address" value={form.worker_address}
+          <input className="sab-input" placeholder="Home address" autoComplete="street-address" value={form.worker_address}
             onChange={e => onChange('worker_address', e.target.value)} />
         </div>
 

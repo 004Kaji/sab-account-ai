@@ -162,7 +162,7 @@ function BusinessTab({ biz, setField, saving, save, abnError, setAbnError }: Sha
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       <div>
         <label className="sab-label">Business Name</label>
-        <input className="sab-input" placeholder="Smith Trades Pty Ltd"
+        <input className="sab-input" placeholder="Smith Trades Pty Ltd" autoComplete="organization"
           value={biz.business_name} onChange={e => setField('business_name', e.target.value)} />
       </div>
       <div>
@@ -170,6 +170,7 @@ function BusinessTab({ biz, setField, saving, save, abnError, setAbnError }: Sha
         <input
           className={`sab-input${abnError ? ' sab-input-error' : ''}`}
           placeholder="12 345 678 901"
+          autoComplete="off"
           value={biz.abn}
           onChange={e => setField('abn', e.target.value)}
           onBlur={() => {
@@ -183,12 +184,12 @@ function BusinessTab({ biz, setField, saving, save, abnError, setAbnError }: Sha
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
         <div>
           <label className="sab-label">Business Email</label>
-          <input type="text" className="sab-input" placeholder="hello@yourbusiness.com.au"
+          <input type="text" className="sab-input" placeholder="hello@yourbusiness.com.au" autoComplete="email"
             value={biz.email} onChange={e => setField('email', e.target.value)} />
         </div>
         <div>
           <label className="sab-label">Phone</label>
-          <input className="sab-input" placeholder="0400 000 000"
+          <input className="sab-input" placeholder="0400 000 000" autoComplete="tel"
             value={biz.phone} onChange={e => setField('phone', e.target.value)} />
         </div>
       </div>
@@ -203,7 +204,7 @@ function BusinessTab({ biz, setField, saving, save, abnError, setAbnError }: Sha
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
         <div>
           <label className="sab-label">Website <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
-          <input className="sab-input" placeholder="yourbusiness.com.au"
+          <input className="sab-input" placeholder="yourbusiness.com.au" autoComplete="url"
             value={biz.website} onChange={e => setField('website', e.target.value)} />
         </div>
         <div>
