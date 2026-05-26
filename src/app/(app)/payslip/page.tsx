@@ -460,32 +460,36 @@ export default function PayslipPage() {
   }
 
   async function handleDownloadPDF() {
-    const { downloadPayslipPDF } = await import('@/lib/pdf')
-    await downloadPayslipPDF({
-      payslip_number:    form.payslip_number,
-      pay_period_start:  form.pay_period_start,
-      pay_period_end:    form.pay_period_end,
-      payment_date:      form.payment_date,
-      employer_name:     form.employer_name || (biz?.business_name ?? ''),
-      employer_abn:      (form.employer_abn || biz?.abn) ? formatABN(form.employer_abn || (biz?.abn ?? '')) : '',
-      employee_name:     form.employee_name,
-      employment_type:   form.employment_type,
-      pay_cycle:         form.pay_cycle,
-      pay_basis:         form.pay_basis,
-      annual_salary:     effectiveAnnualSalary,
-      hourly_rate:       form.hourly_rate,
-      ordinary_hours:    form.ordinary_hours,
-      super_fund_name:   form.super_fund_name,
-      member_number:     form.member_number,
-      use_new_super_rate: form.use_new_super_rate,
-      claiming_threshold: form.claiming_threshold,
-      has_help:          form.has_help,
-      medicare_exempt:   form.medicare_exemption,
-      residency_status:  form.residency_status,
-      ytdIsActual,
-      numbers:           displayNumbers,
-      logo_url:          biz?.logo_url,
-    })
+    try {
+      const { downloadPayslipPDF } = await import('@/lib/pdf')
+      await downloadPayslipPDF({
+        payslip_number:    form.payslip_number,
+        pay_period_start:  form.pay_period_start,
+        pay_period_end:    form.pay_period_end,
+        payment_date:      form.payment_date,
+        employer_name:     form.employer_name || (biz?.business_name ?? ''),
+        employer_abn:      (form.employer_abn || biz?.abn) ? formatABN(form.employer_abn || (biz?.abn ?? '')) : '',
+        employee_name:     form.employee_name,
+        employment_type:   form.employment_type,
+        pay_cycle:         form.pay_cycle,
+        pay_basis:         form.pay_basis,
+        annual_salary:     effectiveAnnualSalary,
+        hourly_rate:       form.hourly_rate,
+        ordinary_hours:    form.ordinary_hours,
+        super_fund_name:   form.super_fund_name,
+        member_number:     form.member_number,
+        use_new_super_rate: form.use_new_super_rate,
+        claiming_threshold: form.claiming_threshold,
+        has_help:          form.has_help,
+        medicare_exempt:   form.medicare_exemption,
+        residency_status:  form.residency_status,
+        ytdIsActual,
+        numbers:           displayNumbers,
+        logo_url:          biz?.logo_url || undefined,
+      })
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'PDF generation failed', 'error')
+    }
   }
 
   async function handleSendEmail() {
@@ -516,7 +520,7 @@ export default function PayslipPage() {
         has_help:          form.has_help,
         ytdIsActual,
         numbers:           displayNumbers,
-        logo_url:          biz?.logo_url,
+        logo_url:          biz?.logo_url || undefined,
       })
 
       const supabase = createBrowserClient()

@@ -58,15 +58,17 @@ async function buildPayslipDoc(data: PayslipPDFData) {
   // ── Logo (if provided) ───────────────────────────────────────────────
   if (data.logo_url) {
     await new Promise<void>(resolve => {
+      const timer = setTimeout(resolve, 3000)
       const img = new Image()
       img.onload = () => {
+        clearTimeout(timer)
         const logoH = 10
         const logoW = Math.min(Math.round(logoH * img.naturalWidth / img.naturalHeight), 45)
         const fmt = data.logo_url!.startsWith('data:image/png') ? 'PNG' : 'JPEG'
         try { doc.addImage(data.logo_url!, fmt, margin, y, logoW, logoH) } catch {}
         resolve()
       }
-      img.onerror = () => resolve()
+      img.onerror = () => { clearTimeout(timer); resolve() }
       img.src = data.logo_url!
     })
     y += 13
@@ -326,14 +328,16 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
   if (data.logo_url) {
     const logoH = 14
     await new Promise<void>(resolve => {
+      const timer = setTimeout(resolve, 3000)
       const img = new Image()
       img.onload = () => {
+        clearTimeout(timer)
         const logoW = Math.min(Math.round(logoH * img.naturalWidth / img.naturalHeight), 55)
         const fmt = data.logo_url!.startsWith('data:image/png') ? 'PNG' : 'JPEG'
         try { doc.addImage(data.logo_url!, fmt, margin, y, logoW, logoH) } catch {}
         resolve()
       }
-      img.onerror = () => resolve()
+      img.onerror = () => { clearTimeout(timer); resolve() }
       img.src = data.logo_url!
     })
     // TAX INVOICE vertically centred with the logo
