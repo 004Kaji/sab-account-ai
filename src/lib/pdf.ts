@@ -324,65 +324,22 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
 
   let y = margin
 
-  // ── Header: Logo/Business name (left) + TAX INVOICE large (right) ────
-  if (data.logo_url) {
-    const logoH = 14
-    await new Promise<void>(resolve => {
-      const timer = setTimeout(resolve, 3000)
-      const img = new Image()
-      img.onload = () => {
-        clearTimeout(timer)
-        const logoW = Math.min(Math.round(logoH * img.naturalWidth / img.naturalHeight), 55)
-        const fmt = data.logo_url!.startsWith('data:image/png') ? 'PNG' : 'JPEG'
-        try { doc.addImage(data.logo_url!, fmt, margin, y, logoW, logoH) } catch {}
-        resolve()
-      }
-      img.onerror = () => { clearTimeout(timer); resolve() }
-      img.src = data.logo_url!
-    })
-    // TAX INVOICE vertically centred with the logo
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(26)
-    doc.setTextColor(200, 75, 47)
-    doc.text('TAX INVOICE', pageW - margin, y + logoH - 2, { align: 'right' })
-    // Business name below logo with a clear gap
-    y += logoH + 5
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(10)
-    doc.setTextColor(28, 25, 23)
-    doc.text(data.business_name || 'Your Business', margin, y)
-  } else {
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(26)
-    doc.setTextColor(200, 75, 47)
-    doc.text('TAX INVOICE', pageW - margin, y, { align: 'right' })
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(15)
-    doc.setTextColor(28, 25, 23)
-    doc.text(data.business_name || 'Your Business', margin, y)
-  }
+  // ── TAX INVOICE — centred at top, full width ───────────────────────────
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(22)
+  doc.setTextColor(200, 75, 47)
+  doc.text('TAX INVOICE', pageW / 2, y, { align: 'center' })
+  y += 9
 
-  y += 6
-
-  // Business contact details (left)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8.5)
-  doc.setTextColor(100, 95, 90)
-  if (data.business_abn)     { doc.text(`ABN ${formatABN(data.business_abn)}`, margin, y); y += 4.5 }
-  if (data.business_email)   { doc.text(data.business_email, margin, y); y += 4.5 }
-  if (data.business_phone)   { doc.text(data.business_phone, margin, y); y += 4.5 }
-  if (data.business_address) { doc.text(data.business_address, margin, y); y += 4.5 }
-
-  // Invoice meta (right, aligned under heading)
-  const invMetaX   = margin + cW * 0.55
-  const invMetaTop = margin + 9
+  // ── Left: Logo + Business  ·  Right: Invoice meta ─────────────────────
+  const invMetaX = margin + cW * 0.55
   const invRows: [string, string][] = [
     ['Invoice No:',   data.invoice_number],
     ['Due Date:',     formatDateAU(data.due_date)],
     ['Invoice Date:', formatDateAU(data.issue_date)],
     ['Terms:',        data.payment_terms],
   ]
-  let metaY = invMetaTop
+  let metaY = y
   invRows.forEach(([label, val]) => {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8.5)
@@ -393,6 +350,43 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
     doc.text(val, pageW - margin, metaY, { align: 'right' })
     metaY += 5
   })
+
+  if (data.logo_url) {
+    const logoH = 12
+    await new Promise<void>(resolve => {
+      const timer = setTimeout(resolve, 3000)
+      const img = new Image()
+      img.onload = () => {
+        clearTimeout(timer)
+        const logoW = Math.min(Math.round(logoH * img.naturalWidth / img.naturalHeight), 50)
+        const fmt = data.logo_url!.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+        try { doc.addImage(data.logo_url!, fmt, margin, y, logoW, logoH) } catch {}
+        resolve()
+      }
+      img.onerror = () => { clearTimeout(timer); resolve() }
+      img.src = data.logo_url!
+    })
+    y += logoH + 3
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(28, 25, 23)
+    doc.text(data.business_name || 'Your Business', margin, y)
+  } else {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(13)
+    doc.setTextColor(28, 25, 23)
+    doc.text(data.business_name || 'Your Business', margin, y)
+  }
+  y += 5
+
+  // Business contact details (left)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  doc.setTextColor(100, 95, 90)
+  if (data.business_abn)     { doc.text(`ABN ${formatABN(data.business_abn)}`, margin, y); y += 4.5 }
+  if (data.business_email)   { doc.text(data.business_email, margin, y); y += 4.5 }
+  if (data.business_phone)   { doc.text(data.business_phone, margin, y); y += 4.5 }
+  if (data.business_address) { doc.text(data.business_address, margin, y); y += 4.5 }
 
   y = Math.max(y, metaY) + 5
 
