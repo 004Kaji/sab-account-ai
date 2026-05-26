@@ -87,32 +87,32 @@ async function buildPayslipDoc(data: PayslipPDFData) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7)
   doc.setTextColor(100, 95, 90)
-  doc.text('EMPLOYEE', margin, y)
-  doc.text('PAID BY', colRight, y)
+  doc.text('PAID BY', margin, y)
+  doc.text('EMPLOYEE', colRight, y)
   y += 5
 
   // Names
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
   doc.setTextColor(28, 25, 23)
-  doc.text(data.employee_name || '—', margin, y)
+  doc.text(data.employer_name || 'Your Business', margin, y)
   doc.setFontSize(10)
-  doc.text(data.employer_name || 'Your Business', colRight, y)
+  doc.text(data.employee_name || '—', colRight, y)
   y += 5
 
   // Sub-details
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8.5)
   doc.setTextColor(100, 95, 90)
-  doc.text(`${data.employment_type} · ${data.pay_cycle}`, margin, y)
-  if (data.employer_abn) doc.text(`ABN ${formatABN(data.employer_abn)}`, colRight, y)
+  if (data.employer_abn) doc.text(`ABN ${formatABN(data.employer_abn)}`, margin, y)
+  doc.text(`${data.employment_type} · ${data.pay_cycle}`, colRight, y)
   y += 4.5
 
   // Pay rate hint
   if (isHourly && data.hourly_rate > 0) {
-    doc.text(`${formatCurrency(data.hourly_rate)}/hr · ${data.ordinary_hours} hrs/period`, margin, y)
+    doc.text(`${formatCurrency(data.hourly_rate)}/hr · ${data.ordinary_hours} hrs/period`, colRight, y)
   } else if (!isHourly && data.annual_salary > 0) {
-    doc.text(`${formatCurrency(data.annual_salary)}/yr`, margin, y)
+    doc.text(`${formatCurrency(data.annual_salary)}/yr`, colRight, y)
   }
   y += 4.5
 
