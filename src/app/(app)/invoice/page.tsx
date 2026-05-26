@@ -405,34 +405,38 @@ export default function InvoicePage() {
   //     If the user hasn't saved yet, the PDF won't appear in their invoice records.
   //     Always save the invoice before downloading if you want it in your records.
   async function handleDownloadPDF() {
-    const { downloadInvoicePDF } = await import('@/lib/pdf')
-    await downloadInvoicePDF({
-      invoice_number: form.invoice_number,
-      issue_date: form.issue_date,
-      due_date: form.due_date,
-      payment_terms: form.payment_terms,
-      business_name: biz?.business_name ?? '',
-      business_abn: biz?.abn ? formatABN(biz.abn) : '',
-      business_email: biz?.email ?? '',
-      business_phone: biz?.phone ?? '',
-      business_address: biz?.address ?? '',
-      logo_url: biz?.logo_url,
-      client_name: form.client_name,
-      client_business_name: form.client_business_name || undefined,
-      client_abn: form.client_abn ? formatABN(form.client_abn) : '',
-      client_email: form.client_email,
-      client_address: form.client_address,
-      line_items: form.line_items,
-      subtotal_ex_gst: totals.subtotal_ex_gst,
-      total_gst: totals.total_gst,
-      total_inc_gst: totals.total_inc_gst,
-      bank_name: form.bank_name,
-      account_name: form.account_name,
-      bsb: form.bsb,
-      account_number: form.account_number,
-      notes: form.notes,
-    })
-    setPdfDownloaded(true)
+    try {
+      const { downloadInvoicePDF } = await import('@/lib/pdf')
+      await downloadInvoicePDF({
+        invoice_number: form.invoice_number,
+        issue_date: form.issue_date,
+        due_date: form.due_date,
+        payment_terms: form.payment_terms,
+        business_name: biz?.business_name ?? '',
+        business_abn: biz?.abn ? formatABN(biz.abn) : '',
+        business_email: biz?.email ?? '',
+        business_phone: biz?.phone ?? '',
+        business_address: biz?.address ?? '',
+        logo_url: biz?.logo_url || undefined,
+        client_name: form.client_name,
+        client_business_name: form.client_business_name || undefined,
+        client_abn: form.client_abn ? formatABN(form.client_abn) : '',
+        client_email: form.client_email,
+        client_address: form.client_address,
+        line_items: form.line_items,
+        subtotal_ex_gst: totals.subtotal_ex_gst,
+        total_gst: totals.total_gst,
+        total_inc_gst: totals.total_inc_gst,
+        bank_name: form.bank_name,
+        account_name: form.account_name,
+        bsb: form.bsb,
+        account_number: form.account_number,
+        notes: form.notes,
+      })
+      setPdfDownloaded(true)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'PDF generation failed', 'error')
+    }
   }
 
   async function handleSaveNewClient() {
