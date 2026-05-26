@@ -9,23 +9,25 @@ import { initials, safeStorage } from '@/lib/utils'
 import { ToastProvider } from '@/components/ui/Toast'
 
 const NAV_ITEMS = [
-  { label: 'Dashboard',      href: '/dashboard',     proOnly: false },
-  { label: 'Create Invoice', href: '/invoice',       proOnly: false },
-  { label: 'Payslips',       href: '/payslip',       proOnly: true  },
-  { label: 'ABN Pay',        href: '/abn-payments',  proOnly: true  },
-  { label: 'Records',        href: '/records',       proOnly: false },
-  { label: 'Clients',        href: '/clients',       proOnly: false },
-  { label: 'Employees',      href: '/employees',     proOnly: true  },
-  { label: 'Settings',       href: '/settings',      proOnly: false },
+  { label: 'Dashboard',       href: '/dashboard',        proOnly: false },
+  { label: 'Invoices',        href: '/invoices',         proOnly: false },
+  { label: 'New Invoice',     href: '/invoice',          proOnly: false },
+  { label: 'Payslips',        href: '/payslip-history',  proOnly: true  },
+  { label: 'New Payslip',     href: '/payslip',          proOnly: true  },
+  { label: 'ABN Pay',         href: '/abn-payments',     proOnly: true  },
+  { label: 'Records',         href: '/records',          proOnly: false },
+  { label: 'Clients',         href: '/clients',          proOnly: false },
+  { label: 'Employees',       href: '/employees',        proOnly: true  },
+  { label: 'Settings',        href: '/settings',         proOnly: false },
 ]
 
 // Bottom nav limited to 5 items so they all fit on small screens
 const MOBILE_NAV_ITEMS = [
-  { label: 'Dashboard',      href: '/dashboard'    },
-  { label: 'Invoice',        href: '/invoice'      },
-  { label: 'Payslips',       href: '/payslip'      },
-  { label: 'Records',        href: '/records'      },
-  { label: 'Settings',       href: '/settings'     },
+  { label: 'Dashboard',  href: '/dashboard'       },
+  { label: 'Invoices',   href: '/invoices'        },
+  { label: 'Payslips',   href: '/payslip-history' },
+  { label: 'Records',    href: '/records'         },
+  { label: 'Settings',   href: '/settings'        },
 ]
 
 const PLAN_STYLES: Record<string, { bg: string; color: string; label: string }> = {
@@ -51,6 +53,11 @@ function SignOutIcon() {
 }
 
 const NAV_ICONS: Record<string, React.ReactElement> = {
+  Invoices: (
+    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+    </svg>
+  ),
   Dashboard: (
     <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
