@@ -28,6 +28,7 @@ interface BizProfile {
   email: string
   phone: string
   address: string
+  logo_url?: string
 }
 
 interface ClientRecord {
@@ -239,7 +240,7 @@ export default function InvoicePage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const [{ data: bizData }, { data: lastInv }, { data: clientData }] = await Promise.all([
-        supabase.from('business_profiles').select('business_name,abn,email,phone,address').eq('id', user.id).single(),
+        supabase.from('business_profiles').select('business_name,abn,email,phone,address,logo_url').eq('id', user.id).single(),
         supabase.from('invoices').select('invoice_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('clients').select('id,business_name,contact_name,email,phone,address,abn').eq('user_id', user.id).order('business_name'),
       ])
@@ -415,6 +416,7 @@ export default function InvoicePage() {
       business_email: biz?.email ?? '',
       business_phone: biz?.phone ?? '',
       business_address: biz?.address ?? '',
+      logo_url: biz?.logo_url,
       client_name: form.client_name,
       client_business_name: form.client_business_name || undefined,
       client_abn: form.client_abn ? formatABN(form.client_abn) : '',
@@ -472,6 +474,7 @@ export default function InvoicePage() {
         business_email: biz?.email ?? '',
         business_phone: biz?.phone ?? '',
         business_address: biz?.address ?? '',
+        logo_url: biz?.logo_url,
         client_name: form.client_name,
         client_business_name: form.client_business_name || undefined,
         client_abn: form.client_abn ? formatABN(form.client_abn) : '',

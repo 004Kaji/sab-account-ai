@@ -65,6 +65,7 @@ interface BizProfile {
   business_name: string
   abn: string
   email: string
+  logo_url?: string
 }
 
 function defaultPeriod(cycle: PayCycle): { start: string; end: string } {
@@ -347,7 +348,7 @@ export default function PayslipPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const [{ data: bizData }, { data: lastSlip }, { data: empData }] = await Promise.all([
-        supabase.from('business_profiles').select('business_name,abn,email').eq('id', user.id).single(),
+        supabase.from('business_profiles').select('business_name,abn,email,logo_url').eq('id', user.id).single(),
         supabase.from('payslips').select('payslip_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('employees').select('id,name,email,employment_type,pay_cycle,pay_basis,annual_salary,hourly_rate,ordinary_hours,super_fund_name,member_number,residency_status').eq('user_id', user.id).order('name'),
       ])
@@ -483,6 +484,7 @@ export default function PayslipPage() {
       residency_status:  form.residency_status,
       ytdIsActual,
       numbers:           displayNumbers,
+      logo_url:          biz?.logo_url,
     })
   }
 
@@ -514,6 +516,7 @@ export default function PayslipPage() {
         has_help:          form.has_help,
         ytdIsActual,
         numbers:           displayNumbers,
+        logo_url:          biz?.logo_url,
       })
 
       const supabase = createBrowserClient()

@@ -32,6 +32,7 @@ export interface PayslipPDFData {
   medicare_exempt?: boolean
   residency_status?: string
   ytdIsActual?: boolean
+  logo_url?: string
   numbers: PayslipNumbers
 }
 
@@ -53,6 +54,23 @@ async function buildPayslipDoc(data: PayslipPDFData) {
   const colYTD    = pageW - margin // YTD
 
   let y = margin
+
+  // ── Logo (if provided) ───────────────────────────────────────────────
+  if (data.logo_url) {
+    await new Promise<void>(resolve => {
+      const img = new Image()
+      img.onload = () => {
+        const logoH = 10
+        const logoW = Math.min(Math.round(logoH * img.naturalWidth / img.naturalHeight), 45)
+        const fmt = data.logo_url!.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+        try { doc.addImage(data.logo_url!, fmt, margin, y, logoW, logoH) } catch {}
+        resolve()
+      }
+      img.onerror = () => resolve()
+      img.src = data.logo_url!
+    })
+    y += 13
+  }
 
   // ── Header: Employee (left) · Employer (right) ──────────────────────
   const colRight = margin + cW * 0.55
@@ -276,6 +294,7 @@ export interface InvoicePDFData {
   business_email: string
   business_phone: string
   business_address: string
+  logo_url?: string
   client_name: string
   client_business_name?: string
   client_abn: string
@@ -303,16 +322,37 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
 
   let y = margin
 
-  // ── Header: Business name (left) + TAX INVOICE large (right) ────────
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(15)
-  doc.setTextColor(28, 25, 23)
-  doc.text(data.business_name || 'Your Business', margin, y)
-
+  // ── Header: Logo/Business name (left) + TAX INVOICE large (right) ────
+  // TAX INVOICE heading (right side, always at top)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(26)
   doc.setTextColor(200, 75, 47)
   doc.text('TAX INVOICE', pageW - margin, y, { align: 'right' })
+
+  if (data.logo_url) {
+    await new Promise<void>(resolve => {
+      const img = new Image()
+      img.onload = () => {
+        const logoH = 14
+        const logoW = Math.min(Math.round(logoH * img.naturalWidth / img.naturalHeight), 55)
+        const fmt = data.logo_url!.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+        try { doc.addImage(data.logo_url!, fmt, margin, y - 4, logoW, logoH) } catch {}
+        resolve()
+      }
+      img.onerror = () => resolve()
+      img.src = data.logo_url!
+    })
+    y += 12
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(28, 25, 23)
+    doc.text(data.business_name || 'Your Business', margin, y)
+  } else {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(15)
+    doc.setTextColor(28, 25, 23)
+    doc.text(data.business_name || 'Your Business', margin, y)
+  }
 
   y += 6
 

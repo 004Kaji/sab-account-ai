@@ -18,6 +18,7 @@ interface BizSettings {
   address:              string
   website:              string
   industry:             string
+  logo_url:             string
   default_payment_terms: string
   default_gst:          boolean
   starting_invoice_num: number
@@ -34,7 +35,7 @@ interface BizSettings {
 }
 
 const EMPTY: BizSettings = {
-  business_name: '', abn: '', email: '', phone: '', address: '', website: '', industry: '',
+  business_name: '', abn: '', email: '', phone: '', address: '', website: '', industry: '', logo_url: '',
   default_payment_terms: '14 days', default_gst: true, starting_invoice_num: 1,
   default_currency: 'AUD', default_footer: '',
   gst_registered: false, bas_frequency: 'quarterly', super_rate_new: true,
@@ -107,6 +108,37 @@ const PLAN_STYLES: Record<string, { bg: string; color: string }> = {
   free:    { bg: 'var(--cream2)',          color: 'var(--text2)'  },
   starter: { bg: 'rgba(201,147,58,0.15)', color: '#92400e'       },
   pro:     { bg: 'rgba(200,75,47,0.1)',   color: 'var(--ember)'  },
+}
+
+// ── Logo resize helper ────────────────────────────────────────────────
+async function resizeLogo(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = reject
+    reader.onload = (ev) => {
+      const img = new Image()
+      img.onerror = reject
+      img.onload = () => {
+        const MAX_W = 400, MAX_H = 150
+        let w = img.width, h = img.height
+        if (w > MAX_W || h > MAX_H) {
+          const ratio = Math.min(MAX_W / w, MAX_H / h)
+          w = Math.round(w * ratio)
+          h = Math.round(h * ratio)
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')!
+        const isJpeg = file.type === 'image/jpeg'
+        if (isJpeg) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h) }
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve(isJpeg ? canvas.toDataURL('image/jpeg', 0.85) : canvas.toDataURL('image/png'))
+      }
+      img.src = ev.target!.result as string
+    }
+    reader.readAsDataURL(file)
+  })
 }
 
 // ── Tab components (module-level to prevent remounting on parent re-render) ──
@@ -182,6 +214,56 @@ function BusinessTab({ biz, setField, saving, save, abnError, setAbnError }: Sha
           </select>
         </div>
       </div>
+      {/* Logo upload */}
+      <div>
+        <label className="sab-label">Business Logo <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
+        {biz.logo_url ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.625rem' }}>
+            <div style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '6px 10px', background: '#fff', display: 'inline-flex', alignItems: 'center' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={biz.logo_url} alt="Business logo" style={{ maxHeight: '44px', maxWidth: '140px', objectFit: 'contain', display: 'block' }} />
+            </div>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => { setField('logo_url', ''); save({ logo_url: '' }) }}
+              style={{ fontSize: '0.8125rem', color: 'var(--ember)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+            >
+              Remove
+            </button>
+          </div>
+        ) : (
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', marginBottom: '0.5rem' }}>No logo uploaded yet</p>
+        )}
+        <input
+          type="file"
+          id="logo-upload"
+          accept="image/png,image/jpeg,image/webp"
+          style={{ display: 'none' }}
+          onChange={async (e) => {
+            const file = e.target.files?.[0]
+            if (!file) return
+            try {
+              const dataUrl = await resizeLogo(file)
+              setField('logo_url', dataUrl)
+              await save({ logo_url: dataUrl })
+            } catch { /* ignore */ }
+            e.target.value = ''
+          }}
+        />
+        <label htmlFor="logo-upload" style={{
+          display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
+          padding: '0.4375rem 0.875rem', borderRadius: '8px', fontSize: '0.875rem',
+          fontWeight: 500, cursor: 'pointer', border: '1px solid var(--border)',
+          background: '#fff', color: 'var(--char)',
+        }}>
+          {biz.logo_url ? 'Replace logo' : 'Upload logo'}
+        </label>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.375rem' }}>
+          PNG or JPEG, max 2 MB. Appears on invoices and payslips.
+        </p>
+      </div>
+
       <div>
         <button onClick={handleSave} disabled={saving} className="btn btn-ember">
           {saving && <span className="spinner" style={{ width: '0.875rem', height: '0.875rem', borderWidth: '2px' }} />}
@@ -964,6 +1046,7 @@ export default function SettingsPage() {
           address:              data.address              ?? '',
           website:              data.website              ?? '',
           industry:             data.industry             ?? '',
+          logo_url:             data.logo_url             ?? '',
           default_payment_terms: data.default_payment_terms ?? '14 days',
           default_gst:          data.default_gst          ?? true,
           starting_invoice_num: data.starting_invoice_num ?? 1,
