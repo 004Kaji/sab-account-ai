@@ -648,6 +648,7 @@ export default function InvoicePage() {
                     client_address: c.address ?? '',
                   }))
                 }}
+                onChange={v => { setSelectedClientId(null); setField('client_name', v) }}
                 onClear={() => { setSelectedClientId(null); setForm(prev => ({ ...prev, client_name: '', client_business_name: '' })) }}
               />
               {selectedClientId && (

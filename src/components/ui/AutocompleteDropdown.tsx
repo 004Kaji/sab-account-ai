@@ -15,12 +15,13 @@ interface Props {
   value: string
   onSelect: (item: AutocompleteItem) => void
   onClear: () => void
+  onChange?: (value: string) => void
   onAddNew?: () => void
   addNewLabel?: string
 }
 
 export default function AutocompleteDropdown({
-  label, placeholder, items, value, onSelect, onClear, onAddNew, addNewLabel = 'Add new',
+  label, placeholder, items, value, onSelect, onClear, onChange, onAddNew, addNewLabel = 'Add new',
 }: Props) {
   const [query, setQuery] = useState(value)
   const [open, setOpen] = useState(false)
@@ -56,8 +57,12 @@ export default function AutocompleteDropdown({
       e.preventDefault()
       if (highlighted >= 0 && highlighted < filtered.length) {
         pick(filtered[highlighted])
+      } else if (highlighted === -1 && filtered.length > 0) {
+        pick(filtered[0])
       } else if (highlighted === filtered.length && onAddNew) {
         onAddNew(); setOpen(false)
+      } else {
+        setOpen(false)
       }
     }
   }
@@ -95,7 +100,7 @@ export default function AutocompleteDropdown({
           placeholder={placeholder}
           value={query}
           style={{ paddingLeft: isSelected ? '1.375rem' : undefined, paddingRight: query ? '1.75rem' : undefined }}
-          onChange={e => { setQuery(e.target.value); setOpen(true); setHighlighted(-1) }}
+          onChange={e => { setQuery(e.target.value); setOpen(true); setHighlighted(-1); onChange?.(e.target.value) }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
           autoComplete="off"

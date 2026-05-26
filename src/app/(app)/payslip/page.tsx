@@ -738,6 +738,7 @@ export default function PayslipPage() {
                       pay_period_end: period.end,
                     }))
                   }}
+                  onChange={v => { setSelectedEmployeeId(null); setField('employee_name', v) }}
                   onClear={() => { setSelectedEmployeeId(null); setField('employee_name', '') }}
                 />
                 {selectedEmployeeId && (
