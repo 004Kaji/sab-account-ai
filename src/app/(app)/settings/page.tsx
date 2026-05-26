@@ -181,7 +181,7 @@ function BusinessTab({ biz, setField, saving, save, abnError, setAbnError }: Sha
         {abnError && <p style={{ fontSize: '0.8125rem', color: 'var(--ember)', marginTop: '0.25rem' }}>{abnError}</p>}
         {!abnError && <AbnVerifyBadge abn={biz.abn} />}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+      <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
         <div>
           <label className="sab-label">Business Email</label>
           <input type="text" className="sab-input" placeholder="hello@yourbusiness.com.au" autoComplete="email"
@@ -201,7 +201,7 @@ function BusinessTab({ biz, setField, saving, save, abnError, setAbnError }: Sha
           style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
         />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+      <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
         <div>
           <label className="sab-label">Website <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
           <input className="sab-input" placeholder="yourbusiness.com.au" autoComplete="url"
@@ -979,6 +979,12 @@ function ReferralsTab() {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
         }
+        @media (max-width: 768px) {
+          .settings-tab-panel { padding: 1.25rem !important; }
+        }
+        @media (max-width: 480px) {
+          .settings-tab-panel { padding: 1rem !important; }
+        }
       `}</style>
     </div>
   )
@@ -1138,7 +1144,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={{ maxWidth: '860px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+    <div className="page-pad" style={{ maxWidth: '860px', margin: '0 auto', padding: '2rem 1.5rem' }}>
 
       {/* Header */}
       <h1 className="font-display" style={{ fontSize: '1.75rem', fontWeight: 600, color: 'var(--char)', letterSpacing: '-0.02em', marginBottom: '0.25rem' }}>
@@ -1149,7 +1155,7 @@ export default function SettingsPage() {
       </p>
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: '0.125rem', background: 'var(--cream2)', borderRadius: 'var(--r)', padding: '0.25rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
+      <div className="settings-tabs" style={{ display: 'flex', gap: '0.125rem', background: 'var(--cream2)', borderRadius: 'var(--r)', padding: '0.25rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
         {TABS.map(t => (
           <button
             key={t.key}
@@ -1174,7 +1180,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Active tab content */}
-      <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '2rem' }}>
+      <div className="settings-tab-panel" style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '2rem' }}>
         {tab === 'business' && (
           <BusinessTab biz={biz} setField={setField} saving={saving} save={save} abnError={abnError} setAbnError={setAbnError} />
         )}

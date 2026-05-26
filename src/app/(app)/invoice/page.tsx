@@ -582,7 +582,7 @@ export default function InvoicePage() {
   }
 
   return (
-    <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+    <div className="page-pad" style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
       <div style={{ marginBottom: '1.75rem' }}>
         <h1 className="font-display" style={{ fontSize: '1.75rem', fontWeight: 600, color: 'var(--char)', letterSpacing: '-0.02em', marginBottom: '0.25rem' }}>Create Invoice</h1>
         <p style={{ color: 'var(--text3)', fontSize: '0.875rem' }}>{form.invoice_number} · {biz?.business_name || profile.business_name || 'Your Business'}</p>

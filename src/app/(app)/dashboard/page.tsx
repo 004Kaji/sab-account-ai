@@ -417,7 +417,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+    <div className="page-pad" style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
 
       {/* ── Header ─────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
@@ -440,7 +440,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── KPI cards ──────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+      <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))', gap: '1rem', marginBottom: '2rem' }}>
         <KpiCard
           label={`Invoiced in ${monthName}`}
           value={formatCurrency(kpis.invoicedThisMonth)}
@@ -640,13 +640,13 @@ export default function DashboardPage() {
             <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--char)' }}>Top Clients — {fyLabel}</h2>
             <Link href="/clients" style={{ fontSize: '0.8125rem', color: 'var(--ember)', textDecoration: 'none', fontWeight: 500 }}>View all →</Link>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${topClients.length}, 1fr)` }}>
-            {topClients.map((client, i) => (
+          <div className="top-clients-grid" style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, 160px), 1fr))`, gap: '1px', background: 'var(--border)' }}>
+            {topClients.map((client) => (
               <div
                 key={client.client_name}
                 style={{
                   padding: '1.25rem 1.5rem',
-                  borderRight: i < topClients.length - 1 ? '1px solid var(--border)' : 'none',
+                  background: '#ffffff',
                 }}
               >
                 <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -667,6 +667,9 @@ export default function DashboardPage() {
       <style>{`
         @media (max-width: 1024px) {
           .dashboard-grid { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 480px) {
+          .top-clients-grid > div { padding: 0.875rem 1rem !important; }
         }
       `}</style>
     </div>

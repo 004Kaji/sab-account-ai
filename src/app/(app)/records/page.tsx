@@ -363,7 +363,7 @@ export default function RecordsPage() {
         onImported={handleImported}
       />
 
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+      <div className="page-pad" style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
 
         {/* Undo banner */}
         {lastImport && (
@@ -410,7 +410,7 @@ export default function RecordsPage() {
         </div>
 
         {/* KPI row */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+        <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: '1rem', marginBottom: '2rem' }}>
           <KpiCard label="Total Income"   value={formatCurrency(totalIncome)}   sub={`${income.length} records`}   color="#15803d" />
           <KpiCard label="Total Expenses" value={formatCurrency(totalExpenses)} sub={`${expenses.length} records`} color="var(--ember)" />
           <KpiCard label="Net Profit"     value={formatCurrency(netProfit)}     sub="Income minus expenses"        color={netProfit >= 0 ? 'var(--char)' : 'var(--ember)'} />
@@ -622,7 +622,7 @@ export default function RecordsPage() {
       </div>
 
       <style>{`
-        @media (max-width: 900px) {
+        @media (max-width: 1024px) {
           .records-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>

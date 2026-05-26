@@ -241,21 +241,49 @@ code, pre {
 @media (max-width: 1024px) {
   .hide-mobile { display: none !important; }
 
-  /* Stack two-column page grids to single column on mobile/tablet */
+  /* Stack two-column page grids to single column on tablet/mobile */
   .invoice-grid  { grid-template-columns: 1fr !important; }
   .payslip-grid  { grid-template-columns: 1fr !important; }
   .records-grid  { grid-template-columns: 1fr !important; }
+  .abn-grid      { grid-template-columns: 1fr !important; }
 
-  /* Stack two-column form grids */
+  /* Stack form grids */
   .form-grid-2   { grid-template-columns: 1fr !important; }
+  .form-grid-3   { grid-template-columns: 1fr 1fr !important; }
 
   /* Make tables horizontally scrollable */
   .table-scroll  { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
 
+/* ── Tablet tweaks (768px) ──────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Stack all multi-column form grids earlier */
+  .form-grid-2   { grid-template-columns: 1fr !important; }
+  .form-grid-3   { grid-template-columns: 1fr !important; }
+
+  /* Settings tabs: scroll horizontally instead of wrapping */
+  .settings-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    scrollbar-width: none;
+  }
+  .settings-tabs::-webkit-scrollbar { display: none; }
+
+  /* Reduce page padding */
+  .page-pad { padding: 1.5rem 1rem !important; }
+}
+
+/* ── Small phone (480px) ────────────────────────────────────── */
 @media (max-width: 480px) {
   /* Tighten page padding on small phones */
-  .page-pad { padding: 1rem 1rem !important; }
+  .page-pad { padding: 1rem !important; }
+
+  /* Stats grids: two columns on small phones */
+  .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Top clients: two columns */
+  .top-clients-grid { grid-template-columns: repeat(2, 1fr) !important; }
 }
 
 @media (min-width: 1025px) {

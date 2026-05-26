@@ -650,7 +650,7 @@ export default function PayslipPage() {
   // ── Main layout ───────────────────────────────────────────────────
   return (
     <PlanGate requiredPlan="pro">
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+      <div className="page-pad" style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
 
         {/* Payday Super urgent banner */}
         <div style={{
@@ -1042,12 +1042,13 @@ export default function PayslipPage() {
         </div>
 
         <style>{`
-          @media (max-width: 900px) {
+          @media (max-width: 1024px) {
             .payslip-grid { grid-template-columns: 1fr !important; }
-          }
-          @media (max-width: 640px) {
             .payslip-preview-col { display: none !important; }
             .form-grid-2 { grid-template-columns: 1fr !important; }
+            .form-grid-3 { grid-template-columns: 1fr 1fr !important; }
+          }
+          @media (max-width: 640px) {
             .form-grid-3 { grid-template-columns: 1fr !important; }
           }
         `}</style>

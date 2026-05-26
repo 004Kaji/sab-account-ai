@@ -136,7 +136,7 @@ export default function PayslipHistoryPage() {
 
   return (
     <PlanGate requiredPlan="pro">
-      <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+      <div className="page-pad" style={{ maxWidth: '1100px', margin: '0 auto', padding: '2rem 1.5rem' }}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>

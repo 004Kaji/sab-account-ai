@@ -451,7 +451,7 @@ function ABNBuilder({
           Contractor Details
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+        <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
           <div>
             <label className="sab-label">Contractor Name *</label>
             <input className="sab-input" placeholder="Jane Smith" autoComplete="name" value={form.contractor_name}
@@ -471,7 +471,7 @@ function ABNBuilder({
             onChange={e => onChange('contractor_address', e.target.value)} />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+        <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
           <div>
             <label className="sab-label">Email <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(statement sent here)</span></label>
             <input className="sab-input" type="email" placeholder="contractor@email.com" autoComplete="email" value={form.contractor_email}
@@ -494,7 +494,7 @@ function ABNBuilder({
             onChange={e => onChange('work_description', e.target.value)} />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+        <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
           <div>
             <label className="sab-label">Payment Date *</label>
             <input type="date" className="sab-input" value={form.payment_date}
@@ -603,7 +603,7 @@ function NoABNBuilder({
           Worker Details (No ABN)
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+        <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
           <div>
             <label className="sab-label">Worker Name *</label>
             <input className="sab-input" placeholder="Full name" autoComplete="name" value={form.worker_name}
@@ -1267,7 +1267,7 @@ export default function ABNPaymentsPage() {
   return (
     <PlanGate requiredPlan="pro">
     <>
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+      <div className="page-pad" style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
