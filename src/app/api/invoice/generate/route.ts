@@ -18,6 +18,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 
 // ── In-memory rate limiter ────────────────────────────────────────────
@@ -144,6 +145,7 @@ Job description: ${prompt}`,
     // If ANYTHING goes wrong (bad API key, Claude is down, JSON parse failed),
     // we log it on the server and send a safe error message back to the browser.
     // The user sees: "Generation failed" in a red toast notification.
+    Sentry.captureException(err, { tags: { feature: 'ai_generation', operation: 'invoice_generate' } })
     console.error('AI generate error:', err)
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Generation failed' },

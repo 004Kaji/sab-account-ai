@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
+import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 
 export async function POST(req: NextRequest) {
@@ -184,6 +185,7 @@ export async function POST(req: NextRequest) {
   })
 
   if (error) {
+    Sentry.captureException(new Error((error as { message?: string }).message ?? 'Resend failed'), { tags: { feature: 'email_send', type: 'abn_payment' } })
     console.error('[abn-payment] Resend error:', JSON.stringify(error))
     return NextResponse.json({ error: (error as { message?: string }).message ?? 'Failed to send email' }, { status: 500 })
   }

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 
 const INCOME_CATEGORIES  = ['Consulting', 'Labour', 'Materials & Goods', 'Retainer', 'Rental Income', 'Other Income']
@@ -76,6 +77,7 @@ Example: [{"type":"expense","category":"Software & Subscriptions","gst":true,"co
 
     return NextResponse.json({ results })
   } catch (err) {
+    Sentry.captureException(err, { tags: { feature: 'ai_generation', operation: 'categorise' } })
     console.error('AI categorise error:', err)
     return NextResponse.json({ results: transactions.map(fallback) })
   }

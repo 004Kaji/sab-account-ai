@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 import { applyReferralReward } from '@/lib/referral'
 import { sendFriendConvertedEmail } from '@/lib/referral-emails'
@@ -218,6 +219,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
 
   } catch (error) {
+    Sentry.captureException(error, { tags: { feature: 'stripe_webhook' } })
     console.error('Webhook handler error:', error)
     return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 })
   }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import * as Sentry from '@sentry/nextjs'
 import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
@@ -390,6 +391,7 @@ export default function InvoicePage() {
       setSavedInvoice({ id: data.id, number: form.invoice_number })
       if (form.client_email) setEmailTo(form.client_email)
     } catch (err) {
+      Sentry.captureException(err, { tags: { feature: 'invoice_save' } })
       toast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
       setSaving(false)
