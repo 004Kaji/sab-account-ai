@@ -9,16 +9,17 @@ import { initials, safeStorage } from '@/lib/utils'
 import { ToastProvider } from '@/components/ui/Toast'
 
 const NAV_ITEMS = [
-  { label: 'Dashboard',       href: '/dashboard',        proOnly: false },
-  { label: 'Invoices',        href: '/invoices',         proOnly: false },
-  { label: 'New Invoice',     href: '/invoice',          proOnly: false },
-  { label: 'Payslips',        href: '/payslip-history',  proOnly: true  },
-  { label: 'New Payslip',     href: '/payslip',          proOnly: true  },
-  { label: 'ABN Pay',         href: '/abn-payments',     proOnly: true  },
-  { label: 'Records',         href: '/records',          proOnly: false },
-  { label: 'Clients',         href: '/clients',          proOnly: false },
-  { label: 'Employees',       href: '/employees',        proOnly: true  },
-  { label: 'Settings',        href: '/settings',         proOnly: false },
+  { label: 'Dashboard',       href: '/dashboard',              proOnly: false },
+  { label: 'Invoices',        href: '/invoices',               proOnly: false },
+  { label: 'New Invoice',     href: '/invoice',                proOnly: false },
+  { label: 'Payslips',        href: '/payslip-history',        proOnly: true  },
+  { label: 'New Payslip',     href: '/payslip',                proOnly: true  },
+  { label: 'ABN Pay',         href: '/abn-payments',           proOnly: true  },
+  { label: 'Records',         href: '/records',                proOnly: false },
+  { label: 'Clients',         href: '/clients',                proOnly: false },
+  { label: 'Employees',       href: '/employees',              proOnly: true  },
+  { label: 'Work Hours',      href: '/dashboard/work-hours',   proOnly: false },
+  { label: 'Settings',        href: '/settings',               proOnly: false },
 ]
 
 // Bottom nav limited to 5 items so they all fit on small screens
@@ -53,6 +54,11 @@ function SignOutIcon() {
 }
 
 const NAV_ICONS: Record<string, React.ReactElement> = {
+  'Work Hours': (
+    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
   Invoices: (
     <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />

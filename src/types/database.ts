@@ -92,6 +92,26 @@ export type DbPayslip = {
   created_at: string
 }
 
+// ── work_hours table ──────────────────────────────────────────────
+export type DbWorkHour = {
+  id: string
+  user_id: string
+  work_date: string       // ISO date YYYY-MM-DD
+  hours_worked: number
+  employer_name: string | null
+  notes: string | null
+  created_at: string
+}
+
+// ── work_hours_settings table ─────────────────────────────────────
+export type DbWorkHoursSettings = {
+  id: string
+  user_id: string
+  mode: 'semester' | 'holiday'
+  fortnightly_limit: number  // generated: 48 (semester) | 999 (holiday)
+  created_at: string
+}
+
 // ── records table (income + expenses, added in a future migration)
 export type DbRecord = {
   id: string
