@@ -239,6 +239,163 @@ function StatusDropdown({ invoice, onStatusChange, updating }: {
   )
 }
 
+// ── Payday Super calculator widget ───────────────────────────────────
+function PaydaySuperCalcWidget() {
+  const [mode, setMode] = useState<'annual' | 'hourly' | 'casual'>('annual')
+  const [salary, setSalary] = useState('')
+  const [hours, setHours] = useState('38')
+  const [casualRate, setCasualRate] = useState('')
+  const [casualHours, setCasualHours] = useState('')
+
+  const annual = mode === 'hourly'
+    ? (parseFloat(salary) || 0) * (parseFloat(hours) || 38) * 52
+    : parseFloat(salary) || 0
+  const annualSuper = annual * 0.12
+
+  const casualGross = (parseFloat(casualRate) || 0) * (parseFloat(casualHours) || 0)
+  const casualSuper = casualGross * 0.12
+
+  const fc = (n: number) => '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+
+  const MODES = [
+    { key: 'annual',  label: 'Salary' },
+    { key: 'hourly',  label: 'Hourly' },
+    { key: 'casual',  label: 'Pay run' },
+  ] as const
+
+  const periodResults = [
+    { label: 'Weekly',      super: annualSuper / 52 },
+    { label: 'Fortnightly', super: (annualSuper / 52) * 2 },
+    { label: 'Monthly',     super: (annualSuper / 52) * 4.333 },
+  ]
+
+  return (
+    <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid rgba(234,179,8,0.35)', padding: '1.25rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
+        <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)' }}>⚡ Payday Super Calculator</h3>
+        <span style={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.04em', color: '#92400e', background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '999px', padding: '0.15rem 0.5rem' }}>12% SG</span>
+      </div>
+
+      {/* Mode tabs */}
+      <div style={{ display: 'flex', background: 'var(--cream)', borderRadius: '7px', padding: '3px', marginBottom: '1rem', gap: '2px' }}>
+        {MODES.map(m => (
+          <button
+            key={m.key}
+            onClick={() => setMode(m.key)}
+            style={{
+              flex: 1, padding: '0.3rem 0', borderRadius: '5px', border: 'none', cursor: 'pointer',
+              fontSize: '0.75rem', fontWeight: 500, transition: 'all 150ms',
+              background: mode === m.key ? '#ffffff' : 'transparent',
+              color: mode === m.key ? 'var(--char)' : 'var(--text3)',
+              boxShadow: mode === m.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+            }}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {mode !== 'casual' ? (
+        <>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: mode === 'hourly' ? 'wrap' : 'nowrap' }}>
+            <div style={{ flex: 1, position: 'relative', minWidth: '80px' }}>
+              <span style={{ position: 'absolute', left: '0.625rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.8125rem', pointerEvents: 'none' }}>$</span>
+              <input
+                type="number"
+                className="sab-input"
+                placeholder={mode === 'annual' ? '75000' : '35.00'}
+                value={salary}
+                onChange={e => setSalary(e.target.value)}
+                onWheel={e => (e.target as HTMLInputElement).blur()}
+                style={{ paddingLeft: '1.375rem', fontSize: '0.8125rem', width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+            {mode === 'hourly' && (
+              <div style={{ width: '72px' }}>
+                <input
+                  type="number"
+                  className="sab-input"
+                  placeholder="hrs/wk"
+                  value={hours}
+                  onChange={e => setHours(e.target.value)}
+                  onWheel={e => (e.target as HTMLInputElement).blur()}
+                  style={{ fontSize: '0.8125rem', width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
+          </div>
+
+          {annual > 0 ? (
+            <div style={{ background: 'rgba(234,179,8,0.06)', border: '1px solid rgba(234,179,8,0.2)', borderRadius: '8px', padding: '0.875rem' }}>
+              <p style={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#92400e', marginBottom: '0.625rem' }}>Super per pay run</p>
+              {periodResults.map(r => (
+                <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
+                  <span style={{ fontSize: '0.8125rem', color: 'var(--text2)' }}>{r.label}</span>
+                  <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--char)', fontFamily: 'var(--font-mono)' }}>{fc(r.super)}</span>
+                </div>
+              ))}
+              <div style={{ borderTop: '1px solid rgba(234,179,8,0.3)', paddingTop: '0.5rem', marginTop: '0.375rem', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.8125rem', color: 'var(--text2)' }}>Annual total</span>
+                <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--ember)', fontFamily: 'var(--font-mono)' }}>{fc(annualSuper)}</span>
+              </div>
+            </div>
+          ) : (
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', textAlign: 'center', padding: '0.75rem 0' }}>
+              {mode === 'annual' ? 'Enter annual salary above' : 'Enter hourly rate and hours/week'}
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <span style={{ position: 'absolute', left: '0.625rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.8125rem', pointerEvents: 'none' }}>$</span>
+              <input
+                type="number"
+                className="sab-input"
+                placeholder="rate/hr"
+                value={casualRate}
+                onChange={e => setCasualRate(e.target.value)}
+                onWheel={e => (e.target as HTMLInputElement).blur()}
+                style={{ paddingLeft: '1.375rem', fontSize: '0.8125rem', width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+            <div style={{ width: '72px' }}>
+              <input
+                type="number"
+                className="sab-input"
+                placeholder="hours"
+                value={casualHours}
+                onChange={e => setCasualHours(e.target.value)}
+                onWheel={e => (e.target as HTMLInputElement).blur()}
+                style={{ fontSize: '0.8125rem', width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+          </div>
+
+          {casualGross > 0 ? (
+            <div style={{ background: 'rgba(234,179,8,0.06)', border: '1px solid rgba(234,179,8,0.2)', borderRadius: '8px', padding: '0.875rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '0.8125rem', color: 'var(--text2)' }}>Gross pay</span>
+                <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--char)', fontFamily: 'var(--font-mono)' }}>{fc(casualGross)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(234,179,8,0.3)', paddingTop: '0.5rem' }}>
+                <span style={{ fontSize: '0.8125rem', color: 'var(--text2)' }}>Super owed (12%)</span>
+                <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--ember)', fontFamily: 'var(--font-mono)' }}>{fc(casualSuper)}</span>
+              </div>
+              <p style={{ fontSize: '0.7rem', color: '#92400e', marginTop: '0.625rem', lineHeight: 1.4 }}>
+                Due within 7 business days of payday via SuperStream
+              </p>
+            </div>
+          ) : (
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', textAlign: 'center', padding: '0.75rem 0' }}>Enter rate and hours for this pay run</p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── KPI card ─────────────────────────────────────────────────────────
 function KpiCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
   return (
@@ -610,6 +767,9 @@ export default function DashboardPage() {
               })}
             </div>
           </div>
+
+          {/* Payday Super calculator */}
+          <PaydaySuperCalcWidget />
 
           {/* Upgrade nudge */}
           {profile.plan !== 'pro' && (
