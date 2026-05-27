@@ -18,7 +18,6 @@ const NAV_ITEMS = [
   { label: 'Records',         href: '/records',                proOnly: false },
   { label: 'Clients',         href: '/clients',                proOnly: false },
   { label: 'Employees',       href: '/employees',              proOnly: true  },
-  { label: 'Work Hours',      href: '/dashboard/work-hours',   proOnly: false },
   { label: 'Settings',        href: '/settings',               proOnly: false },
 ]
 
