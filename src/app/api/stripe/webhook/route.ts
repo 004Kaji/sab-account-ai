@@ -9,6 +9,12 @@ import { createServiceClient } from '@/lib/supabase'
 import { applyReferralReward } from '@/lib/referral'
 import { sendFriendConvertedEmail } from '@/lib/referral-emails'
 
+// Stripe API 2026+ sends timestamps as ISO strings; older versions send Unix numbers.
+const toISO = (val: number | string | null | undefined): string | null => {
+  if (!val) return null
+  return typeof val === 'number' ? new Date(val * 1000).toISOString() : new Date(val).toISOString()
+}
+
 export async function POST(request: NextRequest) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
     apiVersion: '2024-06-20',
@@ -94,7 +100,7 @@ export async function POST(request: NextRequest) {
         let trialEndsAt: string | null = null
         if (session.subscription) {
           const sub = await stripe.subscriptions.retrieve(session.subscription as string)
-          trialEndsAt = sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null
+          trialEndsAt = toISO(sub.trial_end)
         }
 
         await supabase.from('profiles').update({
@@ -187,7 +193,7 @@ export async function POST(request: NextRequest) {
         await supabase.from('profiles').update({
           plan: sub.status === 'active' || sub.status === 'trialing' ? plan : 'free',
           subscription_status: sub.status,
-          billing_cycle_end: new Date((sub.current_period_end) * 1000).toISOString(),
+          billing_cycle_end: toISO(sub.current_period_end),
         }).eq('id', userId)
         break
       }
