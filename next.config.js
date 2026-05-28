@@ -11,6 +11,21 @@ const securityHeaders = [
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   // Restricts access to browser features (camera, microphone, etc.) — this app needs none
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+  // Content Security Policy — restricts which origins can load resources
+  {
+    key: 'Content-Security-Policy',
+    value: [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' https://js.stripe.com",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data:",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://hooks.stripe.com https://*.ingest.sentry.io https://vitals.vercel-insights.com https://abr.business.gov.au",
+      "frame-src https://js.stripe.com https://hooks.stripe.com",
+      "object-src 'none'",
+      "base-uri 'self'",
+    ].join('; '),
+  },
 ]
 
 // Authenticated routes that must never appear in search results
@@ -22,6 +37,7 @@ const noindexRoutes = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   serverExternalPackages: ['jspdf'],
+  eslint: { ignoreDuringBuilds: true }, // ESLint 9 flat config; run `npx eslint src/` separately
   async headers() {
     return [
       // Security headers on every route

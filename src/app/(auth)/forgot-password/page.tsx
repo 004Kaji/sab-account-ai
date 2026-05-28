@@ -55,7 +55,7 @@ export default function ForgotPasswordPage() {
               Check your email
             </h2>
             <p style={{ color: 'var(--text2)', fontSize: '0.9375rem', lineHeight: 1.6, marginBottom: '2rem' }}>
-              We've sent a password reset link to <strong>{email}</strong>. It expires in 1 hour.
+              We&apos;ve sent a password reset link to <strong>{email}</strong>. It expires in 1 hour.
             </p>
             <a href="/login" className="btn btn-ember" style={{ display: 'inline-block', textDecoration: 'none' }}>
               Back to Sign In
@@ -67,7 +67,7 @@ export default function ForgotPasswordPage() {
               Reset password
             </h2>
             <p style={{ color: 'var(--text2)', fontSize: '0.875rem', marginBottom: '2rem' }}>
-              Enter your email and we'll send you a reset link.
+              Enter your email and we&apos;ll send you a reset link.
             </p>
 
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

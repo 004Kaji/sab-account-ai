@@ -96,6 +96,10 @@ export default function BankImportModal({ open, onClose, onImported }: Props) {
       setParseError('Please upload a .csv file')
       return
     }
+    if (f.size > 5 * 1024 * 1024) {
+      setParseError('File is too large. Maximum size is 5 MB.')
+      return
+    }
     setFile(f)
     setParseError('')
   }
@@ -258,7 +262,7 @@ export default function BankImportModal({ open, onClose, onImported }: Props) {
     return true
   })
 
-  const stepNum = step === 'upload' ? 1 : (step === 'categorising' ? 2 : 2)
+  const _stepNum = step === 'upload' ? 1 : 2
   const isDone1 = step !== 'upload'
   const isDone2 = step === 'review' || step === 'saving'
 

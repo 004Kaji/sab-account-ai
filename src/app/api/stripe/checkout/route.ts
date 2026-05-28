@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { stripe, PRICE_IDS } from '@/lib/stripe'
 import { createServiceClient } from '@/lib/supabase'
 
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: session.url })
   } catch (err) {
+    Sentry.captureException(err, { tags: { feature: 'stripe_checkout' } })
     console.error('Checkout error:', err)
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Checkout failed' },

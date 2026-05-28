@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { safeStorage } from '@/lib/utils'
 
 export default function IOSInstallBanner() {
@@ -59,10 +60,12 @@ export default function IOSInstallBanner() {
 
         {/* Header row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
-          <img
+          <Image
             src="/apple-touch-icon.png"
             alt="SAB Account AI"
-            style={{ width: 52, height: 52, borderRadius: 12, flexShrink: 0 }}
+            width={52}
+            height={52}
+            style={{ borderRadius: 12, flexShrink: 0 }}
           />
           <div>
             <div style={{ color: '#fff', fontWeight: 700, fontSize: '1rem' }}>
@@ -128,7 +131,7 @@ export default function IOSInstallBanner() {
             }}>2</div>
             <div>
               <div style={{ color: '#fff', fontWeight: 600, fontSize: '0.875rem', marginBottom: 2 }}>
-                Tap "Add to Home Screen"
+                Tap &quot;Add to Home Screen&quot;
               </div>
               <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem' }}>
                 Scroll down in the share menu to find it

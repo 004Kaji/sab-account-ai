@@ -38,7 +38,7 @@ export default function PrivacyPage() {
         </p>
 
         <Section title="1. Who We Are">
-          <p>{COMPANY} is an Australian software-as-a-service business operated by {OPERATOR} (ABN {ABN}) that provides invoicing, payroll, and financial record-keeping tools for small businesses. References to "we", "us", or "our" in this policy refer to {COMPANY}.</p>
+          <p>{COMPANY} is an Australian software-as-a-service business operated by {OPERATOR} (ABN {ABN}) that provides invoicing, payroll, and financial record-keeping tools for small businesses. References to &quot;we&quot;, &quot;us&quot;, or &quot;our&quot; in this policy refer to {COMPANY}.</p>
         </Section>
 
         <Section title="2. What Personal Information We Collect">

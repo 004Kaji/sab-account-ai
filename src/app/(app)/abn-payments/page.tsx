@@ -801,7 +801,7 @@ function PaymentList({
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
-            {['Date', tab === 'abn' ? 'Contractor' : 'Worker', 'Description', 'Gross', tab === 'abn' ? 'Super' : 'Withheld', 'Net Paid', ''].map((h, i) => (
+            {['Date', tab === 'abn' ? 'Contractor' : 'Worker', 'Description', 'Gross', tab === 'abn' ? 'Super' : 'Withheld', 'Net Paid', ''].map((h) => (
               <th key={h} style={{
                 padding: '0.625rem 1rem',
                 textAlign: ['Gross', 'Super', 'Withheld', 'Net Paid'].includes(h) ? 'right' : 'left',

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 import {
   sendFriendSignedUpEmail,
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true })
   } catch (err) {
+    Sentry.captureException(err, { tags: { feature: 'email_send', type: 'referral' } })
     console.error('Referral email error:', err)
     return NextResponse.json({ error: 'Email failed' }, { status: 500 })
   }

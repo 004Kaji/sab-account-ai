@@ -82,7 +82,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="7. Tax Calculations — Disclaimer">
-          <p>{COMPANY} provides tax-related calculations (including PAYG withholding, Medicare levy, super guarantee, and GST estimates) as a convenience tool based on publicly available ATO guidelines. These calculations are <strong>estimates only</strong> and are not a substitute for professional tax advice. You should consult a registered tax agent or accountant to confirm your tax obligations. {COMPANY} accepts no liability for errors in tax calculations or for any penalties, interest, or loss arising from reliance on the service's outputs.</p>
+          <p>{COMPANY} provides tax-related calculations (including PAYG withholding, Medicare levy, super guarantee, and GST estimates) as a convenience tool based on publicly available ATO guidelines. These calculations are <strong>estimates only</strong> and are not a substitute for professional tax advice. You should consult a registered tax agent or accountant to confirm your tax obligations. {COMPANY} accepts no liability for errors in tax calculations or for any penalties, interest, or loss arising from reliance on the service&apos;s outputs.</p>
         </Section>
 
         <Section title="8. Intellectual Property">

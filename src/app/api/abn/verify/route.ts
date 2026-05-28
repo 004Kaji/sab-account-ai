@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 
 export type AbnVerifyResult =
   | { status: 'active';         name: string; abn: string; entityType: string }
@@ -66,6 +67,7 @@ export async function GET(req: NextRequest) {
     } satisfies AbnVerifyResult)
 
   } catch (err) {
+    Sentry.captureException(err, { tags: { feature: 'abn_verify' } })
     console.error('ABR lookup error:', err)
     return NextResponse.json({ status: 'error', message: 'ABR lookup failed' } satisfies AbnVerifyResult)
   }

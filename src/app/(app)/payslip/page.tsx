@@ -300,7 +300,7 @@ function Toggle({ label, hint, checked, onChange }: {
 // ── Main page ─────────────────────────────────────────────────────────
 export default function PayslipPage() {
   const router  = useRouter()
-  const profile = useProfile()
+  useProfile()
   const { toast } = useToast()
   useEffect(() => { document.title = 'Payslips — SAB Account AI' }, [])
 

@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     // ── RATE LIMIT ────────────────────────────────────────────────────
     const { data: profile } = await supabase.from('profiles').select('plan').eq('id', user.id).single()
     const plan = (profile?.plan as string) ?? 'free'
-    const { allowed, remaining } = checkRateLimit(user.id, plan)
+    const { allowed } = checkRateLimit(user.id, plan)
     if (!allowed) {
       return NextResponse.json(
         { error: 'Rate limit reached. Please wait before generating another invoice.' },

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { stripe } from '@/lib/stripe'
 import { createServiceClient } from '@/lib/supabase'
 
@@ -29,6 +30,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: session.url })
   } catch (err) {
+    Sentry.captureException(err, { tags: { feature: 'stripe_portal' } })
     console.error('Portal error:', err)
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Portal session failed' },

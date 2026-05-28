@@ -515,7 +515,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             }}>
               <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🎁</div>
               <h2 className="font-display" style={{ fontSize: '1.375rem', color: 'var(--char)', marginBottom: '0.625rem' }}>
-                You've been using SAB Account AI for a while!
+                You&apos;ve been using SAB Account AI for a while!
               </h2>
               <p style={{ color: 'var(--text2)', fontSize: '0.875rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
                 Have you shared it with a friend yet? Refer 1 friend and get <strong>1 month FREE</strong> when they upgrade.
