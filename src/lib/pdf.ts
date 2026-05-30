@@ -2,9 +2,7 @@ import { formatCurrency, formatDateAU, formatABN } from '@/lib/utils'
 import type { PayslipNumbers } from '@/lib/ato'
 
 function triggerPdfDownload(doc: import('jspdf').jsPDF, filename: string) {
-  const bytes = doc.output('arraybuffer')
-
-  // iOS (all browsers on iPhone/iPad) ignores <a download> for blob URLs — WebKit restriction.
+  // iOS (all browsers on iPhone/iPad) ignores <a download> for blob/data URIs.
   // iPad in desktop mode reports MacIntel but has maxTouchPoints > 1.
   const isIOS =
     /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -13,7 +11,7 @@ function triggerPdfDownload(doc: import('jspdf').jsPDF, filename: string) {
   if (isIOS) {
     // Open blob URL in new tab — iOS renders it inline in Safari's PDF viewer.
     // User can then tap Share → Save to Files / AirDrop / Print.
-    const blob = new Blob([bytes], { type: 'application/pdf' })
+    const blob = new Blob([doc.output('arraybuffer')], { type: 'application/pdf' })
     const url = URL.createObjectURL(blob)
     const tab = window.open(url, '_blank')
     if (!tab) window.location.href = url
@@ -21,25 +19,17 @@ function triggerPdfDownload(doc: import('jspdf').jsPDF, filename: string) {
     return
   }
 
-  // Use File (not Blob) so the filename is embedded at the blob level.
-  // Chrome reads File.name as the download filename regardless of the
-  // anchor's download attribute, fixing UUID-named downloads in Chrome.
-  const file = new File([bytes], filename, { type: 'application/pdf' })
-  const url = URL.createObjectURL(file)
-
+  // Chrome loses the user-gesture context across the async PDF generation
+  // (await import, await buildDoc, logo loading) so blob URL downloads end
+  // up with UUID filenames. Data URIs are not subject to that restriction —
+  // Chrome always honours <a download> for data: URIs.
+  const dataUri = doc.output('datauristring') as string
   const a = document.createElement('a')
-  a.style.display = 'none'
-  a.href = url
+  a.href = dataUri
   a.download = filename
   document.body.appendChild(a)
   a.click()
-
-  // Delay cleanup — Chrome needs time to read the anchor's attributes
-  // before the element is removed from the DOM.
-  setTimeout(() => {
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }, 1000)
+  setTimeout(() => document.body.removeChild(a), 1000)
 }
 
 function payslipScaleLabel(data: PayslipPDFData): string {
