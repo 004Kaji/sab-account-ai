@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { AbnVerifyResult } from '@/app/api/abn/verify/route'
+import { createBrowserClient } from '@/lib/supabase'
 
 interface Props {
   abn: string
@@ -24,7 +25,11 @@ export default function AbnVerifyBadge({ abn }: Props) {
     setLoading(true)
     const timer = setTimeout(async () => {
       try {
-        const res  = await fetch(`/api/abn/verify?abn=${digits}`)
+        const { data: { session } } = await createBrowserClient().auth.getSession()
+        const token = session?.access_token ?? ''
+        const res  = await fetch(`/api/abn/verify?abn=${digits}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
         const data = await res.json() as AbnVerifyResult
         setResult(data)
       } catch {
