@@ -15,7 +15,13 @@
 
 # misc
 .DS_Store
+**/.DS_Store
 *.pem
+*.htm
+*.html
+
+# playwright mcp artifacts
+.playwright-mcp/
 
 # debug
 npm-debug.log*

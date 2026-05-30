@@ -5,7 +5,8 @@ Sentry.init({
   tracesSampleRate: 0.1,
   debug: false,
   replaysOnErrorSampleRate: 1.0,
-  replaysSessionSampleRate: 0.01,
+  replaysSessionSampleRate: 0.05,
+  integrations: [Sentry.replayIntegration()],
 })
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart
