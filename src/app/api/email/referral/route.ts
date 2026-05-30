@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
   // Only allow sending to the authenticated user's own email
   const targetEmail = (body.referrerEmail ?? body.newUserEmail) as string | undefined
-  if (targetEmail && targetEmail !== user.email) {
+  if (!targetEmail || targetEmail !== user.email) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

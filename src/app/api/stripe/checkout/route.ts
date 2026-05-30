@@ -35,7 +35,8 @@ export async function POST(req: NextRequest) {
 
     const ALLOWED_ORIGINS = ['https://sabaccountai.com', 'http://localhost:3000']
     const rawOrigin = req.headers.get('origin') ?? ''
-    const origin = ALLOWED_ORIGINS.includes(rawOrigin) ? rawOrigin : 'https://sabaccountai.com'
+    const isVercelPreview = /^https:\/\/sab-account-ai-project[a-z0-9-]*\.vercel\.app$/.test(rawOrigin)
+    const origin = ALLOWED_ORIGINS.includes(rawOrigin) || isVercelPreview ? rawOrigin : 'https://sabaccountai.com'
 
     const checkoutParams = {
       mode: 'subscription' as const,

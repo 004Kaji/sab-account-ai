@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import { escHtml as esc } from '@/lib/email-utils'
 
 function maskEmail(email: string): string {
   const parts = email.split('@')
@@ -31,8 +32,8 @@ export async function sendFriendSignedUpEmail(params: {
     to: [referrerEmail],
     subject: `${referredName} just signed up using your link!`,
     html: `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#1c1917;line-height:1.6">
-      <h2 style="color:#c84b2f">Great news, ${referrerName}!</h2>
-      <p>Your friend <strong>${referredName}</strong> just created their SAB Account AI account using your referral link.</p>
+      <h2 style="color:#c84b2f">Great news, ${esc(referrerName)}!</h2>
+      <p>Your friend <strong>${esc(referredName)}</strong> just created their SAB Account AI account using your referral link.</p>
       <p>When they upgrade to a paid plan, you'll automatically receive 1 free month added to your account.</p>
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:1.5rem 0"/>
       <p><strong>Your referral progress:</strong></p>
@@ -86,7 +87,7 @@ export async function sendFriendConvertedEmail(params: {
     to: [referrerEmail],
     subject: `You earned a free month! ${maskedEmail} upgraded.`,
     html: `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#1c1917;line-height:1.6">
-      <h2 style="color:#c84b2f">Your referral just paid off, ${referrerName}!</h2>
+      <h2 style="color:#c84b2f">Your referral just paid off, ${esc(referrerName)}!</h2>
       <p>${maskedEmail} upgraded to a paid plan and you've earned a reward.</p>
       ${rewardHtml}
       <p>Keep sharing: <a href="${link}" style="color:#c84b2f">${link}</a></p>
@@ -107,8 +108,8 @@ export async function sendWelcomeReferredEmail(params: {
     to: [newUserEmail],
     subject: `Welcome to SAB Account AI! Your friend ${referrerName} invited you.`,
     html: `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#1c1917;line-height:1.6">
-      <h2 style="color:#c84b2f">Welcome, ${newUserName}!</h2>
-      <p>You joined via your friend <strong>${referrerName}</strong>'s referral link — they'll earn a free month when you upgrade.</p>
+      <h2 style="color:#c84b2f">Welcome, ${esc(newUserName)}!</h2>
+      <p>You joined via your friend <strong>${esc(referrerName)}</strong>'s referral link — they'll earn a free month when you upgrade.</p>
       <p><strong>Get started in 3 steps:</strong></p>
       <ol>
         <li>Create your first invoice (takes 30 seconds with AI)</li>

@@ -20,6 +20,9 @@ export async function POST(request: NextRequest) {
     console.error('STRIPE_WEBHOOK_SECRET not configured')
     return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
   }
+  if (!process.env.INTERNAL_API_SECRET) {
+    console.error('INTERNAL_API_SECRET not configured — payment notification emails will not be sent')
+  }
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
     apiVersion: '2024-06-20',
@@ -49,7 +52,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true, duplicate: true })
   }
 
-  await supabase.from('stripe_events').insert({ id: event.id, type: event.type, data: event.data })
+  const { error: insertErr } = await supabase.from('stripe_events').insert({ id: event.id, type: event.type, data: event.data })
+  if (insertErr) {
+    // 23505 = unique_violation: concurrent delivery already claimed this event
+    if ((insertErr as { code?: string }).code === '23505') {
+      return NextResponse.json({ received: true, duplicate: true })
+    }
+    console.error('stripe_events insert error:', insertErr)
+  }
 
   // ── HANDLE EVENTS ────────────────────────────────
   try {
@@ -70,9 +80,14 @@ export async function POST(request: NextRequest) {
             ? '$' + (session.amount_total / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
             : ''
 
-          await supabase.from('invoices')
+          const { error: invoiceErr } = await supabase.from('invoices')
             .update({ status: 'paid', paid_at: new Date().toISOString() })
             .eq('id', invoiceId)
+          if (invoiceErr) {
+            Sentry.captureException(new Error(invoiceErr.message), { tags: { feature: 'stripe_webhook', step: 'invoice_status_update' } })
+            console.error('Invoice status update error:', invoiceErr)
+            throw invoiceErr
+          }
 
           const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
 
@@ -111,13 +126,18 @@ export async function POST(request: NextRequest) {
           trialEndsAt = toISO(sub.trial_end)
         }
 
-        await supabase.from('profiles').update({
+        const { error: planErr } = await supabase.from('profiles').update({
           plan,
           stripe_customer_id: session.customer as string,
           stripe_subscription_id: session.subscription as string,
           subscription_status: 'trialing',
           trial_ends_at: trialEndsAt ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
         }).eq('id', userId)
+        if (planErr) {
+          Sentry.captureException(new Error(planErr.message), { tags: { feature: 'stripe_webhook', step: 'plan_upgrade' } })
+          console.error('Profile plan upgrade error:', planErr)
+          throw planErr
+        }
 
         console.log(`✅ User ${userId} upgraded to ${plan}`)
 

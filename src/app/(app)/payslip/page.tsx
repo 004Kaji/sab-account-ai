@@ -498,16 +498,16 @@ export default function PayslipPage() {
 
       // Warn if leave taken exceeds balance (balance is clamped to 0 on save)
       if (form.annual_leave_hours != null && form.annual_leave_taken > form.annual_leave_hours) {
-        toast('Annual leave taken exceeds balance — closing balance set to 0', 'error')
+        toast('Annual leave taken exceeds balance — closing balance set to 0', 'warning')
       }
       if (form.personal_leave_hours != null && form.personal_leave_taken > form.personal_leave_hours) {
-        toast('Personal leave taken exceeds balance — closing balance set to 0', 'error')
+        toast('Personal leave taken exceeds balance — closing balance set to 0', 'warning')
       }
 
       // Persist the leave balance back to the employee record so the next
       // payslip pre-fills with the updated balance (carry-forward).
       // Falls back to name-based lookup so manual-entry payslips also update the record.
-      const resolvedEmpId = selectedEmployeeId ?? employees.find(e => e.name === form.employee_name.trim())?.id ?? null
+      const resolvedEmpId = selectedEmployeeId ?? null
       if (resolvedEmpId && (form.annual_leave_hours != null || form.personal_leave_hours != null)) {
         const newAnnual   = form.annual_leave_hours   != null ? Math.max(0, Math.round((form.annual_leave_hours   - form.annual_leave_taken)   * 100) / 100) : null
         const newPersonal = form.personal_leave_hours != null ? Math.max(0, Math.round((form.personal_leave_hours - form.personal_leave_taken) * 100) / 100) : null
@@ -1147,7 +1147,7 @@ export default function PayslipPage() {
                   <label className="sab-label">Leave taken this period (hrs)</label>
                   <input
                     type="number" min={0} step={0.01} className="sab-input" placeholder="0"
-                    value={form.annual_leave_taken}
+                    value={form.annual_leave_taken || ''}
                     onChange={e => setField('annual_leave_taken', parseFloat(e.target.value) || 0)}
                     onWheel={e => (e.target as HTMLInputElement).blur()}
                   />
@@ -1181,7 +1181,7 @@ export default function PayslipPage() {
                   <label className="sab-label">Leave taken this period (hrs)</label>
                   <input
                     type="number" min={0} step={0.01} className="sab-input" placeholder="0"
-                    value={form.personal_leave_taken}
+                    value={form.personal_leave_taken || ''}
                     onChange={e => setField('personal_leave_taken', parseFloat(e.target.value) || 0)}
                     onWheel={e => (e.target as HTMLInputElement).blur()}
                   />

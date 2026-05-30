@@ -23,6 +23,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const { transactions } = await req.json() as {
+    transactions: Array<{ description: string; amount: number; type: 'income' | 'expense' }>
+  }
+
+  if (!transactions?.length) return NextResponse.json({ results: [] })
+  if (transactions.length > 100) {
+    return NextResponse.json({ error: 'Too many transactions (max 100 per request)' }, { status: 400 })
+  }
+
   const { data: profile } = await supabase.from('profiles').select('plan').eq('id', user.id).single()
   const plan = (profile?.plan as string) ?? 'free'
   const { allowed } = await checkRateLimit(user.id, plan)
@@ -31,15 +40,6 @@ export async function POST(req: NextRequest) {
       { error: 'Rate limit reached. Please wait before categorising more transactions.' },
       { status: 429, headers: { 'Retry-After': '3600' } },
     )
-  }
-
-  const { transactions } = await req.json() as {
-    transactions: Array<{ description: string; amount: number; type: 'income' | 'expense' }>
-  }
-
-  if (!transactions?.length) return NextResponse.json({ results: [] })
-  if (transactions.length > 100) {
-    return NextResponse.json({ error: 'Too many transactions (max 100 per request)' }, { status: 400 })
   }
   const sanitized = transactions.map(t => ({
     ...t,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
+import { escHtml as esc } from '@/lib/email-utils'
 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY)
@@ -32,6 +33,9 @@ export async function POST(req: NextRequest) {
   if (!to || !pdfBase64) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
+  if (pdfBase64.length > 5_000_000) {
+    return NextResponse.json({ error: 'PDF too large' }, { status: 400 })
+  }
 
   const isABN = paymentType === 'abn'
 
@@ -45,15 +49,15 @@ export async function POST(req: NextRequest) {
       <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
         <tr>
           <td style="background:#1C1917;padding:28px 36px">
-            <p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${businessName || 'Your Client'}</p>
+            <p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${esc(businessName) || 'Your Client'}</p>
             <p style="margin:6px 0 0;color:#A09590;font-size:13px">Remittance Statement</p>
           </td>
         </tr>
         <tr>
           <td style="padding:36px">
-            <p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${recipientName},</p>
+            <p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${esc(recipientName)},</p>
             <p style="margin:0 0 28px;color:#57534E;font-size:14px;line-height:1.6">
-              Please find your Remittance Statement from <strong>${businessName}</strong> attached. This document confirms payment for the services outlined below.
+              Please find your Remittance Statement from <strong>${esc(businessName)}</strong> attached. This document confirms payment for the services outlined below.
             </p>
             <table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;border-radius:8px;margin-bottom:28px">
               <tr>
@@ -61,22 +65,22 @@ export async function POST(req: NextRequest) {
                   <table width="100%" cellpadding="0" cellspacing="0">
                     <tr>
                       <td style="padding:6px 0;color:#78716C;font-size:13px">Services</td>
-                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${workDescription}</td>
+                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(workDescription)}</td>
                     </tr>
                     <tr>
                       <td style="padding:6px 0;color:#78716C;font-size:13px">Payment Date</td>
-                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${paymentDate}</td>
+                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(paymentDate)}</td>
                     </tr>
                     <tr>
                       <td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Total Payment</td>
-                      <td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${grossAmount}</td>
+                      <td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${esc(grossAmount)}</td>
                     </tr>
                   </table>
                 </td>
               </tr>
             </table>
             <p style="margin:0;color:#57534E;font-size:13px;line-height:1.6">
-              Please keep this statement for your tax records. If you have any questions, contact ${businessName} directly.
+              Please keep this statement for your tax records. If you have any questions, contact ${esc(businessName)} directly.
             </p>
           </td>
         </tr>
@@ -99,15 +103,15 @@ export async function POST(req: NextRequest) {
       <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
         <tr>
           <td style="background:#C84B2F;padding:28px 36px">
-            <p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${businessName || 'Your Payer'}</p>
+            <p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${esc(businessName) || 'Your Payer'}</p>
             <p style="margin:6px 0 0;color:rgba(255,255,255,0.7);font-size:13px">No-ABN Withholding Statement</p>
           </td>
         </tr>
         <tr>
           <td style="padding:36px">
-            <p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${recipientName},</p>
+            <p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${esc(recipientName)},</p>
             <p style="margin:0 0 28px;color:#57534E;font-size:14px;line-height:1.6">
-              Please find your Withholding Statement from <strong>${businessName}</strong> attached. As no ABN was quoted, tax withholding was applied under ATO requirements.
+              Please find your Withholding Statement from <strong>${esc(businessName)}</strong> attached. As no ABN was quoted, tax withholding was applied under ATO requirements.
             </p>
             <table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;border-radius:8px;margin-bottom:28px">
               <tr>
@@ -115,24 +119,24 @@ export async function POST(req: NextRequest) {
                   <table width="100%" cellpadding="0" cellspacing="0">
                     <tr>
                       <td style="padding:6px 0;color:#78716C;font-size:13px">Services</td>
-                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${workDescription}</td>
+                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(workDescription)}</td>
                     </tr>
                     <tr>
                       <td style="padding:6px 0;color:#78716C;font-size:13px">Payment Date</td>
-                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${paymentDate}</td>
+                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(paymentDate)}</td>
                     </tr>
                     <tr>
                       <td style="padding:6px 0;color:#78716C;font-size:13px">Gross Amount</td>
-                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${grossAmount}</td>
+                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(grossAmount)}</td>
                     </tr>
                     ${withholdingAmount ? `
                     <tr>
                       <td style="padding:6px 0;color:#78716C;font-size:13px">W4 Withheld (47%)</td>
-                      <td align="right" style="padding:6px 0;color:#C84B2F;font-size:13px;font-weight:600">(${withholdingAmount})</td>
+                      <td align="right" style="padding:6px 0;color:#C84B2F;font-size:13px;font-weight:600">(${esc(withholdingAmount)})</td>
                     </tr>` : ''}
                     <tr>
                       <td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Net Paid to You</td>
-                      <td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${netPayable}</td>
+                      <td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${esc(netPayable)}</td>
                     </tr>
                   </table>
                 </td>
