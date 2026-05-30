@@ -24,6 +24,8 @@ interface Employee {
   member_number: string | null
   residency_status: string
   notes: string | null
+  annual_leave_hours: number | null
+  personal_leave_hours: number | null
 }
 
 interface EmployeeForm {
@@ -237,7 +239,7 @@ export default function EmployeesPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
-                  {['Name', 'Email', 'TFN / ABN', 'Employment', 'Pay', 'Super Fund', 'Actions'].map(h => (
+                  {['Name', 'Email', 'TFN / ABN', 'Employment', 'Pay', 'Super Fund', 'Leave Balance', 'Actions'].map(h => (
                     <th key={h} style={{ padding: '0.625rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text3)', letterSpacing: '0.03em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                       {h}
                     </th>
@@ -276,6 +278,32 @@ export default function EmployeesPage() {
                     </td>
                     <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)' }}>
                       {emp.super_fund_name ?? '—'}
+                    </td>
+                    <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
+                      {emp.employment_type === 'casual' ? (
+                        <span style={{ color: 'var(--text3)', fontSize: '0.75rem' }}>Casual — no leave</span>
+                      ) : (emp.annual_leave_hours != null || emp.personal_leave_hours != null) ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                          {emp.annual_leave_hours != null && (
+                            <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.6875rem', color: 'var(--text3)', width: '56px' }}>Annual</span>
+                              <span style={{ fontWeight: 600, color: emp.annual_leave_hours < 8 ? 'var(--ember)' : 'var(--char)', fontFamily: 'var(--font-mono)' }}>
+                                {emp.annual_leave_hours.toFixed(1)} hrs
+                              </span>
+                            </div>
+                          )}
+                          {emp.personal_leave_hours != null && (
+                            <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.6875rem', color: 'var(--text3)', width: '56px' }}>Personal</span>
+                              <span style={{ fontWeight: 600, color: emp.personal_leave_hours < 8 ? 'var(--ember)' : 'var(--char)', fontFamily: 'var(--font-mono)' }}>
+                                {emp.personal_leave_hours.toFixed(1)} hrs
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text3)', fontSize: '0.75rem' }}>Not yet tracked</span>
+                      )}
                     </td>
                     <td style={{ padding: '0.875rem 1rem', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>

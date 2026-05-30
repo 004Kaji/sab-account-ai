@@ -76,9 +76,11 @@ interface PayslipForm {
   pay_period_start:    string
   pay_period_end:      string
   payment_date:        string
-  allowances:          Array<{ id: string; description: string; amount: number }>
-  annual_leave_hours:  number | null
+  allowances:           Array<{ id: string; description: string; amount: number }>
+  annual_leave_hours:   number | null   // balance BEFORE taken (previous + accrual)
   personal_leave_hours: number | null
+  annual_leave_taken:   number
+  personal_leave_taken: number
 }
 
 interface BizProfile {
@@ -131,9 +133,11 @@ function makeForm(num: string, employerName = '', employerAbn = '', useNewSuperR
     pay_period_start:    period.start,
     pay_period_end:      period.end,
     payment_date:        today,
-    allowances:          [],
-    annual_leave_hours:  null,
+    allowances:           [],
+    annual_leave_hours:   null,
     personal_leave_hours: null,
+    annual_leave_taken:   0,
+    personal_leave_taken: 0,
   }
 }
 
@@ -482,15 +486,17 @@ export default function PayslipPage() {
       // Persist the leave balance back to the employee record so the next
       // payslip pre-fills with the updated balance (carry-forward).
       if (selectedEmployeeId && (form.annual_leave_hours != null || form.personal_leave_hours != null)) {
+        // Save the NEW balance (previous + accrual − taken) back to the employee record
+        const newAnnual   = form.annual_leave_hours   != null ? Math.max(0, Math.round((form.annual_leave_hours   - form.annual_leave_taken)   * 100) / 100) : null
+        const newPersonal = form.personal_leave_hours != null ? Math.max(0, Math.round((form.personal_leave_hours - form.personal_leave_taken) * 100) / 100) : null
         await supabase.from('employees').update({
-          ...(form.annual_leave_hours   != null && { annual_leave_hours:   form.annual_leave_hours }),
-          ...(form.personal_leave_hours != null && { personal_leave_hours: form.personal_leave_hours }),
+          ...(newAnnual   != null && { annual_leave_hours:   newAnnual }),
+          ...(newPersonal != null && { personal_leave_hours: newPersonal }),
         }).eq('id', selectedEmployeeId)
-        // Update local employees list so re-selecting the employee uses the new balance
         setEmployees(prev => prev.map(e => e.id === selectedEmployeeId ? {
           ...e,
-          annual_leave_hours:   form.annual_leave_hours   ?? e.annual_leave_hours,
-          personal_leave_hours: form.personal_leave_hours ?? e.personal_leave_hours,
+          annual_leave_hours:   newAnnual   ?? e.annual_leave_hours,
+          personal_leave_hours: newPersonal ?? e.personal_leave_hours,
         } : e))
       }
     } catch (err) {
@@ -529,9 +535,9 @@ export default function PayslipPage() {
         ytdIsActual,
         numbers:           displayNumbers,
         logo_url:          biz?.logo_url || undefined,
-        allowances:        form.allowances.filter(a => a.amount > 0),
-        annual_leave_hours: form.annual_leave_hours ?? undefined,
-        personal_leave_hours: form.personal_leave_hours ?? undefined,
+        allowances:          form.allowances.filter(a => a.amount > 0),
+        annual_leave_hours:   form.annual_leave_hours   != null ? Math.max(0, Math.round((form.annual_leave_hours   - form.annual_leave_taken)   * 100) / 100) : undefined,
+        personal_leave_hours: form.personal_leave_hours != null ? Math.max(0, Math.round((form.personal_leave_hours - form.personal_leave_taken) * 100) / 100) : undefined,
       })
     } catch (err) {
       toast(err instanceof Error ? err.message : 'PDF generation failed', 'error')
@@ -569,9 +575,9 @@ export default function PayslipPage() {
         ytdIsActual,
         numbers:           displayNumbers,
         logo_url:          biz?.logo_url || undefined,
-        allowances:        form.allowances.filter(a => a.amount > 0),
-        annual_leave_hours: form.annual_leave_hours ?? undefined,
-        personal_leave_hours: form.personal_leave_hours ?? undefined,
+        allowances:          form.allowances.filter(a => a.amount > 0),
+        annual_leave_hours:   form.annual_leave_hours   != null ? Math.max(0, Math.round((form.annual_leave_hours   - form.annual_leave_taken)   * 100) / 100) : undefined,
+        personal_leave_hours: form.personal_leave_hours != null ? Math.max(0, Math.round((form.personal_leave_hours - form.personal_leave_taken) * 100) / 100) : undefined,
       })
 
       const supabase = createBrowserClient()
@@ -802,6 +808,8 @@ export default function PayslipPage() {
                       pay_period_end: period.end,
                       annual_leave_hours:   annualLeave,
                       personal_leave_hours: personalLeave,
+                      annual_leave_taken:   0,
+                      personal_leave_taken: 0,
                     }))
                   }}
                   onChange={v => { setSelectedEmployeeId(null); setField('employee_name', v) }}
@@ -1120,32 +1128,77 @@ export default function PayslipPage() {
               <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.25rem' }}>Leave Balances <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></h3>
               <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginBottom: '1rem' }}>
                 {selectedEmployeeId
-                  ? (() => {
-                      const accrual = calcLeaveAccrual(form.pay_cycle, form.ordinary_hours)
-                      return `Pre-filled from employee record + ${accrual.annual} hrs annual / ${accrual.personal} hrs personal accrued this period. Deduct any leave taken, then save.`
-                    })()
-                  : 'Select an employee to auto-fill from their stored balance. First payslip: enter the opening balance manually.'}
+                  ? 'Pre-filled from employee record. Enter any leave taken this period — new balance is calculated automatically.'
+                  : 'Select an employee to auto-fill. First payslip: enter the opening balance manually, leave taken = 0.'}
               </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
+
+              {/* Annual Leave */}
+              <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.5rem' }}>Annual Leave</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.5rem' }} className="form-grid-2">
                 <div>
-                  <label className="sab-label">Annual Leave (hours)</label>
+                  <label className="sab-label">Balance entering this period (hrs)</label>
                   <input
-                    type="number" min={0} step={0.01} className="sab-input" placeholder="e.g. 80.00"
+                    type="number" min={0} step={0.01} className="sab-input" placeholder="e.g. 152.00"
                     value={form.annual_leave_hours ?? ''}
                     onChange={e => setField('annual_leave_hours', e.target.value === '' ? null : parseFloat(e.target.value) || 0)}
                     onWheel={e => (e.target as HTMLInputElement).blur()}
                   />
                 </div>
                 <div>
-                  <label className="sab-label">Personal / Sick Leave (hours)</label>
+                  <label className="sab-label">Leave taken this period (hrs)</label>
                   <input
-                    type="number" min={0} step={0.01} className="sab-input" placeholder="e.g. 60.00"
+                    type="number" min={0} step={0.01} className="sab-input" placeholder="0"
+                    value={form.annual_leave_taken || ''}
+                    onChange={e => setField('annual_leave_taken', parseFloat(e.target.value) || 0)}
+                    onWheel={e => (e.target as HTMLInputElement).blur()}
+                  />
+                </div>
+              </div>
+              {form.annual_leave_hours != null && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', background: 'var(--cream)', borderRadius: '8px', padding: '0.5rem 0.75rem', marginBottom: '1rem' }}>
+                  <span style={{ color: 'var(--text2)' }}>{form.annual_leave_hours.toFixed(2)} hrs</span>
+                  <span style={{ color: 'var(--text3)' }}>−</span>
+                  <span style={{ color: 'var(--text2)' }}>{form.annual_leave_taken.toFixed(2)} taken</span>
+                  <span style={{ color: 'var(--text3)' }}>=</span>
+                  <span style={{ fontWeight: 700, color: 'var(--char)' }}>
+                    {Math.max(0, Math.round((form.annual_leave_hours - form.annual_leave_taken) * 100) / 100).toFixed(2)} hrs new balance
+                  </span>
+                </div>
+              )}
+
+              {/* Personal Leave */}
+              <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.5rem' }}>Personal / Sick Leave</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.5rem' }} className="form-grid-2">
+                <div>
+                  <label className="sab-label">Balance entering this period (hrs)</label>
+                  <input
+                    type="number" min={0} step={0.01} className="sab-input" placeholder="e.g. 76.00"
                     value={form.personal_leave_hours ?? ''}
                     onChange={e => setField('personal_leave_hours', e.target.value === '' ? null : parseFloat(e.target.value) || 0)}
                     onWheel={e => (e.target as HTMLInputElement).blur()}
                   />
                 </div>
+                <div>
+                  <label className="sab-label">Leave taken this period (hrs)</label>
+                  <input
+                    type="number" min={0} step={0.01} className="sab-input" placeholder="0"
+                    value={form.personal_leave_taken || ''}
+                    onChange={e => setField('personal_leave_taken', parseFloat(e.target.value) || 0)}
+                    onWheel={e => (e.target as HTMLInputElement).blur()}
+                  />
+                </div>
               </div>
+              {form.personal_leave_hours != null && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', background: 'var(--cream)', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
+                  <span style={{ color: 'var(--text2)' }}>{form.personal_leave_hours.toFixed(2)} hrs</span>
+                  <span style={{ color: 'var(--text3)' }}>−</span>
+                  <span style={{ color: 'var(--text2)' }}>{form.personal_leave_taken.toFixed(2)} taken</span>
+                  <span style={{ color: 'var(--text3)' }}>=</span>
+                  <span style={{ fontWeight: 700, color: 'var(--char)' }}>
+                    {Math.max(0, Math.round((form.personal_leave_hours - form.personal_leave_taken) * 100) / 100).toFixed(2)} hrs new balance
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Pay Period */}
