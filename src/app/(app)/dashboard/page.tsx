@@ -178,7 +178,16 @@ function StatusDropdown({ invoice, onStatusChange, updating }: {
       >
         {updating ? '…' : invoice.status}
         {!updating && options.length > 0 && (
-          <span style={{ fontSize: '0.5rem', opacity: 0.7, lineHeight: 1 }}>▾</span>
+          <span style={{
+            display: 'inline-block',
+            width: 0, height: 0,
+            borderLeft: '3px solid transparent',
+            borderRight: '3px solid transparent',
+            borderTop: `4px solid currentColor`,
+            opacity: 0.6,
+            marginLeft: '1px',
+            flexShrink: 0,
+          }} />
         )}
       </button>
 
