@@ -1,6 +1,18 @@
 import { formatCurrency, formatDateAU, formatABN } from '@/lib/utils'
 import type { PayslipNumbers } from '@/lib/ato'
 
+function triggerPdfDownload(doc: import('jspdf').jsPDF, filename: string) {
+  const blob = doc.output('blob')
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+}
+
 function payslipScaleLabel(data: PayslipPDFData): string {
   if (data.residency_status === 'whm') return 'WHM (Schedule 15)'
   const exempt = data.medicare_exempt || (!!data.residency_status && data.residency_status !== 'citizen_pr')
@@ -276,7 +288,7 @@ async function buildPayslipDoc(data: PayslipPDFData) {
 
 export async function downloadPayslipPDF(data: PayslipPDFData) {
   const doc = await buildPayslipDoc(data)
-  await doc.save(`${data.payslip_number}.pdf`)
+  triggerPdfDownload(doc, `${data.payslip_number}.pdf`)
 }
 
 /** Returns the payslip PDF as a pure base64 string (no data-URI prefix). */
@@ -548,7 +560,7 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
 
 export async function downloadInvoicePDF(data: InvoicePDFData) {
   const doc = await buildInvoiceDoc(data)
-  await doc.save(`${data.invoice_number}.pdf`)
+  triggerPdfDownload(doc, `${data.invoice_number}.pdf`)
 }
 
 /** Returns the invoice PDF as a pure base64 string (no data-URI prefix). */
@@ -651,7 +663,7 @@ async function buildABNRemittanceDoc(data: ABNRemittancePDFData) {
 export async function downloadABNRemittancePDF(data: ABNRemittancePDFData) {
   const doc = await buildABNRemittanceDoc(data)
   const dateStr = data.payment_date.replace(/-/g, '')
-  await doc.save(`RS-${dateStr}-${data.contractor_name.replace(/\s+/g, '-')}.pdf`)
+  triggerPdfDownload(doc, `RS-${dateStr}-${data.contractor_name.replace(/\s+/g, '-')}.pdf`)
 }
 
 // ── No-ABN Withholding Statement ──────────────────────────────────────
@@ -742,5 +754,5 @@ async function buildNoABNWithholdingDoc(data: NoABNWithholdingPDFData) {
 export async function downloadNoABNWithholdingPDF(data: NoABNWithholdingPDFData) {
   const doc = await buildNoABNWithholdingDoc(data)
   const dateStr = data.payment_date.replace(/-/g, '')
-  await doc.save(`W4-${dateStr}-${data.worker_name.replace(/\s+/g, '-')}.pdf`)
+  triggerPdfDownload(doc, `W4-${dateStr}-${data.worker_name.replace(/\s+/g, '-')}.pdf`)
 }
