@@ -4,6 +4,26 @@ import type { PayslipNumbers } from '@/lib/ato'
 function triggerPdfDownload(doc: import('jspdf').jsPDF, filename: string) {
   const blob = doc.output('blob')
   const url = URL.createObjectURL(blob)
+
+  // iOS (all browsers on iPhone/iPad) ignores <a download> for blob URLs — WebKit restriction.
+  // iPad in desktop mode reports MacIntel but has maxTouchPoints > 1.
+  const isIOS =
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+
+  if (isIOS) {
+    // Open blob URL in new tab — iOS renders it inline in Safari's PDF viewer.
+    // User can then tap Share → Save to Files / AirDrop / Print.
+    const tab = window.open(url, '_blank')
+    if (!tab) {
+      // Popup blocker active — navigate current tab as last resort
+      window.location.href = url
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+    return
+  }
+
+  // All other browsers: Chrome, Firefox, Edge, Safari (macOS), Android Chrome/Firefox
   const a = document.createElement('a')
   a.href = url
   a.download = filename
