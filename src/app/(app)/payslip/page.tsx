@@ -32,6 +32,21 @@ interface EmployeeRecord {
   super_fund_name: string | null
   member_number: string | null
   residency_status: string
+  annual_leave_hours: number | null
+  personal_leave_hours: number | null
+}
+
+// Leave accrual per pay period (Fair Work Act):
+// Annual leave = 4 weeks/year, Personal leave = 2 weeks/year (10 days)
+function calcLeaveAccrual(cycle: PayCycle, ordinaryHours: number) {
+  const hoursPerWeek = cycle === 'weekly' ? ordinaryHours
+    : cycle === 'fortnightly' ? ordinaryHours / 2
+    : ordinaryHours * 12 / 52          // monthly → weekly equivalent
+  const periods = cycle === 'weekly' ? 52 : cycle === 'fortnightly' ? 26 : 12
+  return {
+    annual:   Math.round(hoursPerWeek * 4 / periods * 100) / 100,
+    personal: Math.round(hoursPerWeek * 2 / periods * 100) / 100,
+  }
 }
 
 interface PayslipForm {
@@ -361,7 +376,7 @@ export default function PayslipPage() {
       const [{ data: bizData }, { data: lastSlip }, { data: empData }] = await Promise.all([
         supabase.from('business_profiles').select('business_name,abn,email,logo_url,super_rate_new').eq('id', user.id).single(),
         supabase.from('payslips').select('payslip_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-        supabase.from('employees').select('id,name,email,employment_type,pay_cycle,pay_basis,annual_salary,hourly_rate,ordinary_hours,super_fund_name,member_number,residency_status').eq('user_id', user.id).order('name'),
+        supabase.from('employees').select('id,name,email,employment_type,pay_cycle,pay_basis,annual_salary,hourly_rate,ordinary_hours,super_fund_name,member_number,residency_status,annual_leave_hours,personal_leave_hours').eq('user_id', user.id).order('name'),
       ])
       setBiz(bizData ?? null)
       setEmployees((empData ?? []) as EmployeeRecord[])
@@ -463,6 +478,21 @@ export default function PayslipPage() {
       if (error) throw error
       setSavedSlip({ id: data.id, number: form.payslip_number })
       if (form.employee_email) setEmailTo(form.employee_email)
+
+      // Persist the leave balance back to the employee record so the next
+      // payslip pre-fills with the updated balance (carry-forward).
+      if (selectedEmployeeId && (form.annual_leave_hours != null || form.personal_leave_hours != null)) {
+        await supabase.from('employees').update({
+          ...(form.annual_leave_hours   != null && { annual_leave_hours:   form.annual_leave_hours }),
+          ...(form.personal_leave_hours != null && { personal_leave_hours: form.personal_leave_hours }),
+        }).eq('id', selectedEmployeeId)
+        // Update local employees list so re-selecting the employee uses the new balance
+        setEmployees(prev => prev.map(e => e.id === selectedEmployeeId ? {
+          ...e,
+          annual_leave_hours:   form.annual_leave_hours   ?? e.annual_leave_hours,
+          personal_leave_hours: form.personal_leave_hours ?? e.personal_leave_hours,
+        } : e))
+      }
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
@@ -745,6 +775,15 @@ export default function PayslipPage() {
                     setSelectedEmployeeId(e.id)
                     const cycle = e.pay_cycle as PayCycle
                     const period = defaultPeriod(cycle)
+                    const hours = e.ordinary_hours ?? DEFAULT_HOURS[cycle]
+                    const accrual = calcLeaveAccrual(cycle, hours)
+                    // Carry forward stored balance + add this period's accrual
+                    const annualLeave = e.annual_leave_hours != null
+                      ? Math.round((e.annual_leave_hours + accrual.annual) * 100) / 100
+                      : null
+                    const personalLeave = e.personal_leave_hours != null
+                      ? Math.round((e.personal_leave_hours + accrual.personal) * 100) / 100
+                      : null
                     setForm(prev => ({
                       ...prev,
                       employee_name: e.name,
@@ -754,13 +793,15 @@ export default function PayslipPage() {
                       pay_basis: e.pay_basis as PayBasis,
                       annual_salary: e.pay_basis === 'salary' && e.annual_salary ? e.annual_salary : prev.annual_salary,
                       hourly_rate: e.pay_basis === 'hourly' && e.hourly_rate ? e.hourly_rate : prev.hourly_rate,
-                      ordinary_hours: e.ordinary_hours ?? DEFAULT_HOURS[cycle],
+                      ordinary_hours: hours,
                       super_fund_name: e.super_fund_name ?? '',
                       member_number: e.member_number ?? '',
                       residency_status: e.residency_status as ResidencyStatus,
                       medicare_exemption: isMedicareExemptByResidency(e.residency_status as ResidencyStatus),
                       pay_period_start: period.start,
                       pay_period_end: period.end,
+                      annual_leave_hours:   annualLeave,
+                      personal_leave_hours: personalLeave,
                     }))
                   }}
                   onChange={v => { setSelectedEmployeeId(null); setField('employee_name', v) }}
@@ -1077,7 +1118,14 @@ export default function PayslipPage() {
             {/* Leave Balances */}
             <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem' }}>
               <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.25rem' }}>Leave Balances <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></h3>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginBottom: '1rem' }}>Hours remaining as of this pay period. Shown at the bottom of the payslip PDF.</p>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginBottom: '1rem' }}>
+                {selectedEmployeeId
+                  ? (() => {
+                      const accrual = calcLeaveAccrual(form.pay_cycle, form.ordinary_hours)
+                      return `Pre-filled from employee record + ${accrual.annual} hrs annual / ${accrual.personal} hrs personal accrued this period. Deduct any leave taken, then save.`
+                    })()
+                  : 'Select an employee to auto-fill from their stored balance. First payslip: enter the opening balance manually.'}
+              </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
                 <div>
                   <label className="sab-label">Annual Leave (hours)</label>
