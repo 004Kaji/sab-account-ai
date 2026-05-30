@@ -8,6 +8,7 @@ import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 import { applyReferralReward } from '@/lib/referral'
 import { sendFriendConvertedEmail } from '@/lib/referral-emails'
+import { enqueueEmail } from '@/lib/queue'
 
 // Stripe API 2026+ sends timestamps as ISO strings; older versions send Unix numbers.
 const toISO = (val: number | string | null | undefined): string | null => {
@@ -20,8 +21,8 @@ export async function POST(request: NextRequest) {
     console.error('STRIPE_WEBHOOK_SECRET not configured')
     return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
   }
-  if (!process.env.INTERNAL_API_SECRET) {
-    console.error('INTERNAL_API_SECRET not configured — payment notification emails will not be sent')
+  if (!process.env.QSTASH_TOKEN) {
+    console.error('QSTASH_TOKEN not configured — payment notification emails will not be queued')
   }
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -89,26 +90,12 @@ export async function POST(request: NextRequest) {
             throw invoiceErr
           }
 
-          const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
-
-          const internalSecret = process.env.INTERNAL_API_SECRET ?? ''
-
-          // Email business owner
+          // Enqueue emails via QStash — decoupled from webhook, retried automatically on failure
           if (businessEmail) {
-            await fetch(`${base}/api/email/payment-received`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
-              body: JSON.stringify({ to: businessEmail, businessName, clientName, invoiceNumber, amount }),
-            })
+            await enqueueEmail('payment_received', { to: businessEmail, businessName, clientName, invoiceNumber, amount })
           }
-
-          // Email client
           if (clientEmail) {
-            await fetch(`${base}/api/email/payment-confirmed`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
-              body: JSON.stringify({ to: clientEmail, clientName, businessName, invoiceNumber, amount }),
-            })
+            await enqueueEmail('payment_confirmed', { to: clientEmail, clientName, businessName, invoiceNumber, amount })
           }
 
           console.log(`✅ Invoice ${invoiceNumber} paid by ${clientName}`)
