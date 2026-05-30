@@ -48,7 +48,9 @@ export interface PayslipPDFData {
   payment_date: string
   employer_name: string
   employer_abn: string
+  employer_address?: string
   employee_name: string
+  employee_tfn?: string
   employment_type: string
   pay_cycle: string
   pay_basis: 'salary' | 'hourly'
@@ -64,6 +66,9 @@ export interface PayslipPDFData {
   residency_status?: string
   ytdIsActual?: boolean
   logo_url?: string
+  allowances?: Array<{ description: string; amount: number }>
+  annual_leave_hours?: number
+  personal_leave_hours?: number
   numbers: PayslipNumbers
 }
 
@@ -105,7 +110,7 @@ async function buildPayslipDoc(data: PayslipPDFData) {
     y += 13
   }
 
-  // ── Header: Employee (left) · Employer (right) ──────────────────────
+  // ── Header: Employer (left) · Employee (right) ──────────────────────
   const colRight = margin + cW * 0.55
 
   // PAYSLIP badge — top right
@@ -124,35 +129,52 @@ async function buildPayslipDoc(data: PayslipPDFData) {
   doc.text('EMPLOYEE', colRight, y)
   y += 5
 
-  // Names
+  // Track each column independently — extra rows in one don't misalign the other
+  let yL = y
+  let yR = y
+
+  // ── Left column: Employer ──
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
   doc.setTextColor(28, 25, 23)
-  doc.text(data.employer_name || 'Your Business', margin, y)
-  doc.setFontSize(10)
-  doc.text(data.employee_name || '—', colRight, y)
-  y += 5
+  doc.text(data.employer_name || 'Your Business', margin, yL)
+  yL += 5
 
-  // Sub-details
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8.5)
   doc.setTextColor(100, 95, 90)
-  if (data.employer_abn) doc.text(`ABN ${formatABN(data.employer_abn)}`, margin, y)
-  doc.text(`${data.employment_type} · ${data.pay_cycle}`, colRight, y)
-  y += 4.5
-
-  // Pay rate hint
-  if (isHourly && data.hourly_rate > 0) {
-    doc.text(`${formatCurrency(data.hourly_rate)}/hr · ${data.ordinary_hours} hrs/period`, colRight, y)
-  } else if (!isHourly && data.annual_salary > 0) {
-    doc.text(`${formatCurrency(data.annual_salary)}/yr`, colRight, y)
+  if (data.employer_abn) { doc.text(`ABN ${formatABN(data.employer_abn)}`, margin, yL); yL += 4.5 }
+  if (data.employer_address) {
+    const addrLines = doc.splitTextToSize(data.employer_address, cW * 0.46)
+    doc.text(addrLines, margin, yL)
+    yL += addrLines.length * 4.5
   }
-  y += 4.5
+  if (data.super_fund_name) { doc.text(`Fund: ${data.super_fund_name}`, margin, yL); yL += 4.5 }
+  if (data.member_number)   { doc.text(`Member: ${data.member_number}`, margin, yL); yL += 4.5 }
 
-  if (data.super_fund_name) { doc.text(`Fund: ${data.super_fund_name}`, margin, y); y += 4.5 }
-  if (data.member_number)   { doc.text(`Member: ${data.member_number}`, margin, y); y += 4.5 }
+  // ── Right column: Employee ──
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.setTextColor(28, 25, 23)
+  doc.text(data.employee_name || '—', colRight, yR)
+  yR += 5
 
-  y += 4
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  doc.setTextColor(100, 95, 90)
+  doc.text(`${data.employment_type} · ${data.pay_cycle}`, colRight, yR); yR += 4.5
+  if (isHourly && data.hourly_rate > 0) {
+    doc.text(`${formatCurrency(data.hourly_rate)}/hr · ${data.ordinary_hours} hrs/period`, colRight, yR); yR += 4.5
+  } else if (!isHourly && data.annual_salary > 0) {
+    doc.text(`${formatCurrency(data.annual_salary)}/yr`, colRight, yR); yR += 4.5
+  }
+  if (data.employee_tfn && data.employee_tfn.replace(/\D/g, '').length >= 3) {
+    const digits = data.employee_tfn.replace(/\D/g, '')
+    const masked = `XXX-XXX-${digits.slice(-3)}`
+    doc.text(`TFN: ${masked}`, colRight, yR); yR += 4.5
+  }
+
+  y = Math.max(yL, yR) + 4
 
   // Separator
   doc.setDrawColor(215, 210, 205)
@@ -251,6 +273,9 @@ async function buildPayslipDoc(data: PayslipPDFData) {
     lineItem('Ordinary Earnings', formatCurrency(n.ordinaryEarnings))
   }
   if (n.overtimePay > 0)    lineItem('Overtime Pay', formatCurrency(n.overtimePay))
+  if (data.allowances && data.allowances.length > 0) {
+    data.allowances.forEach(a => lineItem(a.description || 'Allowance', formatCurrency(a.amount)))
+  }
   if (n.salarySacrifice > 0) lineItem('Less: Pre-Tax Salary Sacrifice', `(${formatCurrency(n.salarySacrifice)})`)
   sectionTotal(formatCurrency(n.grossPay), formatCurrency(n.ytdGross))
 
@@ -294,6 +319,21 @@ async function buildPayslipDoc(data: PayslipPDFData) {
     doc.setTextColor(146, 64, 14)
     doc.text('Note: Medicare Levy Surcharge (1%–1.5%) may apply at tax time if no private hospital cover held.', margin, y)
     y += 5
+  }
+
+  // ── Leave Balances ────────────────────────────────────────────────────
+  const hasLeave = (data.annual_leave_hours != null && data.annual_leave_hours >= 0) ||
+                   (data.personal_leave_hours != null && data.personal_leave_hours >= 0)
+  if (hasLeave) {
+    y += 2
+    sectionLabel('LEAVE BALANCES')
+    if (data.annual_leave_hours != null && data.annual_leave_hours >= 0) {
+      lineItem('Annual Leave', `${data.annual_leave_hours.toFixed(2)} hrs`)
+    }
+    if (data.personal_leave_hours != null && data.personal_leave_hours >= 0) {
+      lineItem('Personal / Sick Leave', `${data.personal_leave_hours.toFixed(2)} hrs`)
+    }
+    y += 2
   }
 
   // ── Footer ───────────────────────────────────────────────────────────

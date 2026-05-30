@@ -35,30 +35,35 @@ interface EmployeeRecord {
 }
 
 interface PayslipForm {
-  payslip_number:    string
-  employer_name:     string
-  employer_abn:      string
-  employee_name:     string
-  employment_type:   string
-  pay_cycle:         PayCycle
-  pay_basis:         PayBasis
-  residency_status:  ResidencyStatus
-  claiming_threshold: boolean
-  has_help:          boolean
-  medicare_exemption: boolean
-  use_new_super_rate: boolean
-  annual_salary:     number
-  hourly_rate:       number
-  ordinary_hours:    number
-  salary_sacrifice:  number
-  overtime_hours:    number
-  overtime_rate:     number
-  employee_email:    string
-  super_fund_name:   string
-  member_number:     string
-  pay_period_start:  string
-  pay_period_end:    string
-  payment_date:      string
+  payslip_number:      string
+  employer_name:       string
+  employer_abn:        string
+  employer_address:    string
+  employee_name:       string
+  employee_tfn:        string
+  employment_type:     string
+  pay_cycle:           PayCycle
+  pay_basis:           PayBasis
+  residency_status:    ResidencyStatus
+  claiming_threshold:  boolean
+  has_help:            boolean
+  medicare_exemption:  boolean
+  use_new_super_rate:  boolean
+  annual_salary:       number
+  hourly_rate:         number
+  ordinary_hours:      number
+  salary_sacrifice:    number
+  overtime_hours:      number
+  overtime_rate:       number
+  employee_email:      string
+  super_fund_name:     string
+  member_number:       string
+  pay_period_start:    string
+  pay_period_end:      string
+  payment_date:        string
+  allowances:          Array<{ id: string; description: string; amount: number }>
+  annual_leave_hours:  number | null
+  personal_leave_hours: number | null
 }
 
 interface BizProfile {
@@ -85,30 +90,35 @@ function makeForm(num: string, employerName = '', employerAbn = '', useNewSuperR
   const cycle: PayCycle = 'fortnightly'
   const period  = defaultPeriod(cycle)
   return {
-    payslip_number:    num,
-    employer_name:     employerName,
-    employer_abn:      employerAbn,
-    employee_name:     '',
-    employment_type:   'full-time',
-    pay_cycle:         cycle,
-    pay_basis:         'salary',
-    residency_status:  'student',
-    claiming_threshold: true,
-    has_help:          false,
-    medicare_exemption: true,   // default: international student = exempt
-    use_new_super_rate: useNewSuperRate,
-    annual_salary:     0,
-    hourly_rate:       0,
-    ordinary_hours:    76,
-    salary_sacrifice:  0,
-    overtime_hours:    0,
-    overtime_rate:     0,
-    employee_email:    '',
-    super_fund_name:   '',
-    member_number:     '',
-    pay_period_start:  period.start,
-    pay_period_end:    period.end,
-    payment_date:      today,
+    payslip_number:      num,
+    employer_name:       employerName,
+    employer_abn:        employerAbn,
+    employer_address:    '',
+    employee_name:       '',
+    employee_tfn:        '',
+    employment_type:     'full-time',
+    pay_cycle:           cycle,
+    pay_basis:           'salary',
+    residency_status:    'student',
+    claiming_threshold:  true,
+    has_help:            false,
+    medicare_exemption:  true,
+    use_new_super_rate:  useNewSuperRate,
+    annual_salary:       0,
+    hourly_rate:         0,
+    ordinary_hours:      76,
+    salary_sacrifice:    0,
+    overtime_hours:      0,
+    overtime_rate:       0,
+    employee_email:      '',
+    super_fund_name:     '',
+    member_number:       '',
+    pay_period_start:    period.start,
+    pay_period_end:      period.end,
+    payment_date:        today,
+    allowances:          [],
+    annual_leave_hours:  null,
+    personal_leave_hours: null,
   }
 }
 
@@ -470,7 +480,9 @@ export default function PayslipPage() {
         payment_date:      form.payment_date,
         employer_name:     form.employer_name || (biz?.business_name ?? ''),
         employer_abn:      (form.employer_abn || biz?.abn) ? formatABN(form.employer_abn || (biz?.abn ?? '')) : '',
+        employer_address:  form.employer_address || undefined,
         employee_name:     form.employee_name,
+        employee_tfn:      form.employee_tfn || undefined,
         employment_type:   form.employment_type,
         pay_cycle:         form.pay_cycle,
         pay_basis:         form.pay_basis,
@@ -487,6 +499,9 @@ export default function PayslipPage() {
         ytdIsActual,
         numbers:           displayNumbers,
         logo_url:          biz?.logo_url || undefined,
+        allowances:        form.allowances.filter(a => a.amount > 0),
+        annual_leave_hours: form.annual_leave_hours ?? undefined,
+        personal_leave_hours: form.personal_leave_hours ?? undefined,
       })
     } catch (err) {
       toast(err instanceof Error ? err.message : 'PDF generation failed', 'error')
@@ -505,7 +520,9 @@ export default function PayslipPage() {
         payment_date:      form.payment_date,
         employer_name:     form.employer_name || (biz?.business_name ?? ''),
         employer_abn:      (form.employer_abn || biz?.abn) ? formatABN(form.employer_abn || (biz?.abn ?? '')) : '',
+        employer_address:  form.employer_address || undefined,
         employee_name:     form.employee_name,
+        employee_tfn:      form.employee_tfn || undefined,
         employment_type:   form.employment_type,
         pay_cycle:         form.pay_cycle,
         pay_basis:         form.pay_basis,
@@ -522,6 +539,9 @@ export default function PayslipPage() {
         ytdIsActual,
         numbers:           displayNumbers,
         logo_url:          biz?.logo_url || undefined,
+        allowances:        form.allowances.filter(a => a.amount > 0),
+        annual_leave_hours: form.annual_leave_hours ?? undefined,
+        personal_leave_hours: form.personal_leave_hours ?? undefined,
       })
 
       const supabase = createBrowserClient()
@@ -704,6 +724,10 @@ export default function PayslipPage() {
                   <input className="sab-input" placeholder="12 345 678 901" autoComplete="off" value={form.employer_abn} onChange={e => setField('employer_abn', e.target.value)} />
                 </div>
               </div>
+              <div>
+                <label className="sab-label">Employer Address <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
+                <input className="sab-input" placeholder="123 Main St, Sydney NSW 2000" autoComplete="street-address" value={form.employer_address} onChange={e => setField('employer_address', e.target.value)} />
+              </div>
             </div>
 
             {/* Employee Details */}
@@ -759,6 +783,14 @@ export default function PayslipPage() {
                     <label className="sab-label">Employee Email <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
                     <input className="sab-input" type="email" placeholder="jane@example.com" autoComplete="email" value={form.employee_email}
                       onChange={e => setField('employee_email', e.target.value)} />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
+                  <div>
+                    <label className="sab-label">Tax File Number (TFN) <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
+                    <input className="sab-input" placeholder="123 456 789" autoComplete="off" value={form.employee_tfn}
+                      onChange={e => setField('employee_tfn', e.target.value)} />
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.25rem' }}>Shown masked on payslip (XXX-XXX-123)</p>
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
@@ -994,6 +1026,77 @@ export default function PayslipPage() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Allowances */}
+            <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)' }}>Allowances <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></h3>
+                <button
+                  type="button"
+                  onClick={() => setField('allowances', [...form.allowances, { id: Math.random().toString(36).slice(2), description: '', amount: 0 }])}
+                  style={{ fontSize: '0.8125rem', color: 'var(--ember)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}
+                >
+                  + Add allowance
+                </button>
+              </div>
+              {form.allowances.length === 0 ? (
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text3)' }}>No allowances — click &ldquo;+ Add allowance&rdquo; to include travel, tool, or uniform allowances.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                  {form.allowances.map((a, i) => (
+                    <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 32px', gap: '0.5rem', alignItems: 'center' }}>
+                      <input
+                        className="sab-input"
+                        placeholder="e.g. Travel allowance"
+                        value={a.description}
+                        onChange={e => setField('allowances', form.allowances.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
+                      />
+                      <div style={{ position: 'relative' }}>
+                        <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.875rem' }}>$</span>
+                        <input
+                          type="number" min={0} step={0.01} className="sab-input" placeholder="0.00"
+                          value={a.amount || ''}
+                          onChange={e => setField('allowances', form.allowances.map((x, j) => j === i ? { ...x, amount: parseFloat(e.target.value) || 0 } : x))}
+                          onWheel={e => (e.target as HTMLInputElement).blur()}
+                          style={{ paddingLeft: '1.5rem' }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setField('allowances', form.allowances.filter((_, j) => j !== i))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: '1.125rem', lineHeight: 1, padding: '0 4px' }}
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Leave Balances */}
+            <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem' }}>
+              <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.25rem' }}>Leave Balances <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></h3>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginBottom: '1rem' }}>Hours remaining as of this pay period. Shown at the bottom of the payslip PDF.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="form-grid-2">
+                <div>
+                  <label className="sab-label">Annual Leave (hours)</label>
+                  <input
+                    type="number" min={0} step={0.01} className="sab-input" placeholder="e.g. 80.00"
+                    value={form.annual_leave_hours ?? ''}
+                    onChange={e => setField('annual_leave_hours', e.target.value === '' ? null : parseFloat(e.target.value) || 0)}
+                    onWheel={e => (e.target as HTMLInputElement).blur()}
+                  />
+                </div>
+                <div>
+                  <label className="sab-label">Personal / Sick Leave (hours)</label>
+                  <input
+                    type="number" min={0} step={0.01} className="sab-input" placeholder="e.g. 60.00"
+                    value={form.personal_leave_hours ?? ''}
+                    onChange={e => setField('personal_leave_hours', e.target.value === '' ? null : parseFloat(e.target.value) || 0)}
+                    onWheel={e => (e.target as HTMLInputElement).blur()}
+                  />
+                </div>
               </div>
             </div>
 
