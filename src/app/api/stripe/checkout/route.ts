@@ -35,21 +35,48 @@ export async function POST(req: NextRequest) {
 
     const origin = req.headers.get('origin') ?? 'http://localhost:3000'
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      payment_method_types: ['card'],
+    const checkoutParams = {
+      mode: 'subscription' as const,
+      payment_method_types: ['card'] as ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
       metadata: { userId: user.id, plan },
       subscription_data: {
         trial_period_days: 14,
         metadata: { userId: user.id, plan },
       },
-      ...(profile?.stripe_customer_id
-        ? { customer: profile.stripe_customer_id }
-        : { customer_email: user.email ?? undefined }),
       success_url: `${origin}/settings?success=true&plan=${plan}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url:  `${origin}/settings?tab=subscription`,
-    })
+    }
+
+    // Try with stored customer ID first; if it no longer exists in Stripe
+    // (e.g. was created in test mode but app is now in live mode), clear it
+    // and fall back to customer_email so the session still completes.
+    let session
+    if (profile?.stripe_customer_id) {
+      try {
+        session = await stripe.checkout.sessions.create({
+          ...checkoutParams,
+          customer: profile.stripe_customer_id,
+        })
+      } catch (err: unknown) {
+        const stripeErr = err as { code?: string; message?: string }
+        if (stripeErr?.code === 'resource_missing' || stripeErr?.message?.includes('No such customer')) {
+          // Stale customer ID — clear it from the profile and retry without it
+          await supabase.from('profiles').update({ stripe_customer_id: null }).eq('id', user.id)
+          session = await stripe.checkout.sessions.create({
+            ...checkoutParams,
+            customer_email: user.email ?? undefined,
+          })
+        } else {
+          throw err
+        }
+      }
+    } else {
+      session = await stripe.checkout.sessions.create({
+        ...checkoutParams,
+        customer_email: user.email ?? undefined,
+      })
+    }
 
     return NextResponse.json({ url: session.url })
   } catch (err) {
