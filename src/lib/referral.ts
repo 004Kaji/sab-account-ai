@@ -18,18 +18,22 @@ export async function generateReferralCode(userId: string, userName: string): Pr
 
   if (existing?.code) return existing.code as string
 
-  let code = makeCode(userName)
-  for (let i = 0; i < 10; i++) {
-    const { data: taken } = await supabase
+  // Insert with a random suffix — collision probability is negligible (~1 in 1.6M).
+  // On the rare conflict, re-fetch the row that won the race.
+  const code = makeCode(userName)
+  const { error } = await supabase
+    .from('referral_codes')
+    .insert({ user_id: userId, code })
+
+  if (error) {
+    const { data: race } = await supabase
       .from('referral_codes')
-      .select('id')
-      .eq('code', code)
-      .maybeSingle()
-    if (!taken) break
-    code = makeCode(userName)
+      .select('code')
+      .eq('user_id', userId)
+      .single()
+    return (race?.code as string) ?? code
   }
 
-  await supabase.from('referral_codes').insert({ user_id: userId, code })
   return code
 }
 

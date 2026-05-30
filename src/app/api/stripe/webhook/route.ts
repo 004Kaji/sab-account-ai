@@ -13,7 +13,13 @@ import { enqueueEmail } from '@/lib/queue'
 // Stripe API 2026+ sends timestamps as ISO strings; older versions send Unix numbers.
 const toISO = (val: number | string | null | undefined): string | null => {
   if (!val) return null
-  return typeof val === 'number' ? new Date(val * 1000).toISOString() : new Date(val).toISOString()
+  try {
+    const d = typeof val === 'number' ? new Date(val * 1000) : new Date(val)
+    if (isNaN(d.getTime())) return null
+    return d.toISOString()
+  } catch {
+    return null
+  }
 }
 
 export async function POST(request: NextRequest) {

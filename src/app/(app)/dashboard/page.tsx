@@ -481,54 +481,42 @@ export default function DashboardPage() {
       const { start: qStart, end: qEnd } = currentQuarterRange()
       const today = todayISO()
 
-      // Fetch all invoices for current FY
-      const { data: fyInvoices } = await supabase
-        .from('invoices')
-        .select('id, invoice_number, client_name, issue_date, due_date, status, total_inc_gst, total_gst')
-        .eq('user_id', user.id)
-        .gte('issue_date', fy_start)
-        .lte('issue_date', fy_end)
-        .order('created_at', { ascending: false })
+      // Fetch all data in parallel
+      const [{ data: fyInvoices }, { data: expenseRecs }, { data: payslips }] = await Promise.all([
+        supabase
+          .from('invoices')
+          .select('id, invoice_number, client_name, issue_date, due_date, status, total_inc_gst, total_gst')
+          .eq('user_id', user.id)
+          .gte('issue_date', fy_start)
+          .lte('issue_date', fy_end)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('records')
+          .select('gst_amount')
+          .eq('user_id', user.id)
+          .eq('type', 'expense')
+          .gte('date', fy_start)
+          .lte('date', fy_end),
+        profile.plan === 'pro'
+          ? supabase.from('payslips').select('super_sg').eq('user_id', user.id).gte('pay_period_end', qStart).lte('pay_period_end', qEnd)
+          : Promise.resolve({ data: [] }),
+      ])
 
       let all: Invoice[] = (fyInvoices ?? []) as Invoice[]
 
-      // ── Auto-overdue: mark pending invoices past their due date ──
+      gstCreditsRef.current  = (expenseRecs ?? []).reduce((s, r) => s + Number(r.gst_amount), 0)
+      superOwingRef.current  = ((payslips ?? []) as Array<{ super_sg: number }>).reduce((s, p) => s + Number(p.super_sg), 0)
+
+      // ── Auto-overdue: mark pending invoices past their due date (fire-and-forget) ──
       const overdueIds = all
         .filter(inv => inv.status === 'pending' && inv.due_date < today)
         .map(inv => inv.id)
 
       if (overdueIds.length > 0) {
-        await supabase
-          .from('invoices')
-          .update({ status: 'overdue' })
-          .in('id', overdueIds)
-
+        supabase.from('invoices').update({ status: 'overdue' }).in('id', overdueIds)
         all = all.map(inv =>
           overdueIds.includes(inv.id) ? { ...inv, status: 'overdue' as InvoiceStatus } : inv
         )
-      }
-
-      // GST credits from expense records
-      const { data: expenseRecs } = await supabase
-        .from('records')
-        .select('gst_amount')
-        .eq('user_id', user.id)
-        .eq('type', 'expense')
-        .gte('date', fy_start)
-        .lte('date', fy_end)
-
-      gstCreditsRef.current = (expenseRecs ?? []).reduce((s, r) => s + Number(r.gst_amount), 0)
-
-      // Super owing this quarter (Pro plan)
-      if (profile.plan === 'pro') {
-        const { data: payslips } = await supabase
-          .from('payslips')
-          .select('super_sg')
-          .eq('user_id', user.id)
-          .gte('pay_period_end', qStart)
-          .lte('pay_period_end', qEnd)
-
-        superOwingRef.current = (payslips ?? []).reduce((s, p) => s + Number(p.super_sg), 0)
       }
 
       // Compute top 3 clients from FY invoices
