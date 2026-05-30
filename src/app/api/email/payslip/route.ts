@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
+import { escHtml as esc } from '@/lib/email-utils'
 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY)
@@ -26,6 +27,9 @@ export async function POST(req: NextRequest) {
   if (!to || !pdfBase64) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
+  if (pdfBase64.length > 5_000_000) {
+    return NextResponse.json({ error: 'PDF too large' }, { status: 400 })
+  }
 
   const html = `
 <!DOCTYPE html>
@@ -39,7 +43,7 @@ export async function POST(req: NextRequest) {
         <!-- Header -->
         <tr>
           <td style="background:#1C1917;padding:28px 36px">
-            <p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${employerName || 'Your Employer'}</p>
+            <p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${esc(employerName || 'Your Employer')}</p>
             <p style="margin:6px 0 0;color:#A09590;font-size:13px">Payslip Notification</p>
           </td>
         </tr>
@@ -47,9 +51,9 @@ export async function POST(req: NextRequest) {
         <!-- Body -->
         <tr>
           <td style="padding:36px">
-            <p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${employeeName},</p>
+            <p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${esc(employeeName)},</p>
             <p style="margin:0 0 28px;color:#57534E;font-size:14px;line-height:1.6">
-              Your payslip for <strong>${payPeriod}</strong> is ready. Please find it attached to this email.
+              Your payslip for <strong>${esc(payPeriod)}</strong> is ready. Please find it attached to this email.
             </p>
 
             <!-- Summary card -->
@@ -59,15 +63,15 @@ export async function POST(req: NextRequest) {
                   <table width="100%" cellpadding="0" cellspacing="0">
                     <tr>
                       <td style="padding:6px 0;color:#78716C;font-size:13px">Payslip Number</td>
-                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${payslipNumber}</td>
+                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(payslipNumber)}</td>
                     </tr>
                     <tr>
                       <td style="padding:6px 0;color:#78716C;font-size:13px">Pay Period</td>
-                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${payPeriod}</td>
+                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(payPeriod)}</td>
                     </tr>
                     <tr>
                       <td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Net Pay</td>
-                      <td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${netPay}</td>
+                      <td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${esc(netPay)}</td>
                     </tr>
                   </table>
                 </td>

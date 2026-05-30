@@ -18,6 +18,11 @@ export async function POST(req: NextRequest) {
   if (error || !inv) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
   if (inv.status === 'paid') return NextResponse.json({ error: 'Invoice already paid' }, { status: 400 })
 
+  const total = inv.total_inc_gst as number
+  if (typeof total !== 'number' || total <= 0) {
+    return NextResponse.json({ error: 'Invalid invoice amount' }, { status: 400 })
+  }
+
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
 
   const session = await stripe.checkout.sessions.create({
@@ -27,7 +32,7 @@ export async function POST(req: NextRequest) {
       {
         price_data: {
           currency: 'aud',
-          unit_amount: Math.round((inv.total_inc_gst as number) * 100),
+          unit_amount: Math.round(total * 100),
           product_data: {
             name: `Invoice ${inv.invoice_number}`,
             description: `Payment to ${inv.business_name}`,

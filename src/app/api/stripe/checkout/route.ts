@@ -33,7 +33,9 @@ export async function POST(req: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    const origin = req.headers.get('origin') ?? 'http://localhost:3000'
+    const ALLOWED_ORIGINS = ['https://sabaccountai.com', 'http://localhost:3000']
+    const rawOrigin = req.headers.get('origin') ?? ''
+    const origin = ALLOWED_ORIGINS.includes(rawOrigin) ? rawOrigin : 'https://sabaccountai.com'
 
     const checkoutParams = {
       mode: 'subscription' as const,

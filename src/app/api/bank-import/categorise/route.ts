@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
+import { checkRateLimit } from '@/lib/ratelimit'
 
 const INCOME_CATEGORIES  = ['Consulting', 'Labour', 'Materials & Goods', 'Retainer', 'Rental Income', 'Other Income']
 const EXPENSE_CATEGORIES = ['Motor Vehicle', 'Office Supplies', 'Software & Subscriptions', 'Equipment', 'Travel', 'Meals & Entertainment', 'Insurance', 'Marketing', 'Rent & Utilities', 'Professional Services', 'Materials', 'Other']
@@ -22,11 +23,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const { data: profile } = await supabase.from('profiles').select('plan').eq('id', user.id).single()
+  const plan = (profile?.plan as string) ?? 'free'
+  const { allowed } = await checkRateLimit(user.id, plan)
+  if (!allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit reached. Please wait before categorising more transactions.' },
+      { status: 429, headers: { 'Retry-After': '3600' } },
+    )
+  }
+
   const { transactions } = await req.json() as {
     transactions: Array<{ description: string; amount: number; type: 'income' | 'expense' }>
   }
 
   if (!transactions?.length) return NextResponse.json({ results: [] })
+  if (transactions.length > 100) {
+    return NextResponse.json({ error: 'Too many transactions (max 100 per request)' }, { status: 400 })
+  }
+  const sanitized = transactions.map(t => ({
+    ...t,
+    description: String(t.description).slice(0, 200),
+  }))
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -41,11 +59,11 @@ export async function POST(req: NextRequest) {
 Return ONLY a JSON array, one object per transaction, same order. No markdown, no explanation.
 Example: [{"type":"expense","category":"Software & Subscriptions","gst":true,"confidence":"high"}]`
 
-  const userMessage = transactions
+  const userMessage = sanitized
     .map((t, i) => `${i + 1}. [${t.type.toUpperCase()}] ${t.description} $${t.amount.toFixed(2)}`)
     .join('\n')
 
-  const fallback = (t: typeof transactions[number]): AIResult => ({
+  const fallback = (t: typeof sanitized[number]): AIResult => ({
     type: t.type,
     category: t.type === 'income' ? 'Other Income' : 'Other',
     gst: false,
@@ -66,7 +84,7 @@ Example: [{"type":"expense","category":"Software & Subscriptions","gst":true,"co
 
     const raw = JSON.parse(jsonMatch[0]) as AIResult[]
 
-    const results: AIResult[] = transactions.map((t, i) => {
+    const results: AIResult[] = sanitized.map((t, i) => {
       const r = raw[i]
       if (!r) return fallback(t)
       const type = r.type === 'income' || r.type === 'expense' ? r.type : t.type
@@ -79,6 +97,6 @@ Example: [{"type":"expense","category":"Software & Subscriptions","gst":true,"co
   } catch (err) {
     Sentry.captureException(err, { tags: { feature: 'ai_generation', operation: 'categorise' } })
     console.error('AI categorise error:', err)
-    return NextResponse.json({ results: transactions.map(fallback) })
+    return NextResponse.json({ results: sanitized.map(fallback) })
   }
 }

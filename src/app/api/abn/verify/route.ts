@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
+import { createServiceClient } from '@/lib/supabase'
 
 export type AbnVerifyResult =
   | { status: 'active';         name: string; abn: string; entityType: string }
@@ -11,6 +12,12 @@ export type AbnVerifyResult =
   | { status: 'error';          message: string }
 
 export async function GET(req: NextRequest) {
+  const token = req.headers.get('Authorization')?.replace('Bearer ', '')
+  if (!token) return NextResponse.json({ status: 'error', message: 'Unauthorised' } satisfies AbnVerifyResult, { status: 401 })
+  const supabase = createServiceClient()
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
+  if (authErr || !user) return NextResponse.json({ status: 'error', message: 'Unauthorised' } satisfies AbnVerifyResult, { status: 401 })
+
   const guid = process.env.ABR_API_GUID
   if (!guid || guid === 'your-guid-here') {
     return NextResponse.json({ status: 'not_configured' } satisfies AbnVerifyResult)

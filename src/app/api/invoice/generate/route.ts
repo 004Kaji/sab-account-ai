@@ -20,30 +20,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
-
-// ── In-memory rate limiter ────────────────────────────────────────────
-// Note: resets on each Vercel cold start. Good enough for abuse prevention
-// on a small app; for production-scale use Upstash Redis instead.
-const rateLimitStore = new Map<string, { count: number; resetAt: number }>()
-const WINDOW_MS = 60 * 60 * 1000 // 1 hour window
-
-function checkRateLimit(userId: string, plan: string): { allowed: boolean; remaining: number } {
-  const limit = plan === 'free' ? 5 : 60
-  const now = Date.now()
-  const entry = rateLimitStore.get(userId)
-
-  if (!entry || entry.resetAt < now) {
-    rateLimitStore.set(userId, { count: 1, resetAt: now + WINDOW_MS })
-    return { allowed: true, remaining: limit - 1 }
-  }
-
-  if (entry.count >= limit) {
-    return { allowed: false, remaining: 0 }
-  }
-
-  entry.count++
-  return { allowed: true, remaining: limit - entry.count }
-}
+import { checkRateLimit } from '@/lib/ratelimit'
 
 // POST means this route only accepts POST requests (sending data TO the server).
 // GET requests (just fetching a page) will be ignored by this route.
@@ -75,7 +52,7 @@ export async function POST(req: NextRequest) {
     // ── RATE LIMIT ────────────────────────────────────────────────────
     const { data: profile } = await supabase.from('profiles').select('plan').eq('id', user.id).single()
     const plan = (profile?.plan as string) ?? 'free'
-    const { allowed } = checkRateLimit(user.id, plan)
+    const { allowed } = await checkRateLimit(user.id, plan)
     if (!allowed) {
       return NextResponse.json(
         { error: 'Rate limit reached. Please wait before generating another invoice.' },
@@ -89,6 +66,9 @@ export async function POST(req: NextRequest) {
     const { prompt } = await req.json()
     if (!prompt?.trim()) {
       return NextResponse.json({ error: 'Prompt required' }, { status: 400 })
+    }
+    if (prompt.length > 2000) {
+      return NextResponse.json({ error: 'Prompt too long (max 2000 characters)' }, { status: 400 })
     }
 
     // ── CALL CLAUDE AI ────────────────────────────────────────────────

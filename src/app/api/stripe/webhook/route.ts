@@ -16,15 +16,21 @@ const toISO = (val: number | string | null | undefined): string | null => {
 }
 
 export async function POST(request: NextRequest) {
+  if (!process.env.STRIPE_WEBHOOK_SECRET) {
+    console.error('STRIPE_WEBHOOK_SECRET not configured')
+    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
+  }
+
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
     apiVersion: '2024-06-20',
   })
   const body = await request.text()
-  const signature = request.headers.get('stripe-signature')!
+  const signature = request.headers.get('stripe-signature')
+  if (!signature) return NextResponse.json({ error: 'Missing signature' }, { status: 400 })
 
   let event: Stripe.Event
   try {
-    event = stripe.webhooks.constructEvent(body, signature, process.env.STRIPE_WEBHOOK_SECRET!)
+    event = stripe.webhooks.constructEvent(body, signature, process.env.STRIPE_WEBHOOK_SECRET)
   } catch (err) {
     console.error('Webhook signature failed:', err)
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
@@ -70,11 +76,13 @@ export async function POST(request: NextRequest) {
 
           const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
 
+          const internalSecret = process.env.INTERNAL_API_SECRET ?? ''
+
           // Email business owner
           if (businessEmail) {
             await fetch(`${base}/api/email/payment-received`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
               body: JSON.stringify({ to: businessEmail, businessName, clientName, invoiceNumber, amount }),
             })
           }
@@ -83,7 +91,7 @@ export async function POST(request: NextRequest) {
           if (clientEmail) {
             await fetch(`${base}/api/email/payment-confirmed`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
               body: JSON.stringify({ to: clientEmail, clientName, businessName, invoiceNumber, amount }),
             })
           }
@@ -132,18 +140,16 @@ export async function POST(request: NextRequest) {
             reward_applied: true,
           }).eq('id', referral.id)
 
-          // Increment converted_referrals
+          // Atomic increment — avoids race condition from read-then-write
+          await supabase.rpc('increment_converted_referrals', { referrer: referrerId })
+
           const { data: rc } = await supabase
             .from('referral_codes')
             .select('converted_referrals')
             .eq('user_id', referrerId)
             .single()
 
-          const newConverted = ((rc?.converted_referrals as number) ?? 0) + 1
-          await supabase
-            .from('referral_codes')
-            .update({ converted_referrals: newConverted })
-            .eq('user_id', referrerId)
+          const newConverted = (rc?.converted_referrals as number) ?? 1
 
           // Apply reward (reads updated count)
           const { additionalMonths, lifetimePro } = await applyReferralReward(referrerId)

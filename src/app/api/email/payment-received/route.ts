@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
+import { escHtml as esc } from '@/lib/email-utils'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
+  const secret = req.headers.get('x-internal-secret')
+  if (!secret || secret !== process.env.INTERNAL_API_SECRET) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   const resend = new Resend(process.env.RESEND_API_KEY)
   const { to, businessName, clientName, invoiceNumber, amount } =
     await req.json() as {
@@ -32,9 +38,9 @@ export async function POST(req: NextRequest) {
         </tr>
         <tr>
           <td style="padding:36px">
-            <p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${businessName},</p>
+            <p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${esc(businessName)},</p>
             <p style="margin:0 0 28px;color:#57534E;font-size:14px;line-height:1.6">
-              Great news — <strong>${clientName}</strong> has paid invoice <strong>${invoiceNumber}</strong>.
+              Great news — <strong>${esc(clientName)}</strong> has paid invoice <strong>${esc(invoiceNumber)}</strong>.
               The invoice has been automatically marked as paid in your SAB Account AI account.
             </p>
             <table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;border-radius:8px;margin-bottom:28px">
@@ -43,15 +49,15 @@ export async function POST(req: NextRequest) {
                   <table width="100%" cellpadding="0" cellspacing="0">
                     <tr>
                       <td style="padding:6px 0;color:#78716C;font-size:13px">Invoice</td>
-                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${invoiceNumber}</td>
+                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(invoiceNumber)}</td>
                     </tr>
                     <tr>
                       <td style="padding:6px 0;color:#78716C;font-size:13px">Paid by</td>
-                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${clientName}</td>
+                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(clientName)}</td>
                     </tr>
                     <tr>
                       <td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Amount received</td>
-                      <td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#4A7055;font-size:20px;font-weight:700">${amount}</td>
+                      <td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#4A7055;font-size:20px;font-weight:700">${esc(amount)}</td>
                     </tr>
                   </table>
                 </td>

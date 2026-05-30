@@ -45,11 +45,8 @@ export async function POST(req: NextRequest) {
     status: 'signed_up',
   })
 
-  // Increment total_referrals
-  await supabase
-    .from('referral_codes')
-    .update({ total_referrals: ((rc.total_referrals as number) ?? 0) + 1 })
-    .eq('code', refCode)
+  // Atomic increment — avoids race condition from read-then-write
+  await supabase.rpc('increment_total_referrals', { ref_code: refCode })
 
   // Get referrer info for email
   const { data: { user: referrerUser } } = await supabase.auth.admin.getUserById(referrerId)

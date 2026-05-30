@@ -337,6 +337,7 @@ export default function PayslipPage() {
   const [biz, setBiz]   = useState<BizProfile | null>(null)
   const [employees, setEmployees] = useState<EmployeeRecord[]>([])
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
+  const [leaveBalanceBase, setLeaveBalanceBase] = useState<{ annual: number | null; personal: number | null }>({ annual: null, personal: null })
   const [form, setForm] = useState<PayslipForm>(makeForm('PS-…'))
   const [saving, setSaving] = useState(false)
   const [savedSlip, setSavedSlip] = useState<{ id: string; number: string } | null>(null)
@@ -434,6 +435,18 @@ export default function PayslipPage() {
         next.pay_period_start = period.start
         next.pay_period_end   = period.end
         next.ordinary_hours   = DEFAULT_HOURS[value as PayCycle]
+        if (leaveBalanceBase.annual != null || leaveBalanceBase.personal != null) {
+          const accrual = calcLeaveAccrual(value as PayCycle, DEFAULT_HOURS[value as PayCycle])
+          if (leaveBalanceBase.annual    != null) next.annual_leave_hours   = Math.round((leaveBalanceBase.annual    + accrual.annual)   * 100) / 100
+          if (leaveBalanceBase.personal  != null) next.personal_leave_hours = Math.round((leaveBalanceBase.personal  + accrual.personal) * 100) / 100
+        }
+      }
+      if (key === 'ordinary_hours') {
+        if (leaveBalanceBase.annual != null || leaveBalanceBase.personal != null) {
+          const accrual = calcLeaveAccrual(prev.pay_cycle, Number(value))
+          if (leaveBalanceBase.annual    != null) next.annual_leave_hours   = Math.round((leaveBalanceBase.annual    + accrual.annual)   * 100) / 100
+          if (leaveBalanceBase.personal  != null) next.personal_leave_hours = Math.round((leaveBalanceBase.personal  + accrual.personal) * 100) / 100
+        }
       }
       if (key === 'residency_status') {
         next.medicare_exemption = isMedicareExemptByResidency(value as ResidencyStatus)
@@ -483,17 +496,26 @@ export default function PayslipPage() {
       setSavedSlip({ id: data.id, number: form.payslip_number })
       if (form.employee_email) setEmailTo(form.employee_email)
 
+      // Warn if leave taken exceeds balance (balance is clamped to 0 on save)
+      if (form.annual_leave_hours != null && form.annual_leave_taken > form.annual_leave_hours) {
+        toast('Annual leave taken exceeds balance — closing balance set to 0', 'error')
+      }
+      if (form.personal_leave_hours != null && form.personal_leave_taken > form.personal_leave_hours) {
+        toast('Personal leave taken exceeds balance — closing balance set to 0', 'error')
+      }
+
       // Persist the leave balance back to the employee record so the next
       // payslip pre-fills with the updated balance (carry-forward).
-      if (selectedEmployeeId && (form.annual_leave_hours != null || form.personal_leave_hours != null)) {
-        // Save the NEW balance (previous + accrual − taken) back to the employee record
+      // Falls back to name-based lookup so manual-entry payslips also update the record.
+      const resolvedEmpId = selectedEmployeeId ?? employees.find(e => e.name === form.employee_name.trim())?.id ?? null
+      if (resolvedEmpId && (form.annual_leave_hours != null || form.personal_leave_hours != null)) {
         const newAnnual   = form.annual_leave_hours   != null ? Math.max(0, Math.round((form.annual_leave_hours   - form.annual_leave_taken)   * 100) / 100) : null
         const newPersonal = form.personal_leave_hours != null ? Math.max(0, Math.round((form.personal_leave_hours - form.personal_leave_taken) * 100) / 100) : null
         await supabase.from('employees').update({
           ...(newAnnual   != null && { annual_leave_hours:   newAnnual }),
           ...(newPersonal != null && { personal_leave_hours: newPersonal }),
-        }).eq('id', selectedEmployeeId)
-        setEmployees(prev => prev.map(e => e.id === selectedEmployeeId ? {
+        }).eq('id', resolvedEmpId)
+        setEmployees(prev => prev.map(e => e.id === resolvedEmpId ? {
           ...e,
           annual_leave_hours:   newAnnual   ?? e.annual_leave_hours,
           personal_leave_hours: newPersonal ?? e.personal_leave_hours,
@@ -506,39 +528,43 @@ export default function PayslipPage() {
     }
   }
 
+  function buildPDFParams() {
+    return {
+      payslip_number:     form.payslip_number,
+      pay_period_start:   form.pay_period_start,
+      pay_period_end:     form.pay_period_end,
+      payment_date:       form.payment_date,
+      employer_name:      form.employer_name || (biz?.business_name ?? ''),
+      employer_abn:       (form.employer_abn || biz?.abn) ? formatABN(form.employer_abn || (biz?.abn ?? '')) : '',
+      employer_address:   form.employer_address || undefined,
+      employee_name:      form.employee_name,
+      employee_tfn:       form.employee_tfn || undefined,
+      employment_type:    form.employment_type,
+      pay_cycle:          form.pay_cycle,
+      pay_basis:          form.pay_basis,
+      annual_salary:      effectiveAnnualSalary,
+      hourly_rate:        form.hourly_rate,
+      ordinary_hours:     form.ordinary_hours,
+      super_fund_name:    form.super_fund_name,
+      member_number:      form.member_number,
+      use_new_super_rate: form.use_new_super_rate,
+      claiming_threshold: form.claiming_threshold,
+      has_help:           form.has_help,
+      medicare_exempt:    form.medicare_exemption,
+      residency_status:   form.residency_status,
+      ytdIsActual,
+      numbers:            displayNumbers,
+      logo_url:           biz?.logo_url || undefined,
+      allowances:         form.allowances.filter(a => a.amount > 0),
+      annual_leave_hours:   form.annual_leave_hours   != null ? Math.max(0, Math.round((form.annual_leave_hours   - form.annual_leave_taken)   * 100) / 100) : undefined,
+      personal_leave_hours: form.personal_leave_hours != null ? Math.max(0, Math.round((form.personal_leave_hours - form.personal_leave_taken) * 100) / 100) : undefined,
+    }
+  }
+
   async function handleDownloadPDF() {
     try {
       const { downloadPayslipPDF } = await import('@/lib/pdf')
-      await downloadPayslipPDF({
-        payslip_number:    form.payslip_number,
-        pay_period_start:  form.pay_period_start,
-        pay_period_end:    form.pay_period_end,
-        payment_date:      form.payment_date,
-        employer_name:     form.employer_name || (biz?.business_name ?? ''),
-        employer_abn:      (form.employer_abn || biz?.abn) ? formatABN(form.employer_abn || (biz?.abn ?? '')) : '',
-        employer_address:  form.employer_address || undefined,
-        employee_name:     form.employee_name,
-        employee_tfn:      form.employee_tfn || undefined,
-        employment_type:   form.employment_type,
-        pay_cycle:         form.pay_cycle,
-        pay_basis:         form.pay_basis,
-        annual_salary:     effectiveAnnualSalary,
-        hourly_rate:       form.hourly_rate,
-        ordinary_hours:    form.ordinary_hours,
-        super_fund_name:   form.super_fund_name,
-        member_number:     form.member_number,
-        use_new_super_rate: form.use_new_super_rate,
-        claiming_threshold: form.claiming_threshold,
-        has_help:          form.has_help,
-        medicare_exempt:   form.medicare_exemption,
-        residency_status:  form.residency_status,
-        ytdIsActual,
-        numbers:           displayNumbers,
-        logo_url:          biz?.logo_url || undefined,
-        allowances:          form.allowances.filter(a => a.amount > 0),
-        annual_leave_hours:   form.annual_leave_hours   != null ? Math.max(0, Math.round((form.annual_leave_hours   - form.annual_leave_taken)   * 100) / 100) : undefined,
-        personal_leave_hours: form.personal_leave_hours != null ? Math.max(0, Math.round((form.personal_leave_hours - form.personal_leave_taken) * 100) / 100) : undefined,
-      })
+      await downloadPayslipPDF(buildPDFParams())
     } catch (err) {
       toast(err instanceof Error ? err.message : 'PDF generation failed', 'error')
     }
@@ -549,36 +575,7 @@ export default function PayslipPage() {
     setEmailSending(true)
     try {
       const { getPayslipPDFBase64 } = await import('@/lib/pdf')
-      const pdfBase64 = await getPayslipPDFBase64({
-        payslip_number:    form.payslip_number,
-        pay_period_start:  form.pay_period_start,
-        pay_period_end:    form.pay_period_end,
-        payment_date:      form.payment_date,
-        employer_name:     form.employer_name || (biz?.business_name ?? ''),
-        employer_abn:      (form.employer_abn || biz?.abn) ? formatABN(form.employer_abn || (biz?.abn ?? '')) : '',
-        employer_address:  form.employer_address || undefined,
-        employee_name:     form.employee_name,
-        employee_tfn:      form.employee_tfn || undefined,
-        employment_type:   form.employment_type,
-        pay_cycle:         form.pay_cycle,
-        pay_basis:         form.pay_basis,
-        annual_salary:     effectiveAnnualSalary,
-        hourly_rate:       form.hourly_rate,
-        ordinary_hours:    form.ordinary_hours,
-        super_fund_name:   form.super_fund_name,
-        member_number:     form.member_number,
-        medicare_exempt:   form.medicare_exemption,
-        residency_status:  form.residency_status,
-        use_new_super_rate: form.use_new_super_rate,
-        claiming_threshold: form.claiming_threshold,
-        has_help:          form.has_help,
-        ytdIsActual,
-        numbers:           displayNumbers,
-        logo_url:          biz?.logo_url || undefined,
-        allowances:          form.allowances.filter(a => a.amount > 0),
-        annual_leave_hours:   form.annual_leave_hours   != null ? Math.max(0, Math.round((form.annual_leave_hours   - form.annual_leave_taken)   * 100) / 100) : undefined,
-        personal_leave_hours: form.personal_leave_hours != null ? Math.max(0, Math.round((form.personal_leave_hours - form.personal_leave_taken) * 100) / 100) : undefined,
-      })
+      const pdfBase64 = await getPayslipPDFBase64(buildPDFParams())
 
       const supabase = createBrowserClient()
       const { data: { session } } = await supabase.auth.getSession()
@@ -783,7 +780,9 @@ export default function PayslipPage() {
                     const period = defaultPeriod(cycle)
                     const hours = e.ordinary_hours ?? DEFAULT_HOURS[cycle]
                     const accrual = calcLeaveAccrual(cycle, hours)
-                    // Carry forward stored balance + add this period's accrual
+                    // Store the raw DB balance separately so accrual can be recomputed
+                    // if the user later changes pay_cycle or ordinary_hours
+                    setLeaveBalanceBase({ annual: e.annual_leave_hours ?? null, personal: e.personal_leave_hours ?? null })
                     const annualLeave = e.annual_leave_hours != null
                       ? Math.round((e.annual_leave_hours + accrual.annual) * 100) / 100
                       : null
@@ -812,8 +811,8 @@ export default function PayslipPage() {
                       personal_leave_taken: 0,
                     }))
                   }}
-                  onChange={v => { setSelectedEmployeeId(null); setField('employee_name', v) }}
-                  onClear={() => { setSelectedEmployeeId(null); setField('employee_name', '') }}
+                  onChange={v => { setSelectedEmployeeId(null); setLeaveBalanceBase({ annual: null, personal: null }); setField('employee_name', v) }}
+                  onClear={() => { setSelectedEmployeeId(null); setLeaveBalanceBase({ annual: null, personal: null }); setField('employee_name', '') }}
                 />
                 {selectedEmployeeId && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', color: '#15803d', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
@@ -1148,7 +1147,7 @@ export default function PayslipPage() {
                   <label className="sab-label">Leave taken this period (hrs)</label>
                   <input
                     type="number" min={0} step={0.01} className="sab-input" placeholder="0"
-                    value={form.annual_leave_taken || ''}
+                    value={form.annual_leave_taken}
                     onChange={e => setField('annual_leave_taken', parseFloat(e.target.value) || 0)}
                     onWheel={e => (e.target as HTMLInputElement).blur()}
                   />
@@ -1182,7 +1181,7 @@ export default function PayslipPage() {
                   <label className="sab-label">Leave taken this period (hrs)</label>
                   <input
                     type="number" min={0} step={0.01} className="sab-input" placeholder="0"
-                    value={form.personal_leave_taken || ''}
+                    value={form.personal_leave_taken}
                     onChange={e => setField('personal_leave_taken', parseFloat(e.target.value) || 0)}
                     onWheel={e => (e.target as HTMLInputElement).blur()}
                   />

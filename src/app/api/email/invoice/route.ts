@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
+import { escHtml as esc } from '@/lib/email-utils'
 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY)
@@ -26,6 +27,9 @@ export async function POST(req: NextRequest) {
   if (!to || !pdfBase64) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
+  if (pdfBase64.length > 5_000_000) {
+    return NextResponse.json({ error: 'PDF too large' }, { status: 400 })
+  }
 
   const html = `
 <!DOCTYPE html>
@@ -39,7 +43,7 @@ export async function POST(req: NextRequest) {
         <!-- Header -->
         <tr>
           <td style="background:#1C1917;padding:28px 36px">
-            <p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${businessName || 'Your Supplier'}</p>
+            <p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${esc(businessName || 'Your Supplier')}</p>
             <p style="margin:6px 0 0;color:#A09590;font-size:13px">Tax Invoice</p>
           </td>
         </tr>
@@ -47,9 +51,9 @@ export async function POST(req: NextRequest) {
         <!-- Body -->
         <tr>
           <td style="padding:36px">
-            <p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${clientName},</p>
+            <p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${esc(clientName)},</p>
             <p style="margin:0 0 28px;color:#57534E;font-size:14px;line-height:1.6">
-              Please find your invoice <strong>${invoiceNumber}</strong> from <strong>${businessName}</strong> attached to this email.
+              Please find your invoice <strong>${esc(invoiceNumber)}</strong> from <strong>${esc(businessName)}</strong> attached to this email.
             </p>
 
             <!-- Summary card -->
@@ -59,15 +63,15 @@ export async function POST(req: NextRequest) {
                   <table width="100%" cellpadding="0" cellspacing="0">
                     <tr>
                       <td style="padding:6px 0;color:#78716C;font-size:13px">Invoice Number</td>
-                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${invoiceNumber}</td>
+                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(invoiceNumber)}</td>
                     </tr>
                     <tr>
                       <td style="padding:6px 0;color:#78716C;font-size:13px">Due Date</td>
-                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${dueDate}</td>
+                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(dueDate)}</td>
                     </tr>
                     <tr>
                       <td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Total Due (inc GST)</td>
-                      <td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${totalDue}</td>
+                      <td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${esc(totalDue)}</td>
                     </tr>
                   </table>
                 </td>

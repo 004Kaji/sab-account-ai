@@ -17,6 +17,12 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json() as { type: string } & Record<string, unknown>
 
+  // Only allow sending to the authenticated user's own email
+  const targetEmail = (body.referrerEmail ?? body.newUserEmail) as string | undefined
+  if (targetEmail && targetEmail !== user.email) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   try {
     if (body.type === 'friend_signed_up') {
       await sendFriendSignedUpEmail({
