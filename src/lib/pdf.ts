@@ -276,7 +276,7 @@ async function buildPayslipDoc(data: PayslipPDFData) {
 
 export async function downloadPayslipPDF(data: PayslipPDFData) {
   const doc = await buildPayslipDoc(data)
-  doc.save(`${data.payslip_number}.pdf`)
+  await doc.save(`${data.payslip_number}.pdf`)
 }
 
 /** Returns the payslip PDF as a pure base64 string (no data-URI prefix). */
@@ -548,7 +548,7 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
 
 export async function downloadInvoicePDF(data: InvoicePDFData) {
   const doc = await buildInvoiceDoc(data)
-  doc.save(`${data.invoice_number}.pdf`)
+  await doc.save(`${data.invoice_number}.pdf`)
 }
 
 /** Returns the invoice PDF as a pure base64 string (no data-URI prefix). */
@@ -651,7 +651,7 @@ async function buildABNRemittanceDoc(data: ABNRemittancePDFData) {
 export async function downloadABNRemittancePDF(data: ABNRemittancePDFData) {
   const doc = await buildABNRemittanceDoc(data)
   const dateStr = data.payment_date.replace(/-/g, '')
-  doc.save(`RS-${dateStr}-${data.contractor_name.replace(/\s+/g, '-')}.pdf`)
+  await doc.save(`RS-${dateStr}-${data.contractor_name.replace(/\s+/g, '-')}.pdf`)
 }
 
 // ── No-ABN Withholding Statement ──────────────────────────────────────
@@ -742,5 +742,5 @@ async function buildNoABNWithholdingDoc(data: NoABNWithholdingPDFData) {
 export async function downloadNoABNWithholdingPDF(data: NoABNWithholdingPDFData) {
   const doc = await buildNoABNWithholdingDoc(data)
   const dateStr = data.payment_date.replace(/-/g, '')
-  doc.save(`W4-${dateStr}-${data.worker_name.replace(/\s+/g, '-')}.pdf`)
+  await doc.save(`W4-${dateStr}-${data.worker_name.replace(/\s+/g, '-')}.pdf`)
 }
