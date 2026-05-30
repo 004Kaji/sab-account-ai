@@ -66,6 +66,7 @@ interface BizProfile {
   abn: string
   email: string
   logo_url?: string
+  super_rate_new?: boolean | null
 }
 
 function defaultPeriod(cycle: PayCycle): { start: string; end: string } {
@@ -79,7 +80,7 @@ function defaultPeriod(cycle: PayCycle): { start: string; end: string } {
   }
 }
 
-function makeForm(num: string, employerName = '', employerAbn = ''): PayslipForm {
+function makeForm(num: string, employerName = '', employerAbn = '', useNewSuperRate = true): PayslipForm {
   const today   = todayISO()
   const cycle: PayCycle = 'fortnightly'
   const period  = defaultPeriod(cycle)
@@ -95,7 +96,7 @@ function makeForm(num: string, employerName = '', employerAbn = ''): PayslipForm
     claiming_threshold: true,
     has_help:          false,
     medicare_exemption: true,   // default: international student = exempt
-    use_new_super_rate: true,
+    use_new_super_rate: useNewSuperRate,
     annual_salary:     0,
     hourly_rate:       0,
     ordinary_hours:    76,
@@ -348,7 +349,7 @@ export default function PayslipPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const [{ data: bizData }, { data: lastSlip }, { data: empData }] = await Promise.all([
-        supabase.from('business_profiles').select('business_name,abn,email,logo_url').eq('id', user.id).single(),
+        supabase.from('business_profiles').select('business_name,abn,email,logo_url,super_rate_new').eq('id', user.id).single(),
         supabase.from('payslips').select('payslip_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('employees').select('id,name,email,employment_type,pay_cycle,pay_basis,annual_salary,hourly_rate,ordinary_hours,super_fund_name,member_number,residency_status').eq('user_id', user.id).order('name'),
       ])
@@ -359,7 +360,7 @@ export default function PayslipPage() {
         ? parseInt(lastSlip.payslip_number.split('-').pop() ?? '0', 10)
         : 0
       const num = `PS-${yr}-${String(lastSeq + 1).padStart(3, '0')}`
-      setForm(makeForm(num, bizData?.business_name ?? '', bizData?.abn ?? ''))
+      setForm(makeForm(num, bizData?.business_name ?? '', bizData?.abn ?? '', bizData?.super_rate_new ?? true))
     }
     load()
   }, [])
@@ -632,7 +633,7 @@ export default function PayslipPage() {
               setSelectedEmployeeId(null)
               const yr  = new Date().getFullYear()
               const nextNum = parseInt(savedSlip.number.split('-')[2] ?? '1') + 1
-              setForm(makeForm(`PS-${yr}-${String(nextNum).padStart(3, '0')}`, form.employer_name, form.employer_abn))
+              setForm(makeForm(`PS-${yr}-${String(nextNum).padStart(3, '0')}`, form.employer_name, form.employer_abn, biz?.super_rate_new ?? true))
             }}
             className="btn btn-outline"
             style={{ width: '100%' }}
