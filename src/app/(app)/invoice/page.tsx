@@ -30,6 +30,7 @@ interface BizProfile {
   phone: string
   address: string
   logo_url?: string
+  default_footer?: string | null
 }
 
 interface ClientRecord {
@@ -172,7 +173,7 @@ function InvoicePreview({ form, biz, totals }: {
 // Creates a fresh blank invoice form with today's date and a 14-day due date.
 // Called when the page loads and when the user clicks "Create Another Invoice".
 // invoiceNumber is passed in so the form starts with the correct next number.
-function makeForm(invoiceNumber: string) {
+function makeForm(invoiceNumber: string, defaultFooter = '') {
   const today = todayISO()
   return {
     invoice_number: invoiceNumber,
@@ -189,7 +190,7 @@ function makeForm(invoiceNumber: string) {
     account_name: '',
     bsb: '',
     account_number: '',
-    notes: '',
+    notes: defaultFooter,
   }
 }
 type InvoiceForm = ReturnType<typeof makeForm>
@@ -241,7 +242,7 @@ export default function InvoicePage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const [{ data: bizData }, { data: lastInv }, { data: clientData }] = await Promise.all([
-        supabase.from('business_profiles').select('business_name,abn,email,phone,address,logo_url').eq('id', user.id).single(),
+        supabase.from('business_profiles').select('business_name,abn,email,phone,address,logo_url,default_footer').eq('id', user.id).single(),
         supabase.from('invoices').select('invoice_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('clients').select('id,business_name,contact_name,email,phone,address,abn').eq('user_id', user.id).order('business_name'),
       ])
@@ -252,7 +253,7 @@ export default function InvoicePage() {
         ? parseInt(lastInv.invoice_number.split('-').pop() ?? '0', 10)
         : 0
       const nextNum = generateInvoiceNumber(lastSeq + 1)
-      setForm(makeForm(nextNum))
+      setForm(makeForm(nextNum, bizData?.default_footer ?? ''))
     }
     load()
   }, [])
@@ -570,7 +571,7 @@ export default function InvoicePage() {
               setEmailSent(false)
               setSelectedClientId(null)
               setClientSaved(false)
-              setForm(makeForm(generateInvoiceNumber(parseInt(savedInvoice.number.split('-')[2] ?? '1') + 1)))
+              setForm(makeForm(generateInvoiceNumber(parseInt(savedInvoice.number.split('-')[2] ?? '1') + 1), biz?.default_footer ?? ''))
             }}
             className="btn btn-outline"
             style={{ width: '100%' }}
