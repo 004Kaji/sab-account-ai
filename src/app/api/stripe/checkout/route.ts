@@ -26,12 +26,20 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Look up any existing Stripe customer ID for this user
+    // Look up any existing Stripe customer ID and subscription status for this user
     const { data: profile } = await supabase
       .from('profiles')
-      .select('stripe_customer_id')
+      .select('stripe_customer_id, stripe_subscription_id, subscription_status')
       .eq('id', user.id)
       .single()
+
+    // Block checkout if user already has an active or trialing subscription
+    if (profile?.stripe_subscription_id && (profile.subscription_status === 'active' || profile.subscription_status === 'trialing')) {
+      return NextResponse.json(
+        { error: 'You already have an active subscription. Use Manage Billing to change your plan.' },
+        { status: 400 },
+      )
+    }
 
     const ALLOWED_ORIGINS = ['https://sabaccountai.com', 'http://localhost:3000']
     const rawOrigin = req.headers.get('origin') ?? ''
