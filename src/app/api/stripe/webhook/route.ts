@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
+import { PRICE_IDS } from '@/lib/stripe'
 import { applyReferralReward } from '@/lib/referral'
 import { sendFriendConvertedEmail } from '@/lib/referral-emails'
 import { enqueueEmail } from '@/lib/queue'
@@ -208,12 +209,31 @@ export async function POST(request: NextRequest) {
         const userId = sub.metadata?.userId
         if (!userId) break
 
-        const plan = sub.metadata?.plan || sub.items.data[0]?.price?.metadata?.plan || 'free'
-        await supabase.from('profiles').update({
-          plan: sub.status === 'active' || sub.status === 'trialing' ? plan : 'free',
+        const isActive = sub.status === 'active' || sub.status === 'trialing'
+
+        // Resolve plan: price ID is most reliable (stale checkout metadata can say 'starter'
+        // even after a manual upgrade to 'pro', causing false downgrades on portal visits).
+        const priceId = sub.items.data[0]?.price?.id
+        const planFromPrice = priceId
+          ? (Object.entries(PRICE_IDS).find(([, id]) => id === priceId)?.[0] as string | undefined)
+          : undefined
+        const detectedPlan = planFromPrice
+          || sub.metadata?.plan
+          || sub.items.data[0]?.price?.metadata?.plan
+
+        const update: Record<string, unknown> = {
           subscription_status: sub.status,
           billing_cycle_end: toISO(sub.current_period_end),
-        }).eq('id', userId)
+        }
+
+        if (!isActive) {
+          update.plan = 'free'
+        } else if (detectedPlan) {
+          update.plan = detectedPlan
+        }
+        // Active but plan unknown — leave stored plan untouched
+
+        await supabase.from('profiles').update(update).eq('id', userId)
         break
       }
 
