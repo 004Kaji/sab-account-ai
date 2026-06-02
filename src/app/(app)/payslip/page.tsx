@@ -23,6 +23,7 @@ interface EmployeeRecord {
   id: string
   name: string
   email: string | null
+  tfn: string | null
   employment_type: string
   pay_cycle: string
   pay_basis: string
@@ -378,13 +379,14 @@ export default function PayslipPage() {
       const supabase = createBrowserClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const [{ data: bizData }, { data: lastSlip }, { data: empData }] = await Promise.all([
+      const { data: { session } } = await supabase.auth.getSession()
+      const [{ data: bizData }, { data: lastSlip }, empRes] = await Promise.all([
         supabase.from('business_profiles').select('business_name,abn,email,logo_url,super_rate_new').eq('id', user.id).single(),
         supabase.from('payslips').select('payslip_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-        supabase.from('employees').select('id,name,email,employment_type,pay_cycle,pay_basis,annual_salary,hourly_rate,ordinary_hours,super_fund_name,member_number,residency_status,annual_leave_hours,personal_leave_hours').eq('user_id', user.id).order('name'),
+        fetch('/api/employees', { headers: { Authorization: `Bearer ${session?.access_token ?? ''}` } }),
       ])
       setBiz(bizData ?? null)
-      setEmployees((empData ?? []) as EmployeeRecord[])
+      setEmployees(empRes.ok ? (await empRes.json() as EmployeeRecord[]) : [])
       const yr = new Date().getFullYear()
       const lastSeq = lastSlip?.payslip_number
         ? parseInt(lastSlip.payslip_number.split('-').pop() ?? '0', 10)
@@ -780,15 +782,14 @@ export default function PayslipPage() {
                     const period = defaultPeriod(cycle)
                     const hours = e.ordinary_hours ?? DEFAULT_HOURS[cycle]
                     const accrual = calcLeaveAccrual(cycle, hours)
-                    // Store the raw DB balance separately so accrual can be recomputed
-                    // if the user later changes pay_cycle or ordinary_hours
-                    setLeaveBalanceBase({ annual: e.annual_leave_hours ?? null, personal: e.personal_leave_hours ?? null })
-                    const annualLeave = e.annual_leave_hours != null
-                      ? Math.round((e.annual_leave_hours + accrual.annual) * 100) / 100
-                      : null
-                    const personalLeave = e.personal_leave_hours != null
-                      ? Math.round((e.personal_leave_hours + accrual.personal) * 100) / 100
-                      : null
+                    // Casuals don't accrue paid leave. Full-time and part-time default
+                    // to 0 opening balance so accrual starts from the first payslip.
+                    const isPermanent = e.employment_type !== 'casual'
+                    const openingAnnual   = isPermanent ? (e.annual_leave_hours   ?? 0) : e.annual_leave_hours
+                    const openingPersonal = isPermanent ? (e.personal_leave_hours ?? 0) : e.personal_leave_hours
+                    setLeaveBalanceBase({ annual: openingAnnual, personal: openingPersonal })
+                    const annualLeave   = openingAnnual   != null ? Math.round((openingAnnual   + accrual.annual)   * 100) / 100 : null
+                    const personalLeave = openingPersonal != null ? Math.round((openingPersonal + accrual.personal) * 100) / 100 : null
                     setForm(prev => ({
                       ...prev,
                       employee_name: e.name,
@@ -809,6 +810,7 @@ export default function PayslipPage() {
                       personal_leave_hours: personalLeave,
                       annual_leave_taken:   0,
                       personal_leave_taken: 0,
+                      employee_tfn:         e.tfn ?? '',
                     }))
                   }}
                   onChange={v => { setSelectedEmployeeId(null); setLeaveBalanceBase({ annual: null, personal: null }); setField('employee_name', v) }}
@@ -1222,6 +1224,11 @@ export default function PayslipPage() {
                 <input className="sab-input" value={form.payslip_number}
                   onChange={e => setField('payslip_number', e.target.value)} />
               </div>
+            </div>
+
+            {/* STP notice */}
+            <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.25)', borderRadius: '10px', padding: '0.75rem 1rem', fontSize: '0.8rem', color: '#92400e', lineHeight: 1.5, marginBottom: '1rem' }}>
+              <strong>Single Touch Payroll (STP):</strong> This tool generates ATO-compliant payslips but does not submit payroll data to the ATO via STP. You or your accountant must report payroll separately each pay run via STP-enabled software or the <a href="https://www.ato.gov.au/businesses-and-organisations/payroll-tax/single-touch-payroll" target="_blank" rel="noopener noreferrer" style={{ color: '#92400e' }}>ATO Business Portal</a>.
             </div>
 
             {/* Actions */}

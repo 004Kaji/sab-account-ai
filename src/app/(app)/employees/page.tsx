@@ -90,14 +90,13 @@ export default function EmployeesPage() {
 
   const load = useCallback(async () => {
     const supabase = createBrowserClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase
-      .from('employees')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('name')
-    setEmployees((data ?? []) as Employee[])
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    const res = await fetch('/api/employees', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+    if (!res.ok) return
+    setEmployees(await res.json() as Employee[])
     setLoading(false)
   }, [])
 
@@ -140,8 +139,8 @@ export default function EmployeesPage() {
     setSaving(true)
     try {
       const supabase = createBrowserClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
 
       const payload = {
         name: form.name.trim(),
@@ -161,13 +160,15 @@ export default function EmployeesPage() {
         notes: form.notes.trim() || null,
       }
 
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }
+
       if (editingId) {
-        const { error } = await supabase.from('employees').update(payload).eq('id', editingId)
-        if (error) throw error
+        const res = await fetch('/api/employees', { method: 'PUT', headers, body: JSON.stringify({ id: editingId, ...payload }) })
+        if (!res.ok) throw new Error((await res.json()).error ?? 'Save failed')
         toast('Employee updated', 'success')
       } else {
-        const { error } = await supabase.from('employees').insert({ ...payload, user_id: user.id })
-        if (error) throw error
+        const res = await fetch('/api/employees', { method: 'POST', headers, body: JSON.stringify(payload) })
+        if (!res.ok) throw new Error((await res.json()).error ?? 'Save failed')
         toast('Employee added', 'success')
       }
       setModalOpen(false)
@@ -184,8 +185,13 @@ export default function EmployeesPage() {
     setDeleting(true)
     try {
       const supabase = createBrowserClient()
-      const { error } = await supabase.from('employees').delete().eq('id', deleteId)
-      if (error) throw error
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
+      const res = await fetch(`/api/employees?id=${deleteId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Delete failed')
       toast('Employee deleted', 'success')
       setDeleteId(null)
       load()
