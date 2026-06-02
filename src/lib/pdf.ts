@@ -383,6 +383,7 @@ export interface InvoicePDFData {
   account_number: string
   notes: string
   payment_link?: string
+  document_type?: 'invoice' | 'quote'
 }
 
 async function buildInvoiceDoc(data: InvoicePDFData) {
@@ -395,20 +396,22 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
 
   let y = margin
 
-  // ── TAX INVOICE — centred at top, full width ───────────────────────────
+  const isQuote = data.document_type === 'quote'
+
+  // ── Header title ───────────────────────────────────────────────────────
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(22)
-  doc.setTextColor(200, 75, 47)
-  doc.text('TAX INVOICE', pageW / 2, y, { align: 'center' })
+  doc.setTextColor(isQuote ? 37 : 200, isQuote ? 99 : 75, isQuote ? 235 : 47)
+  doc.text(isQuote ? 'QUOTE' : 'TAX INVOICE', pageW / 2, y, { align: 'center' })
   y += 9
 
   // ── Left: Logo + Business  ·  Right: Invoice meta ─────────────────────
   const invMetaX = margin + cW * 0.55
   const invRows: [string, string][] = [
-    ['Invoice No:',   data.invoice_number],
-    ['Due Date:',     formatDateAU(data.due_date)],
-    ['Invoice Date:', formatDateAU(data.issue_date)],
-    ['Terms:',        data.payment_terms],
+    [isQuote ? 'Quote No:' : 'Invoice No:',   data.invoice_number],
+    [isQuote ? 'Valid Until:' : 'Due Date:',  formatDateAU(data.due_date)],
+    ['Date:', formatDateAU(data.issue_date)],
+    ['Terms:', data.payment_terms],
   ]
   let metaY = y
   invRows.forEach(([label, val]) => {

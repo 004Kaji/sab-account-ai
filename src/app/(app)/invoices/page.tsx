@@ -7,10 +7,12 @@ import { useToast } from '@/components/ui/Toast'
 import { formatCurrency, formatDateAU, formatABN } from '@/lib/utils'
 
 type InvoiceStatus = 'draft' | 'pending' | 'paid' | 'overdue'
+type DocumentType  = 'invoice' | 'quote'
 
 interface Invoice {
   id: string
   invoice_number: string
+  document_type: DocumentType
   client_name: string
   client_business_name?: string
   client_abn: string
@@ -44,7 +46,7 @@ const STATUS_STYLES: Record<InvoiceStatus, { bg: string; color: string }> = {
   overdue: { bg: 'rgba(200,75,47,0.1)',      color: 'var(--ember)' },
 }
 
-type FilterStatus = 'all' | InvoiceStatus
+type FilterStatus = 'all' | InvoiceStatus | 'quote'
 
 export default function InvoicesPage() {
   const { toast } = useToast()
@@ -54,9 +56,10 @@ export default function InvoicesPage() {
   const [loading, setLoading]           = useState(true)
   const [filter, setFilter]             = useState<FilterStatus>('all')
   const [logoUrl, setLogoUrl]           = useState<string | undefined>()
-  const [deletingId, setDeletingId]     = useState<string | null>(null)
+  const [deletingId, setDeletingId]       = useState<string | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [markingPaidId, setMarkingPaidId] = useState<string | null>(null)
+  const [convertingId, setConvertingId]   = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -68,6 +71,16 @@ export default function InvoicesPage() {
         supabase.from('invoices').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
         supabase.from('business_profiles').select('logo_url').eq('id', user.id).single(),
       ])
+
+      // Auto-mark overdue: pending invoices where due_date is in the past
+      const today = new Date().toISOString().split('T')[0]
+      const overdueIds = (invData ?? [])
+        .filter(inv => inv.status === 'pending' && inv.due_date < today && inv.document_type !== 'quote')
+        .map(inv => inv.id)
+      if (overdueIds.length > 0) {
+        await supabase.from('invoices').update({ status: 'overdue' }).in('id', overdueIds)
+        invData?.forEach(inv => { if (overdueIds.includes(inv.id)) inv.status = 'overdue' })
+      }
       setInvoices((invData ?? []) as Invoice[])
       setLogoUrl(bizData?.logo_url || undefined)
       setLoading(false)
@@ -94,6 +107,16 @@ export default function InvoicesPage() {
     if (error) { toast('Update failed', 'error'); return }
     setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'paid' as InvoiceStatus } : inv))
     toast('Invoice marked as paid', 'success')
+  }
+
+  async function handleConvertToInvoice(id: string) {
+    setConvertingId(id)
+    const supabase = createBrowserClient()
+    const { error } = await supabase.from('invoices').update({ document_type: 'invoice', status: 'pending' }).eq('id', id)
+    setConvertingId(null)
+    if (error) { toast('Convert failed', 'error'); return }
+    setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, document_type: 'invoice' as DocumentType, status: 'pending' as InvoiceStatus } : inv))
+    toast('Quote converted to invoice', 'success')
   }
 
   async function handleDownloadPDF(inv: Invoice) {
@@ -133,18 +156,23 @@ export default function InvoicesPage() {
     }
   }
 
-  const filtered = filter === 'all' ? invoices : invoices.filter(inv => inv.status === filter)
+  const filtered = filter === 'all'
+    ? invoices
+    : filter === 'quote'
+      ? invoices.filter(inv => inv.document_type === 'quote')
+      : invoices.filter(inv => inv.status === filter && inv.document_type !== 'quote')
 
   const counts = {
     all:     invoices.length,
-    pending: invoices.filter(i => i.status === 'pending').length,
+    quote:   invoices.filter(i => i.document_type === 'quote').length,
+    pending: invoices.filter(i => i.status === 'pending' && i.document_type !== 'quote').length,
     overdue: invoices.filter(i => i.status === 'overdue').length,
     paid:    invoices.filter(i => i.status === 'paid').length,
-    draft:   invoices.filter(i => i.status === 'draft').length,
+    draft:   invoices.filter(i => i.status === 'draft' && i.document_type !== 'quote').length,
   }
 
   const totalOutstanding = invoices
-    .filter(i => i.status === 'pending' || i.status === 'overdue')
+    .filter(i => (i.status === 'pending' || i.status === 'overdue') && i.document_type !== 'quote')
     .reduce((s, i) => s + Number(i.total_inc_gst), 0)
 
   return (
@@ -173,6 +201,7 @@ export default function InvoicesPage() {
           ['pending', `Pending (${counts.pending})`],
           ['overdue', `Overdue (${counts.overdue})`],
           ['paid',    `Paid (${counts.paid})`],
+          ['quote',   `Quotes (${counts.quote})`],
           ['draft',   `Draft (${counts.draft})`],
         ] as [FilterStatus, string][]).map(([key, label]) => (
           <button
@@ -227,10 +256,12 @@ export default function InvoicesPage() {
               </thead>
               <tbody>
                 {filtered.map((inv, i) => {
-                  const style = STATUS_STYLES[inv.status] ?? STATUS_STYLES.pending
+                  const isQuote       = inv.document_type === 'quote'
+                  const style         = STATUS_STYLES[inv.status] ?? STATUS_STYLES.pending
                   const isDeleting    = deletingId    === inv.id
                   const isDownloading = downloadingId === inv.id
                   const isMarking     = markingPaidId === inv.id
+                  const isConverting  = convertingId  === inv.id
                   return (
                     <tr key={inv.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none' }}>
                       <td style={{ padding: '0.75rem 1rem', fontWeight: 600, fontSize: '0.875rem', color: 'var(--char)', whiteSpace: 'nowrap' }}>
@@ -249,17 +280,28 @@ export default function InvoicesPage() {
                         {formatCurrency(inv.total_inc_gst)}
                       </td>
                       <td style={{ padding: '0.75rem 1rem', whiteSpace: 'nowrap' }}>
-                        <span style={{
-                          fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.04em',
-                          textTransform: 'uppercase', padding: '0.2rem 0.5rem',
-                          borderRadius: '999px', background: style.bg, color: style.color,
-                        }}>
-                          {inv.status}
-                        </span>
+                        {isQuote ? (
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '0.2rem 0.5rem', borderRadius: '999px', background: 'rgba(37,99,235,0.1)', color: '#1d4ed8' }}>
+                            Quote
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '0.2rem 0.5rem', borderRadius: '999px', background: style.bg, color: style.color }}>
+                            {inv.status}
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: '0.75rem 0.75rem', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', justifyContent: 'flex-end' }}>
-                          {(inv.status === 'pending' || inv.status === 'overdue') && (
+                          {isQuote && (
+                            <button
+                              onClick={() => handleConvertToInvoice(inv.id)}
+                              disabled={isConverting}
+                              style={{ padding: '0.25rem 0.625rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 500, border: '1px solid rgba(37,99,235,0.3)', background: 'rgba(37,99,235,0.08)', color: '#1d4ed8', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            >
+                              {isConverting ? '…' : 'Convert to Invoice'}
+                            </button>
+                          )}
+                          {!isQuote && (inv.status === 'pending' || inv.status === 'overdue') && (
                             <button
                               onClick={() => handleMarkPaid(inv.id)}
                               disabled={isMarking}

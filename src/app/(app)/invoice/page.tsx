@@ -85,11 +85,13 @@ function termsToDays(terms: string): number {
   return 0
 }
 
-function InvoicePreview({ form, biz, totals }: {
+function InvoicePreview({ form, biz, totals, documentType }: {
   form: ReturnType<typeof makeForm>
   biz: BizProfile | null
   totals: ReturnType<typeof calcTotals>
+  documentType: 'invoice' | 'quote'
 }) {
+  const isQuote = documentType === 'quote'
   const bizName = biz?.business_name || 'Your Business'
   return (
     <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '2rem', fontSize: '0.8125rem', color: '#1C1917', lineHeight: 1.5 }}>
@@ -101,7 +103,7 @@ function InvoicePreview({ form, biz, totals }: {
           {biz?.phone && <p style={{ color: '#646060' }}>{biz.phone}</p>}
           {biz?.address && <p style={{ color: '#646060', maxWidth: '180px' }}>{biz.address}</p>}
         </div>
-        <div style={{ background: '#C84B2F', color: '#fff', fontWeight: 700, fontSize: '0.6875rem', letterSpacing: '0.06em', padding: '0.3rem 0.875rem', borderRadius: '4px' }}>TAX INVOICE</div>
+        <div style={{ background: isQuote ? '#2563eb' : '#C84B2F', color: '#fff', fontWeight: 700, fontSize: '0.6875rem', letterSpacing: '0.06em', padding: '0.3rem 0.875rem', borderRadius: '4px' }}>{isQuote ? 'QUOTE' : 'TAX INVOICE'}</div>
       </div>
       <hr style={{ border: 'none', borderTop: '1px solid #E5DDD5', margin: '1rem 0' }} />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -114,10 +116,10 @@ function InvoicePreview({ form, biz, totals }: {
           {form.client_address && <p style={{ color: '#646060', whiteSpace: 'pre-line' }}>{form.client_address}</p>}
         </div>
         <div>
-          <p style={{ fontSize: '0.625rem', fontWeight: 700, color: '#A09590', letterSpacing: '0.06em', marginBottom: '0.375rem' }}>INVOICE DETAILS</p>
+          <p style={{ fontSize: '0.625rem', fontWeight: 700, color: '#A09590', letterSpacing: '0.06em', marginBottom: '0.375rem' }}>{isQuote ? 'QUOTE DETAILS' : 'INVOICE DETAILS'}</p>
           <p style={{ fontWeight: 700 }}>{form.invoice_number}</p>
           <p style={{ color: '#646060' }}>Issued: {form.issue_date ? formatDateAU(form.issue_date) : '—'}</p>
-          <p style={{ color: '#646060' }}>Due: {form.due_date ? formatDateAU(form.due_date) : '—'}</p>
+          <p style={{ color: '#646060' }}>{isQuote ? 'Valid until' : 'Due'}: {form.due_date ? formatDateAU(form.due_date) : '—'}</p>
           <p style={{ color: '#646060' }}>Terms: {form.payment_terms}</p>
         </div>
       </div>
@@ -223,6 +225,9 @@ export default function InvoicePage() {
   const [emailSending, setEmailSending] = useState(false)           // True while the email is sending
   const [emailSent, setEmailSent] = useState(false)                 // True after email sent successfully
   const [pdfDownloaded, setPdfDownloaded] = useState(false)         // True after PDF downloaded (triggers referral banner)
+  const [documentType, setDocumentType] = useState<'invoice' | 'quote'>('invoice')
+  const [recurringActive, setRecurringActive] = useState(false)
+  const [recurringInterval, setRecurringInterval] = useState('monthly')
 
   // ── LIVE TOTALS ───────────────────────────────────────────────────────
   // This line recalculates subtotal, GST, and total every time form.line_items changes.
@@ -340,7 +345,7 @@ export default function InvoicePage() {
   //   3. Saves to Supabase — inserts a new row into the invoices table
   //
   // After saving, sets savedInvoice which triggers the success screen.
-  async function handleSave(status: 'draft' | 'pending') {
+  async function handleSave(status: 'draft' | 'pending', docType: 'invoice' | 'quote' = documentType) {
     if (!form.client_name.trim()) { toast('Client name is required', 'error'); return }
     if (form.line_items.every(it => !it.description.trim())) { toast('Add at least one line item', 'error'); return }
 
@@ -361,10 +366,25 @@ export default function InvoicePage() {
       const supabase = createBrowserClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
+      // Compute next recurring date
+      const nextRecurringDate = recurringActive ? (() => {
+        const d = new Date(form.issue_date)
+        if (recurringInterval === 'weekly')      d.setDate(d.getDate() + 7)
+        else if (recurringInterval === 'fortnightly') d.setDate(d.getDate() + 14)
+        else if (recurringInterval === 'monthly')  d.setMonth(d.getMonth() + 1)
+        else if (recurringInterval === 'quarterly') d.setMonth(d.getMonth() + 3)
+        else d.setFullYear(d.getFullYear() + 1)
+        return d.toISOString().split('T')[0]
+      })() : null
+
       const { data, error } = await supabase.from('invoices').insert({
         user_id: user.id,
         invoice_number: form.invoice_number,
         status,
+        document_type: docType,
+        recurring_active: recurringActive && docType === 'invoice',
+        recurring_interval: recurringActive && docType === 'invoice' ? recurringInterval : null,
+        recurring_next_date: recurringActive && docType === 'invoice' ? nextRecurringDate : null,
         client_name: form.client_name,
         client_abn: form.client_abn,
         client_email: form.client_email,
@@ -435,6 +455,7 @@ export default function InvoicePage() {
         bsb: form.bsb,
         account_number: form.account_number,
         notes: form.notes,
+        document_type: documentType,
       })
       setPdfDownloaded(true)
     } catch (err) {
@@ -528,8 +549,8 @@ export default function InvoicePage() {
     return (
       <div style={{ maxWidth: '520px', margin: '4rem auto', padding: '0 1.5rem', textAlign: 'center' }}>
         <div style={{ width: '4rem', height: '4rem', borderRadius: '50%', background: 'rgba(34,197,94,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', margin: '0 auto 1.25rem' }}>✓</div>
-        <h2 className="font-display" style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>Invoice Saved!</h2>
-        <p style={{ color: 'var(--text2)', fontSize: '0.9375rem', marginBottom: '2rem' }}>{savedInvoice.number} · {formatCurrency(totals.total_inc_gst)} has been saved.</p>
+        <h2 className="font-display" style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>{documentType === 'quote' ? 'Quote Saved!' : 'Invoice Saved!'}</h2>
+        <p style={{ color: 'var(--text2)', fontSize: '0.9375rem', marginBottom: '2rem' }}>{savedInvoice.number} · {formatCurrency(totals.total_inc_gst)} has been saved.{documentType === 'quote' ? ' Send it to your client for approval.' : ''}</p>
         <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1.25rem', marginBottom: '1rem', textAlign: 'left' }}>
           <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.625rem' }}>Send invoice by email</p>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -620,8 +641,17 @@ export default function InvoicePage() {
             </div>
           )}
 
+          {/* Document type toggle */}
+          <div style={{ display: 'inline-flex', gap: '0.25rem', background: 'var(--cream2)', borderRadius: 'var(--r)', padding: '0.25rem', alignSelf: 'flex-start' }}>
+            {(['invoice', 'quote'] as const).map(t => (
+              <button key={t} onClick={() => setDocumentType(t)} style={{ padding: '0.4rem 1.125rem', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500, border: 'none', cursor: 'pointer', background: documentType === t ? '#ffffff' : 'transparent', color: documentType === t ? 'var(--char)' : 'var(--text2)', boxShadow: documentType === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 150ms', textTransform: 'capitalize' }}>
+                {t === 'invoice' ? 'Invoice' : 'Quote'}
+              </button>
+            ))}
+          </div>
+
           <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem' }}>
-            <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '1rem' }}>Invoice Details</h3>
+            <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '1rem' }}>{documentType === 'quote' ? 'Quote Details' : 'Invoice Details'}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.875rem' }} className="form-grid-2">
               <div><label className="sab-label">Invoice Number</label><input className="sab-input" autoComplete="off" value={form.invoice_number} onChange={e => setField('invoice_number', e.target.value)} /></div>
               <div><label className="sab-label">Payment Terms</label><select className="sab-input" value={form.payment_terms} onChange={e => setField('payment_terms', e.target.value)}>{PAYMENT_TERMS.map(t => <option key={t}>{t}</option>)}</select></div>
@@ -725,12 +755,33 @@ export default function InvoicePage() {
             <div><label className="sab-label">Notes <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text3)' }}>(optional)</span></label><textarea className="sab-input" rows={2} placeholder="e.g. Thank you for your business. Please reference the invoice number when paying." value={form.notes} onChange={e => setField('notes', e.target.value)} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} /></div>
           </div>
 
-          <div className="invoice-save-btns" style={{ display: 'flex', gap: '0.75rem', paddingBottom: '2rem' }}>
-            <button onClick={() => handleSave('pending')} disabled={saving} className="btn btn-ember" style={{ flex: 1 }}>
+          {/* Recurring — only shown for invoices, not quotes */}
+          {documentType === 'invoice' && (
+            <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                <input type="checkbox" checked={recurringActive} onChange={e => setRecurringActive(e.target.checked)} style={{ width: '1rem', height: '1rem', accentColor: 'var(--ember)', cursor: 'pointer' }} />
+                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)' }}>Recurring invoice</span>
+              </label>
+              {recurringActive && (
+                <div style={{ marginTop: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '0.8125rem', color: 'var(--text2)' }}>Repeat every</span>
+                  <select className="sab-input" value={recurringInterval} onChange={e => setRecurringInterval(e.target.value)} style={{ width: 'auto' }}>
+                    {['weekly', 'fortnightly', 'monthly', 'quarterly', 'yearly'].map(v => (
+                      <option key={v} value={v}>{v.charAt(0).toUpperCase() + v.slice(1)}</option>
+                    ))}
+                  </select>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>A copy will be auto-created on the next date</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="invoice-save-btns" style={{ display: 'flex', gap: '0.75rem', paddingBottom: '2rem', flexWrap: 'wrap' }}>
+            <button onClick={() => handleSave('pending', documentType)} disabled={saving} className="btn btn-ember" style={{ flex: 1 }}>
               {saving && <span className="spinner" style={{ width: '0.875rem', height: '0.875rem', borderWidth: '2px' }} />}
-              {saving ? 'Saving…' : 'Save Invoice'}
+              {saving ? 'Saving…' : documentType === 'quote' ? 'Save Quote' : 'Save Invoice'}
             </button>
-            <button onClick={() => handleSave('draft')} disabled={saving} className="btn btn-outline" style={{ flex: 1 }}>Save as Draft</button>
+            <button onClick={() => handleSave('draft', documentType)} disabled={saving} className="btn btn-outline" style={{ flex: 1 }}>Save as Draft</button>
           </div>
         </div>
 
@@ -740,7 +791,7 @@ export default function InvoicePage() {
             <button onClick={handleDownloadPDF} className="btn btn-char" style={{ fontSize: '0.8125rem', padding: '0.35rem 0.875rem' }}>↓ Download PDF</button>
           </div>
           <div style={{ maxHeight: 'calc(100vh - 140px)', overflowY: 'auto' }}>
-            <InvoicePreview form={form} biz={biz} totals={totals} />
+            <InvoicePreview form={form} biz={biz} totals={totals} documentType={documentType} />
           </div>
         </div>
       </div>
