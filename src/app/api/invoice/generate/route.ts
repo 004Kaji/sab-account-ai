@@ -21,6 +21,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 import { checkRateLimit } from '@/lib/ratelimit'
+import { getProfile } from '@/lib/profile-cache'
 
 // POST means this route only accepts POST requests (sending data TO the server).
 // GET requests (just fetching a page) will be ignored by this route.
@@ -50,8 +51,8 @@ export async function POST(req: NextRequest) {
     if (authErr || !user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
     // ── RATE LIMIT ────────────────────────────────────────────────────
-    const { data: profile } = await supabase.from('profiles').select('plan').eq('id', user.id).single()
-    const plan = (profile?.plan as string) ?? 'free'
+    const profile = await getProfile(user.id)
+    const plan = profile?.plan ?? 'free'
     const { allowed } = await checkRateLimit(user.id, plan)
     if (!allowed) {
       return NextResponse.json(

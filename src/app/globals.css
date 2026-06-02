@@ -241,25 +241,27 @@ code, pre {
 @media (max-width: 1024px) {
   .hide-mobile { display: none !important; }
 
-  /* Stack two-column page grids to single column on tablet/mobile */
+  /* Make tables horizontally scrollable */
+  .table-scroll  { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+
+/* ── Tablet portrait and below (≤900px) ─────────────────────
+   Nav switches to hamburger/bottom-nav at this breakpoint.
+   Page-level two-column layouts collapse to single column.   */
+@media (max-width: 900px) {
   .invoice-grid  { grid-template-columns: 1fr !important; }
   .payslip-grid  { grid-template-columns: 1fr !important; }
   .records-grid  { grid-template-columns: 1fr !important; }
   .abn-grid      { grid-template-columns: 1fr !important; }
 
-  /* Stack form grids */
-  .form-grid-2   { grid-template-columns: 1fr !important; }
+  /* 3-column form rows → 2 columns on tablet portrait */
   .form-grid-3   { grid-template-columns: 1fr 1fr !important; }
-
-  /* Make tables horizontally scrollable */
-  .table-scroll  { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
 
-/* ── Tablet tweaks (768px) ──────────────────────────────────── */
+/* ── Large phone / small tablet (≤768px) ────────────────────── */
 @media (max-width: 768px) {
-  /* Stack all multi-column form grids earlier */
+  /* 2-column form rows → single column */
   .form-grid-2   { grid-template-columns: 1fr !important; }
-  .form-grid-3   { grid-template-columns: 1fr !important; }
 
   /* Settings tabs: scroll horizontally instead of wrapping */
   .settings-tabs {
@@ -274,18 +276,45 @@ code, pre {
   .page-pad { padding: 1.5rem 1rem !important; }
 }
 
-/* ── Small phone (480px) ────────────────────────────────────── */
+/* ── Small phone (≤480px) ───────────────────────────────────── */
 @media (max-width: 480px) {
-  /* Tighten page padding on small phones */
   .page-pad { padding: 1rem !important; }
 
-  /* Stats grids: two columns on small phones */
-  .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  /* Stats and client grids stay two columns on small phones */
+  .stats-grid        { grid-template-columns: repeat(2, 1fr) !important; }
+  .top-clients-grid  { grid-template-columns: repeat(2, 1fr) !important; }
 
-  /* Top clients: two columns */
-  .top-clients-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  /* 3-column form rows → single column on tiny screens */
+  .form-grid-3   { grid-template-columns: 1fr !important; }
 }
 
-@media (min-width: 1025px) {
+@media (min-width: 901px) {
   .hide-desktop { display: none !important; }
+}
+
+/* ── iOS / mobile input fixes ───────────────────────────────── */
+@media (max-width: 768px) {
+  /* Prevent iOS Safari auto-zoom on input focus — requires font-size >= 16px */
+  .sab-input,
+  input[type="text"],
+  input[type="email"],
+  input[type="number"],
+  input[type="password"],
+  input[type="tel"],
+  input[type="date"],
+  input[type="search"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Minimum 44px touch targets (Apple HIG) */
+  .btn {
+    min-height: 44px;
+  }
+
+  /* Remove 300ms tap delay on interactive elements */
+  button, a, .btn, input, select, textarea {
+    touch-action: manipulation;
+  }
 }

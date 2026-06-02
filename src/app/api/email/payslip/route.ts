@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
-import { escHtml as esc } from '@/lib/email-utils'
+import { escHtml as esc, escSubject } from '@/lib/email-utils'
 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY)
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
   const { error } = await resend.emails.send({
     from: process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
     to: [to],
-    subject: `Your payslip ${payslipNumber} from ${employerName}`,
+    subject: `Your payslip ${escSubject(payslipNumber)} from ${escSubject(employerName)}`,
     html,
     attachments: [
       {

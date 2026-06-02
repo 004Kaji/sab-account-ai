@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { stripe, PRICE_IDS } from '@/lib/stripe'
 import { createServiceClient } from '@/lib/supabase'
+import { getProfile } from '@/lib/profile-cache'
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,11 +28,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Look up any existing Stripe customer ID and subscription status for this user
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('stripe_customer_id, stripe_subscription_id, subscription_status')
-      .eq('id', user.id)
-      .single()
+    const profile = await getProfile(user.id)
 
     // Block checkout if user already has an active or trialing subscription
     if (profile?.stripe_subscription_id && (profile.subscription_status === 'active' || profile.subscription_status === 'trialing')) {
@@ -41,10 +38,12 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // For Stripe success/cancel URLs only allow the production domain or localhost.
+    // Vercel preview origins are excluded here: an attacker could register a project
+    // matching the preview pattern and intercept session_id redirects.
     const ALLOWED_ORIGINS = ['https://sabaccountai.com', 'http://localhost:3000']
     const rawOrigin = req.headers.get('origin') ?? ''
-    const isVercelPreview = /^https:\/\/sab-account-ai-project[a-z0-9-]*\.vercel\.app$/.test(rawOrigin)
-    const origin = ALLOWED_ORIGINS.includes(rawOrigin) || isVercelPreview ? rawOrigin : 'https://sabaccountai.com'
+    const origin = ALLOWED_ORIGINS.includes(rawOrigin) ? rawOrigin : 'https://sabaccountai.com'
 
     const checkoutParams = {
       mode: 'subscription' as const,

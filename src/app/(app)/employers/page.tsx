@@ -248,7 +248,7 @@ export default function EmployersPage() {
             <label className="sab-label">Business Name <span style={{ color: 'var(--ember)' }}>*</span></label>
             <input className="sab-input" placeholder="Lordsprings Pty Ltd" value={form.business_name} onChange={e => setForm(f => ({ ...f, business_name: e.target.value }))} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label className="sab-label">ABN</label>
               <input className="sab-input" placeholder="75 633 095 735" value={form.abn} onChange={e => setForm(f => ({ ...f, abn: e.target.value }))} />
@@ -258,7 +258,7 @@ export default function EmployersPage() {
               <input className="sab-input" placeholder="John Smith" value={form.contact_name} onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))} />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label className="sab-label">Email</label>
               <input className="sab-input" type="email" placeholder="payroll@company.com.au" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
@@ -272,7 +272,7 @@ export default function EmployersPage() {
             <label className="sab-label">Address</label>
             <textarea className="sab-input" rows={2} placeholder="123 Business Rd, Melbourne VIC 3000" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label className="sab-label">Default Pay Cycle</label>
               <select className="sab-input" value={form.default_pay_cycle} onChange={e => setForm(f => ({ ...f, default_pay_cycle: e.target.value }))}>

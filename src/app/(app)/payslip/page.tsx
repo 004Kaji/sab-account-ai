@@ -1246,13 +1246,14 @@ export default function PayslipPage() {
         </div>
 
         <style>{`
-          @media (max-width: 1024px) {
+          @media (max-width: 900px) {
             .payslip-grid { grid-template-columns: 1fr !important; }
             .payslip-preview-col { display: none !important; }
-            .form-grid-2 { grid-template-columns: 1fr !important; }
-            .form-grid-3 { grid-template-columns: 1fr 1fr !important; }
           }
-          @media (max-width: 640px) {
+          @media (max-width: 768px) {
+            .form-grid-2 { grid-template-columns: 1fr !important; }
+          }
+          @media (max-width: 480px) {
             .form-grid-3 { grid-template-columns: 1fr !important; }
           }
         `}</style>

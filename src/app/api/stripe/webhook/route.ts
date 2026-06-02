@@ -10,18 +10,8 @@ import { PRICE_IDS } from '@/lib/stripe'
 import { applyReferralReward } from '@/lib/referral'
 import { sendFriendConvertedEmail } from '@/lib/referral-emails'
 import { enqueueEmail } from '@/lib/queue'
-
-// Stripe API 2026+ sends timestamps as ISO strings; older versions send Unix numbers.
-const toISO = (val: number | string | null | undefined): string | null => {
-  if (!val) return null
-  try {
-    const d = typeof val === 'number' ? new Date(val * 1000) : new Date(val)
-    if (isNaN(d.getTime())) return null
-    return d.toISOString()
-  } catch {
-    return null
-  }
-}
+import { toISO } from '@/lib/date-utils'
+import { invalidateProfile } from '@/lib/profile-cache'
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_WEBHOOK_SECRET) {
@@ -67,6 +57,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, duplicate: true })
     }
     console.error('stripe_events insert error:', insertErr)
+    // Non-idempotency DB error — return 500 so Stripe retries rather than
+    // processing without a recorded idempotency key (which risks double-processing).
+    return NextResponse.json({ error: 'Database error' }, { status: 500 })
   }
 
   // ── HANDLE EVENTS ────────────────────────────────
@@ -97,13 +90,23 @@ export async function POST(request: NextRequest) {
             throw invoiceErr
           }
 
-          // Enqueue emails via QStash — decoupled from webhook, retried automatically on failure
-          if (businessEmail) {
-            await enqueueEmail('payment_received', { to: businessEmail, businessName, clientName, invoiceNumber, amount })
-          }
-          if (clientEmail) {
-            await enqueueEmail('payment_confirmed', { to: clientEmail, clientName, businessName, invoiceNumber, amount })
-          }
+          // Enqueue emails via QStash in parallel — wrapped so a queue failure doesn't
+          // cause a 500 that would re-mark the invoice paid on Stripe's retry.
+          await Promise.allSettled([
+            businessEmail
+              ? enqueueEmail('payment_received',  { to: businessEmail, businessName, clientName, invoiceNumber, amount })
+              : Promise.resolve(),
+            clientEmail
+              ? enqueueEmail('payment_confirmed', { to: clientEmail, clientName, businessName, invoiceNumber, amount })
+              : Promise.resolve(),
+          ]).then(results => {
+            for (const r of results) {
+              if (r.status === 'rejected') {
+                Sentry.captureException(r.reason, { tags: { feature: 'stripe_webhook', step: 'email_queue' } })
+                console.error('Failed to enqueue payment email:', r.reason)
+              }
+            }
+          })
 
           console.log(`✅ Invoice ${invoiceNumber} paid by ${clientName}`)
           break
@@ -115,16 +118,18 @@ export async function POST(request: NextRequest) {
         if (!userId || !plan) break
 
         let trialEndsAt: string | null = null
+        let subscriptionStatus = 'trialing'
         if (session.subscription) {
           const sub = await stripe.subscriptions.retrieve(session.subscription as string)
           trialEndsAt = toISO(sub.trial_end)
+          subscriptionStatus = sub.status
         }
 
         const { error: planErr } = await supabase.from('profiles').update({
           plan,
           stripe_customer_id: session.customer as string,
           stripe_subscription_id: session.subscription as string,
-          subscription_status: 'trialing',
+          subscription_status: subscriptionStatus,
           trial_ends_at: trialEndsAt ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
         }).eq('id', userId)
         if (planErr) {
@@ -133,6 +138,7 @@ export async function POST(request: NextRequest) {
           throw planErr
         }
 
+        await invalidateProfile(userId)
         console.log(`✅ User ${userId} upgraded to ${plan}`)
 
         // ── Referral conversion tracking ──────────────────────
@@ -154,19 +160,9 @@ export async function POST(request: NextRequest) {
             reward_applied: true,
           }).eq('id', referral.id)
 
-          // Atomic increment — avoids race condition from read-then-write
-          await supabase.rpc('increment_converted_referrals', { referrer: referrerId })
-
-          const { data: rc } = await supabase
-            .from('referral_codes')
-            .select('converted_referrals')
-            .eq('user_id', referrerId)
-            .single()
-
-          const newConverted = (rc?.converted_referrals as number) ?? 1
-
-          // Apply reward (reads updated count)
-          const { additionalMonths, lifetimePro } = await applyReferralReward(referrerId)
+          // Increment + reward are now consolidated in applyReferralReward so the
+          // SELECT that computes the tier always runs after the write on the same connection.
+          const { additionalMonths, lifetimePro, convertedReferrals: newConverted } = await applyReferralReward(referrerId)
 
           // Send reward email
           try {
@@ -234,6 +230,7 @@ export async function POST(request: NextRequest) {
         // Active but plan unknown — leave stored plan untouched
 
         await supabase.from('profiles').update(update).eq('id', userId)
+        await invalidateProfile(userId)
         break
       }
 
@@ -247,15 +244,26 @@ export async function POST(request: NextRequest) {
           subscription_status: 'cancelled',
           stripe_subscription_id: null,
         }).eq('id', userId)
+        await invalidateProfile(userId)
         break
       }
 
       case 'invoice.payment_failed': {
         const inv = event.data.object as Stripe.Invoice
         const customerId = inv.customer as string
+
+        // Look up userId first so we can invalidate the profile cache
+        const { data: profileRow } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('stripe_customer_id', customerId)
+          .single()
+
         await supabase.from('profiles').update({
           subscription_status: 'past_due',
         }).eq('stripe_customer_id', customerId)
+
+        if (profileRow?.id) await invalidateProfile(profileRow.id as string)
         break
       }
     }

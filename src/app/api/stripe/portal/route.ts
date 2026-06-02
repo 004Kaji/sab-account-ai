@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { stripe } from '@/lib/stripe'
 import { createServiceClient } from '@/lib/supabase'
+import { getProfile } from '@/lib/profile-cache'
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,11 +13,7 @@ export async function POST(req: NextRequest) {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
     if (authErr || !user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('stripe_customer_id')
-      .eq('id', user.id)
-      .single()
+    const profile = await getProfile(user.id)
 
     if (!profile?.stripe_customer_id) {
       return NextResponse.json({ error: 'No Stripe customer found for this account.' }, { status: 400 })

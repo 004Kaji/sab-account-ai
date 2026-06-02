@@ -1,5 +1,5 @@
 import { Resend } from 'resend'
-import { escHtml as esc } from '@/lib/email-utils'
+import { escHtml as esc, escSubject } from '@/lib/email-utils'
 
 function maskEmail(email: string): string {
   const parts = email.split('@')
@@ -30,7 +30,7 @@ export async function sendFriendSignedUpEmail(params: {
   await getResend().emails.send({
     from: getFrom(),
     to: [referrerEmail],
-    subject: `${referredName} just signed up using your link!`,
+    subject: `${escSubject(referredName)} just signed up using your link!`,
     html: `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#1c1917;line-height:1.6">
       <h2 style="color:#c84b2f">Great news, ${esc(referrerName)}!</h2>
       <p>Your friend <strong>${esc(referredName)}</strong> just created their SAB Account AI account using your referral link.</p>
@@ -85,7 +85,7 @@ export async function sendFriendConvertedEmail(params: {
   await getResend().emails.send({
     from: getFrom(),
     to: [referrerEmail],
-    subject: `You earned a free month! ${maskedEmail} upgraded.`,
+    subject: `You earned a free month! ${escSubject(maskedEmail)} upgraded.`,
     html: `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#1c1917;line-height:1.6">
       <h2 style="color:#c84b2f">Your referral just paid off, ${esc(referrerName)}!</h2>
       <p>${maskedEmail} upgraded to a paid plan and you've earned a reward.</p>
@@ -106,7 +106,7 @@ export async function sendWelcomeReferredEmail(params: {
   await getResend().emails.send({
     from: getFrom(),
     to: [newUserEmail],
-    subject: `Welcome to SAB Account AI! Your friend ${referrerName} invited you.`,
+    subject: `Welcome to SAB Account AI! Your friend ${escSubject(referrerName)} invited you.`,
     html: `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#1c1917;line-height:1.6">
       <h2 style="color:#c84b2f">Welcome, ${esc(newUserName)}!</h2>
       <p>You joined via your friend <strong>${esc(referrerName)}</strong>'s referral link — they'll earn a free month when you upgrade.</p>

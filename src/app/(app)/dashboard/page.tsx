@@ -406,7 +406,7 @@ function PaydaySuperCalcWidget() {
 }
 
 // ── KPI card ─────────────────────────────────────────────────────────
-function KpiCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
+function KpiCard({ label, value, sub, accent, valueColor }: { label: string; value: string; sub?: string; accent?: boolean; valueColor?: string }) {
   return (
     <div style={{
       background: '#ffffff',
@@ -418,7 +418,7 @@ function KpiCard({ label, value, sub, accent }: { label: string; value: string; 
       <p style={{
         fontSize: '1.625rem',
         fontWeight: 700,
-        color: accent ? 'var(--ember)' : 'var(--char)',
+        color: valueColor ?? (accent ? 'var(--ember)' : 'var(--char)'),
         fontFamily: 'var(--font-mono)',
         letterSpacing: '-0.02em',
         lineHeight: 1,
@@ -448,7 +448,7 @@ function calcKPIs(all: Invoice[], gstCredits: number, superOwing: number, mStart
   return {
     invoicedThisMonth,
     outstanding,
-    gstToRemit: Math.max(0, gstCollected - gstCredits),
+    gstToRemit: gstCollected - gstCredits,
     superOwing,
   }
 }
@@ -607,9 +607,11 @@ export default function DashboardPage() {
           accent={kpis.outstanding > 0}
         />
         <KpiCard
-          label={`GST to Remit (${fyLabel})`}
-          value={formatCurrency(kpis.gstToRemit)}
-          sub="Collected minus credits"
+          label={kpis.gstToRemit < 0 ? `GST Refund (${fyLabel})` : `GST to Remit (${fyLabel})`}
+          value={formatCurrency(Math.abs(kpis.gstToRemit))}
+          sub={kpis.gstToRemit < 0 ? 'ATO owes you a refund' : 'Collected minus credits'}
+          accent={kpis.gstToRemit > 0}
+          valueColor={kpis.gstToRemit < 0 ? '#15803d' : undefined}
         />
         <KpiCard
           label="Super Owing (this quarter)"
@@ -822,7 +824,7 @@ export default function DashboardPage() {
       )}
 
       <style>{`
-        @media (max-width: 1024px) {
+        @media (max-width: 900px) {
           .dashboard-grid { grid-template-columns: 1fr !important; }
         }
         @media (max-width: 480px) {

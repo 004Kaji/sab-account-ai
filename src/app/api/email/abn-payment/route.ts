@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
-import { escHtml as esc } from '@/lib/email-utils'
+import { escHtml as esc, escSubject } from '@/lib/email-utils'
 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY)
@@ -159,8 +159,8 @@ export async function POST(req: NextRequest) {
 </html>`
 
   const subject = isABN
-    ? `Remittance Statement from ${businessName} — ${grossAmount}`
-    : `Withholding Statement from ${businessName} — ${paymentDate}`
+    ? `Remittance Statement from ${escSubject(businessName)} — ${grossAmount}`
+    : `Withholding Statement from ${escSubject(businessName)} — ${paymentDate}`
 
   const filename = isABN
     ? `Remittance-${paymentDate.replace(/\//g, '-')}.pdf`

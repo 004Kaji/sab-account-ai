@@ -172,7 +172,7 @@ function AddRecordModal({ open, onClose, onSaved, defaultType }: {
           ))}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+        <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
           <div>
             <label className="sab-label">Date</label>
             <input type="date" className="sab-input" value={form.date}
@@ -622,7 +622,7 @@ export default function RecordsPage() {
       </div>
 
       <style>{`
-        @media (max-width: 1024px) {
+        @media (max-width: 900px) {
           .records-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>

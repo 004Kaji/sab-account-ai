@@ -606,7 +606,7 @@ export default function SignupForm({ initialPlan, initialRef }: { initialPlan: P
       </main>
 
       <style>{`
-        @media (min-width: 1024px) {
+        @media (min-width: 901px) {
           .lg-flex { display: flex !important; }
           .mobile-logo { display: none !important; }
         }

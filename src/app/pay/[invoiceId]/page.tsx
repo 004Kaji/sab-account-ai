@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase'
@@ -20,6 +20,18 @@ interface Invoice {
 }
 
 export default function PayPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', background: 'var(--cream)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="spinner" style={{ width: '1.5rem', height: '1.5rem', borderWidth: '2.5px', borderColor: 'var(--cream3)', borderTopColor: 'var(--ember)' }} />
+      </div>
+    }>
+      <PayPageInner />
+    </Suspense>
+  )
+}
+
+function PayPageInner() {
   const params = useParams()
   const searchParams = useSearchParams()
   const invoiceId = params.invoiceId as string

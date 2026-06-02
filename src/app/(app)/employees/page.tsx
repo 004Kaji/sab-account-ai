@@ -330,7 +330,7 @@ export default function EmployeesPage() {
           </div>
 
           {/* Email + Phone */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label className="sab-label">Email <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
               <input className="sab-input" type="email" placeholder="jane@example.com" autoComplete="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
@@ -342,7 +342,7 @@ export default function EmployeesPage() {
           </div>
 
           {/* TFN + ABN */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label className="sab-label">
                 TFN <span style={{ color: 'var(--ember)' }}>*</span>
@@ -364,7 +364,7 @@ export default function EmployeesPage() {
           </p>
 
           {/* Employment type / pay cycle / pay basis */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+          <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label className="sab-label">Employment Type</label>
               <select className="sab-input" value={form.employment_type} onChange={e => setForm(f => ({ ...f, employment_type: e.target.value }))}>
@@ -400,7 +400,7 @@ export default function EmployeesPage() {
               </div>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <div>
                 <label className="sab-label">Hourly Rate <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
                 <div style={{ position: 'relative' }}>
@@ -429,7 +429,7 @@ export default function EmployeesPage() {
           </div>
 
           {/* Super */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label className="sab-label">Super Fund <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
               <input className="sab-input" placeholder="AustralianSuper" autoComplete="off" value={form.super_fund_name} onChange={e => setForm(f => ({ ...f, super_fund_name: e.target.value }))} />

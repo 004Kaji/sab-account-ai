@@ -266,7 +266,7 @@ export default function ClientsPage() {
             <label className="sab-label">Business Name <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
             <input className="sab-input" placeholder="Acme Pty Ltd" autoComplete="organization" value={form.business_name} onChange={e => setForm(f => ({ ...f, business_name: e.target.value }))} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label className="sab-label">ABN <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
               <input className="sab-input" placeholder="61 234 567 890" autoComplete="off" value={form.abn} onChange={e => setForm(f => ({ ...f, abn: e.target.value }))} />
@@ -277,7 +277,7 @@ export default function ClientsPage() {
               <input className="sab-input" placeholder="Jane Smith" autoComplete="name" value={form.contact_name} onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))} />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div>
               <label className="sab-label">Email <span style={{ color: 'var(--ember)' }}>*</span></label>
               <input className="sab-input" type="email" placeholder="accounts@acme.com.au" autoComplete="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />

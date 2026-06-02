@@ -487,7 +487,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <style>{`
-          @media (max-width: 1024px) {
+          @media (max-width: 900px) {
             .desktop-nav { display: none !important; }
             .mobile-menu-btn { display: flex !important; }
             .mobile-bottom-nav { display: flex !important; }

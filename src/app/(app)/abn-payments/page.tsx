@@ -798,6 +798,7 @@ function PaymentList({
 
   return (
     <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
@@ -946,6 +947,7 @@ function PaymentList({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

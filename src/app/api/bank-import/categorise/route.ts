@@ -5,6 +5,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 import { checkRateLimit } from '@/lib/ratelimit'
+import { getProfile } from '@/lib/profile-cache'
 
 const INCOME_CATEGORIES  = ['Consulting', 'Labour', 'Materials & Goods', 'Retainer', 'Rental Income', 'Other Income']
 const EXPENSE_CATEGORIES = ['Motor Vehicle', 'Office Supplies', 'Software & Subscriptions', 'Equipment', 'Travel', 'Meals & Entertainment', 'Insurance', 'Marketing', 'Rent & Utilities', 'Professional Services', 'Materials', 'Other']
@@ -32,8 +33,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Too many transactions (max 100 per request)' }, { status: 400 })
   }
 
-  const { data: profile } = await supabase.from('profiles').select('plan').eq('id', user.id).single()
-  const plan = (profile?.plan as string) ?? 'free'
+  const profile = await getProfile(user.id)
+  const plan = profile?.plan ?? 'free'
   const { allowed } = await checkRateLimit(user.id, plan)
   if (!allowed) {
     return NextResponse.json(

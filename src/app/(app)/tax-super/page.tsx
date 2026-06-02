@@ -5,65 +5,8 @@ import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { formatCurrency } from '@/lib/utils'
 import Link from 'next/link'
-
-// ── Quarter helpers ───────────────────────────────────────────────────────────
-
-interface Quarter {
-  label: string
-  start: string
-  end: string
-  basDue: string
-  superDue: string
-}
-
-function buildQuarters(): Quarter[] {
-  const now   = new Date()
-  const year  = now.getFullYear()
-  const month = now.getMonth() + 1 // 1-indexed
-
-  // Current FY start year
-  const fyStart = month >= 7 ? year : year - 1
-
-  const qs: Quarter[] = [
-    {
-      label:    `Q1 FY${fyStart}–${String(fyStart + 1).slice(2)} (Jul–Sep ${fyStart})`,
-      start:    `${fyStart}-07-01`,
-      end:      `${fyStart}-09-30`,
-      basDue:   `28 Oct ${fyStart}`,
-      superDue: `28 Oct ${fyStart}`,
-    },
-    {
-      label:    `Q2 FY${fyStart}–${String(fyStart + 1).slice(2)} (Oct–Dec ${fyStart})`,
-      start:    `${fyStart}-10-01`,
-      end:      `${fyStart}-12-31`,
-      basDue:   `28 Feb ${fyStart + 1}`,
-      superDue: `28 Jan ${fyStart + 1}`,
-    },
-    {
-      label:    `Q3 FY${fyStart}–${String(fyStart + 1).slice(2)} (Jan–Mar ${fyStart + 1})`,
-      start:    `${fyStart + 1}-01-01`,
-      end:      `${fyStart + 1}-03-31`,
-      basDue:   `28 Apr ${fyStart + 1}`,
-      superDue: `28 Apr ${fyStart + 1}`,
-    },
-    {
-      label:    `Q4 FY${fyStart}–${String(fyStart + 1).slice(2)} (Apr–Jun ${fyStart + 1})`,
-      start:    `${fyStart + 1}-04-01`,
-      end:      `${fyStart + 1}-06-30`,
-      basDue:   `28 Jul ${fyStart + 1}`,
-      superDue: `28 Jul ${fyStart + 1}`,
-    },
-  ]
-
-  // Default to current quarter
-  return qs
-}
-
-function currentQuarterIndex(quarters: Quarter[]): number {
-  const today = new Date().toISOString().slice(0, 10)
-  const idx   = quarters.findIndex(q => today >= q.start && today <= q.end)
-  return idx === -1 ? quarters.length - 1 : idx
-}
+import { buildQuarters, currentQuarterIndex } from '@/lib/tax-quarters'
+import type { Quarter } from '@/lib/tax-quarters'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -98,7 +41,7 @@ export default function TaxSuperPage() {
       const q       = quarters[qIdx]
       const supabase = createBrowserClient()
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) { setLoading(false); return }
 
       const [
         { data: invoices },

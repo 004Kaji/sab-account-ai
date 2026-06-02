@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
@@ -451,7 +452,7 @@ function SubscriptionTab({ profile, successPlan, stripeLoading, handlePortal, ha
 function InvoiceDefaultsTab({ biz, setField, saving, save }: SharedTabProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+      <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
         <div>
           <label className="sab-label">Default Payment Terms</label>
           <select className="sab-input" value={biz.default_payment_terms}
@@ -991,45 +992,45 @@ function ReferralsTab() {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────
-export default function SettingsPage() {
-  const profile    = useProfile()
-  const { toast }  = useToast()
+function SettingsPageInner() {
+  const profile      = useProfile()
+  const { toast }    = useToast()
+  const searchParams = useSearchParams()
   useEffect(() => { document.title = 'Settings — SAB Account AI' }, [])
 
-  const [tab, setTab]           = useState<TabKey>('business')
+  const [tab, setTab] = useState<TabKey>(() => {
+    const t = searchParams.get('tab') as TabKey | null
+    return t && TABS.some(tb => tb.key === t) ? t : 'business'
+  })
   const [biz, setBiz]           = useState<BizSettings>(EMPTY)
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
   const [abnError, setAbnError] = useState('')
   const [stripeLoading, setStripeLoading] = useState(false)
-  const [successPlan, setSuccessPlan]     = useState<string | null>(null)
+  const [successPlan, setSuccessPlan] = useState<string | null>(() =>
+    searchParams.get('success') === 'true' ? searchParams.get('plan') : null
+  )
 
-  // Handle ?tab=subscription and ?success=true from URL
+  // Confirm Stripe checkout session and jump to subscription tab on ?success=true
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const t = params.get('tab') as TabKey | null
-    if (t && TABS.some(tb => tb.key === t)) setTab(t)
-    if (params.get('success') === 'true') {
-      setTab('subscription')
-      setSuccessPlan(params.get('plan'))
-
-      const sessionId = params.get('session_id')
-      if (sessionId) {
-        createBrowserClient().auth.getSession().then(({ data: { session } }) => {
-          if (!session) return
-          fetch('/api/stripe/confirm', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({ sessionId }),
-          }).then(res => {
-            if (res.ok) window.location.replace('/settings?tab=subscription')
-          })
-        })
-      }
-    }
+    if (searchParams.get('success') !== 'true') return
+    setTab('subscription')
+    const sessionId = searchParams.get('session_id')
+    if (!sessionId) return
+    createBrowserClient().auth.getSession().then(({ data: { session } }) => {
+      if (!session) return
+      fetch('/api/stripe/confirm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ sessionId }),
+      }).then(res => {
+        if (res.ok) window.location.replace('/settings?tab=subscription')
+      })
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -1201,5 +1202,13 @@ export default function SettingsPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense>
+      <SettingsPageInner />
+    </Suspense>
   )
 }

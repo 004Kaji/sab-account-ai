@@ -79,26 +79,18 @@ export async function getRewardStatus(userId: string) {
   }
 }
 
-export async function applyReferralReward(
-  referrerId: string,
-): Promise<{ additionalMonths: number; lifetimePro: boolean }> {
-  const supabase = createServiceClient()
+// Pure function — testable without Supabase. Used by applyReferralReward and tests.
+export function computeReward(
+  converted: number,
+  prevEarned: number,
+  wasLifetimePro: boolean,
+): { additionalMonths: number; lifetimePro: boolean; newEarned: number } {
+  if (wasLifetimePro) return { additionalMonths: 0, lifetimePro: true, newEarned: prevEarned }
 
-  const { data: rc } = await supabase
-    .from('referral_codes')
-    .select('*')
-    .eq('user_id', referrerId)
-    .single()
-
-  if (!rc) return { additionalMonths: 0, lifetimePro: false }
-
-  const converted = (rc.converted_referrals as number) ?? 0
-  const prevEarned = (rc.free_months_earned as number) ?? 0
-  const prevUsed = (rc.free_months_used as number) ?? 0
   let newEarned = prevEarned
-  let lifetimePro = (rc.lifetime_pro as boolean) ?? false
+  let lifetimePro = false
 
-  if (converted >= 10 && !lifetimePro) {
+  if (converted >= 10) {
     lifetimePro = true
   } else if (converted >= 3) {
     newEarned = Math.max(prevEarned, 3)
@@ -106,7 +98,31 @@ export async function applyReferralReward(
     newEarned = Math.max(prevEarned, 1)
   }
 
-  const additionalMonths = newEarned - prevEarned
+  return { additionalMonths: newEarned - prevEarned, lifetimePro, newEarned }
+}
+
+export async function applyReferralReward(
+  referrerId: string,
+): Promise<{ additionalMonths: number; lifetimePro: boolean; convertedReferrals: number }> {
+  const supabase = createServiceClient()
+
+  // Increment first, then read — keeps the increment + reward computation on
+  // the same connection sequence so the SELECT sees the updated count.
+  await supabase.rpc('increment_converted_referrals', { referrer: referrerId })
+
+  const { data: rc } = await supabase
+    .from('referral_codes')
+    .select('*')
+    .eq('user_id', referrerId)
+    .single()
+
+  if (!rc) return { additionalMonths: 0, lifetimePro: false, convertedReferrals: 0 }
+
+  const converted    = (rc.converted_referrals as number) ?? 0
+  const prevEarned   = (rc.free_months_earned as number) ?? 0
+  const wasLifetimePro = (rc.lifetime_pro as boolean) ?? false
+
+  const { additionalMonths, lifetimePro, newEarned } = computeReward(converted, prevEarned, wasLifetimePro)
 
   await supabase
     .from('referral_codes')
@@ -131,12 +147,10 @@ export async function applyReferralReward(
         .from('profiles')
         .update({ billing_cycle_end: newEnd.toISOString() })
         .eq('id', referrerId),
-      supabase
-        .from('referral_codes')
-        .update({ free_months_used: prevUsed + additionalMonths })
-        .eq('user_id', referrerId),
+      // Atomic increment — avoids race condition from read-then-write
+      supabase.rpc('increment_free_months_used', { referrer: referrerId, amount: additionalMonths }),
     ])
   }
 
-  return { additionalMonths, lifetimePro }
+  return { additionalMonths, lifetimePro, convertedReferrals: converted }
 }
