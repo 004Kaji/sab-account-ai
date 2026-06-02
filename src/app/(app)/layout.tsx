@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { label: 'New Payslip',     href: '/payslip',                proOnly: true  },
   { label: 'ABN Pay',         href: '/abn-payments',           proOnly: true  },
   { label: 'Records',         href: '/records',                proOnly: false },
+  { label: 'Tax & Super',     href: '/tax-super',              proOnly: true  },
   { label: 'Clients',         href: '/clients',                proOnly: false },
   { label: 'Employees',       href: '/employees',              proOnly: true  },
   { label: 'Settings',        href: '/settings',               proOnly: false },
