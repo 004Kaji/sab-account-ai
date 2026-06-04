@@ -1116,7 +1116,7 @@ export default function PayslipPage() {
                             id: Math.random().toString(36).slice(2),
                             description: shortcut.desc,
                             hours: 0,
-                            rate: shortcut.mult > 0 ? Math.round(form.hourly_rate * shortcut.mult * 100) / 100 : 0,
+                            rate: shortcut.mult > 0 ? Math.round(derivedHourlyRate * shortcut.mult * 100) / 100 : 0,
                           }
                         ])}
                         style={{ fontSize: '0.75rem', padding: '0.25rem 0.625rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--cream)', color: 'var(--char)', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap' }}
