@@ -164,11 +164,19 @@ export default function EmployeesPage() {
 
       if (editingId) {
         const res = await fetch('/api/employees', { method: 'PUT', headers, body: JSON.stringify({ id: editingId, ...payload }) })
-        if (!res.ok) throw new Error((await res.json()).error ?? 'Save failed')
+        if (!res.ok) {
+          const text = await res.text()
+          const json = text ? JSON.parse(text) : {}
+          throw new Error(json.error ?? `Save failed (${res.status})`)
+        }
         toast('Employee updated', 'success')
       } else {
         const res = await fetch('/api/employees', { method: 'POST', headers, body: JSON.stringify(payload) })
-        if (!res.ok) throw new Error((await res.json()).error ?? 'Save failed')
+        if (!res.ok) {
+          const text = await res.text()
+          const json = text ? JSON.parse(text) : {}
+          throw new Error(json.error ?? `Save failed (${res.status})`)
+        }
         toast('Employee added', 'success')
       }
       setModalOpen(false)
