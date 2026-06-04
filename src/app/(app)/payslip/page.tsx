@@ -1066,7 +1066,7 @@ export default function PayslipPage() {
                     <label className="sab-label">Ordinary Hours This Period <span style={{ color: 'var(--ember)' }}>*</span></label>
                     <div style={{ position: 'relative' }}>
                       <input type="number" min={0} step={0.5} className="sab-input"
-                        placeholder={String(DEFAULT_HOURS[form.pay_cycle])}
+                        placeholder="Weekday hrs only"
                         value={form.ordinary_hours || ''}
                         onChange={e => setField('ordinary_hours', parseFloat(e.target.value) || 0)}
                         onWheel={e => (e.target as HTMLInputElement).blur()}
