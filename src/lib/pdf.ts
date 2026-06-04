@@ -1,5 +1,5 @@
 import { formatCurrency, formatDateAU, formatABN } from '@/lib/utils'
-import type { PayslipNumbers } from '@/lib/ato'
+import { getPaygScaleLabel, type PayslipNumbers } from '@/lib/ato'
 
 function triggerPdfDownload(doc: import('jspdf').jsPDF, filename: string) {
   // iOS (all browsers on iPhone/iPad) ignores <a download> for blob/data URIs.
@@ -32,14 +32,6 @@ function triggerPdfDownload(doc: import('jspdf').jsPDF, filename: string) {
   setTimeout(() => document.body.removeChild(a), 1000)
 }
 
-function payslipScaleLabel(data: PayslipPDFData): string {
-  if (data.residency_status === 'whm') return 'WHM (Schedule 15)'
-  const exempt = data.medicare_exempt || (!!data.residency_status && data.residency_status !== 'citizen_pr')
-  if (data.claiming_threshold && !exempt)  return 'Scale 2 (threshold)'
-  if (!data.claiming_threshold && !exempt) return 'Scale 1 (no threshold)'
-  if (data.claiming_threshold && exempt)   return 'Scale 5 (Medicare exempt)'
-  return 'Scale 3 (no threshold, exempt)'
-}
 
 export interface PayslipPDFData {
   payslip_number: string
@@ -295,7 +287,7 @@ async function buildPayslipDoc(data: PayslipPDFData) {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.5)
   doc.setTextColor(130, 125, 120)
-  doc.text(`Tax Scale: ${payslipScaleLabel(data)}${data.has_help ? ' + HELP' : ''}`, margin + 2, y)
+  doc.text(`Tax Scale: ${getPaygScaleLabel(data.claiming_threshold, (data.residency_status ?? 'citizen_pr') as Parameters<typeof getPaygScaleLabel>[1], data.medicare_exempt ?? false)}${data.has_help ? ' + HELP' : ''}`, margin + 2, y)
   y += 4.5
   if (n.totalDeductions === 0) {
     lineItem('PAYG Withholding', '$0.00', '$0.00')

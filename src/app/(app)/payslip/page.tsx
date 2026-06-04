@@ -8,7 +8,7 @@ import { useToast } from '@/components/ui/Toast'
 import PlanGate from '@/components/ui/PlanGate'
 import ReferralBanner from '@/components/ui/ReferralBanner'
 import AutocompleteDropdown from '@/components/ui/AutocompleteDropdown'
-import { calculatePayslip, isMedicareExemptByResidency, getPaygScaleLabel, type PayslipNumbers, type ResidencyStatus } from '@/lib/ato'
+import { calculatePayslip, isMedicareExemptByResidency, getPaygScaleLabel, PERIODS_PER_YEAR, type PayslipNumbers, type ResidencyStatus } from '@/lib/ato'
 import { formatCurrency, formatDateAU, todayISO, addDays, formatABN } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ interface PayItem {
 }
 
 const DEFAULT_HOURS: Record<PayCycle, number> = { weekly: 38, fortnightly: 76, monthly: 165 }
-const PERIODS_PER_YEAR: Record<PayCycle, number> = { weekly: 52, fortnightly: 26, monthly: 12 }
+const LEAVE_LOADING_RATE = 0.175 // Fair Work Act — 17.5% annual leave loading
 
 interface EmployeeRecord {
   id: string
@@ -192,21 +192,16 @@ function PreviewSection({ title }: { title: string }) {
 }
 
 // ── Payslip Preview ────────────────────────────────────────────────────
-function PayslipPreview({ form, biz, numbers, ytdIsActual }: {
+function PayslipPreview({ form, biz, numbers, ytdIsActual, payItemsThisPeriod, leaveLoadingAmount }: {
   form: PayslipForm
   biz: BizProfile | null
   numbers: PayslipNumbers
   ytdIsActual?: boolean
+  payItemsThisPeriod: number
+  leaveLoadingAmount: number
 }) {
 
   const superRate = form.use_new_super_rate ? '12%' : '11.5%'
-  const payItemsThisPeriod = form.payItems.reduce((s, item) => s + item.hours * item.rate, 0)
-  const derivedHourlyRate = form.pay_basis === 'hourly'
-    ? form.hourly_rate
-    : form.annual_salary / PERIODS_PER_YEAR[form.pay_cycle] / DEFAULT_HOURS[form.pay_cycle]
-  const leaveLoadingAmount = (form.leave_loading_enabled && form.annual_leave_taken > 0)
-    ? Math.round(derivedHourlyRate * form.annual_leave_taken * 0.175 * 100) / 100
-    : 0
   const allExtras = payItemsThisPeriod + leaveLoadingAmount
 
   return (
@@ -376,7 +371,7 @@ export default function PayslipPage() {
     ? form.hourly_rate
     : form.annual_salary / PERIODS_PER_YEAR[form.pay_cycle] / DEFAULT_HOURS[form.pay_cycle]
   const leaveLoadingAmount = (form.leave_loading_enabled && form.annual_leave_taken > 0)
-    ? Math.round(derivedHourlyRate * form.annual_leave_taken * 0.175 * 100) / 100
+    ? Math.round(derivedHourlyRate * form.annual_leave_taken * LEAVE_LOADING_RATE * 100) / 100
     : 0
   const allExtras = payItemsThisPeriod + leaveLoadingAmount
   const effectiveAnnualSalary = form.pay_basis === 'hourly'
@@ -1382,7 +1377,7 @@ export default function PayslipPage() {
           <div style={{ position: 'sticky', top: '76px' }} className="payslip-preview-col">
             <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text2)', marginBottom: '0.75rem' }}>Live Preview</p>
             <div style={{ maxHeight: 'calc(100vh - 140px)', overflowY: 'auto' }}>
-              <PayslipPreview form={form} biz={biz} numbers={displayNumbers} ytdIsActual={ytdIsActual} />
+              <PayslipPreview form={form} biz={biz} numbers={displayNumbers} ytdIsActual={ytdIsActual} payItemsThisPeriod={payItemsThisPeriod} leaveLoadingAmount={leaveLoadingAmount} />
             </div>
           </div>
         </div>

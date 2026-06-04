@@ -45,7 +45,7 @@ export type PaygResult = {
 
 type PayCycle = 'weekly' | 'fortnightly' | 'monthly'
 
-const PERIODS_PER_YEAR: Record<PayCycle, number> = {
+export const PERIODS_PER_YEAR: Record<PayCycle, number> = {
   weekly:      52,
   fortnightly: 26,
   monthly:     12,
