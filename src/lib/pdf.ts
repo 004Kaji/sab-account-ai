@@ -263,7 +263,7 @@ async function buildPayslipDoc(data: PayslipPDFData) {
 
   // ── SALARY & WAGES ───────────────────────────────────────────────────
   sectionLabel('SALARY & WAGES')
-  const payItemsTotal = (data.payItems || []).reduce((s, i) => s + i.hours * i.rate, 0)
+  const payItemsTotal = (data.payItems || []).reduce((s, i) => s + i.hours * i.rate, 0) + (data.leave_loading_amount || 0)
   const ordinaryDisplay = Math.round((n.ordinaryEarnings - payItemsTotal) * 100) / 100
   if (isHourly) {
     lineItem(

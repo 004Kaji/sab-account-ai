@@ -154,19 +154,15 @@ function medicareLevyEstimate(annual: number, exempt: boolean): number {
 }
 
 // ── HELP / HECS repayment ─────────────────────────────────────────────
-// Calculated separately from the main scale. 2024-25 thresholds.
-// Note: Schedule 8 was updated 24 September 2025; these are the pre-update rates.
-// ⚠️  These thresholds are indexed annually. Check ATO Schedule 8 each July.
+// Schedule 8 updated 24 September 2025 — new MARGINAL rate system from 2025-26.
+// Repayment is calculated ONLY on income above $67,000 (not on total income).
+// Source: ato.gov.au/tax-rates-and-codes/schedule-8-statement-of-formulas-for-calculating-study-and-training-support-loans-components
+// ⚠️  Check ATO Schedule 8 each July for updated thresholds.
 function helpRepayment(annual: number): number {
-  if (annual < 54435)    return 0
-  if (annual <= 62738)   return annual * 0.010
-  if (annual <= 70000)   return annual * 0.020
-  if (annual <= 80000)   return annual * 0.025
-  if (annual <= 92000)   return annual * 0.030
-  if (annual <= 106000)  return annual * 0.035
-  if (annual <= 125000)  return annual * 0.040
-  if (annual <= 151000)  return annual * 0.045
-  return annual * 0.050
+  if (annual <= 67000)   return 0
+  if (annual <= 125000)  return Math.round((annual - 67000) * 0.15)
+  if (annual <= 179285)  return Math.round(8700 + (annual - 125000) * 0.17)
+  return Math.round(annual * 0.10)
 }
 
 // ── Scale label for UI display ────────────────────────────────────────
