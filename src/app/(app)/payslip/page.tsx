@@ -16,6 +16,13 @@ type PayCycle = 'weekly' | 'fortnightly' | 'monthly'
 
 type PayBasis = 'salary' | 'hourly'
 
+interface PayItem {
+  id: string
+  description: string
+  hours: number
+  rate: number
+}
+
 const DEFAULT_HOURS: Record<PayCycle, number> = { weekly: 38, fortnightly: 76, monthly: 165 }
 const PERIODS_PER_YEAR: Record<PayCycle, number> = { weekly: 52, fortnightly: 26, monthly: 12 }
 
@@ -78,10 +85,12 @@ interface PayslipForm {
   pay_period_end:      string
   payment_date:        string
   allowances:           Array<{ id: string; description: string; amount: number }>
+  payItems:             PayItem[]
   annual_leave_hours:   number | null   // balance BEFORE taken (previous + accrual)
   personal_leave_hours: number | null
   annual_leave_taken:   number
   personal_leave_taken: number
+  leave_loading_enabled: boolean
 }
 
 interface BizProfile {
@@ -135,10 +144,12 @@ function makeForm(num: string, employerName = '', employerAbn = '', useNewSuperR
     pay_period_end:      period.end,
     payment_date:        today,
     allowances:           [],
+    payItems:             [],
     annual_leave_hours:   null,
     personal_leave_hours: null,
     annual_leave_taken:   0,
     personal_leave_taken: 0,
+    leave_loading_enabled: true,
   }
 }
 
@@ -189,6 +200,14 @@ function PayslipPreview({ form, biz, numbers, ytdIsActual }: {
 }) {
 
   const superRate = form.use_new_super_rate ? '12%' : '11.5%'
+  const payItemsThisPeriod = form.payItems.reduce((s, item) => s + item.hours * item.rate, 0)
+  const derivedHourlyRate = form.pay_basis === 'hourly'
+    ? form.hourly_rate
+    : form.annual_salary / PERIODS_PER_YEAR[form.pay_cycle] / DEFAULT_HOURS[form.pay_cycle]
+  const leaveLoadingAmount = (form.leave_loading_enabled && form.annual_leave_taken > 0)
+    ? Math.round(derivedHourlyRate * form.annual_leave_taken * 0.175 * 100) / 100
+    : 0
+  const allExtras = payItemsThisPeriod + leaveLoadingAmount
 
   return (
     <div style={{
@@ -247,9 +266,14 @@ function PayslipPreview({ form, biz, numbers, ytdIsActual }: {
         label={form.pay_basis === 'hourly' && form.hourly_rate > 0
           ? `Ordinary Earnings (${form.ordinary_hours} hrs @ ${formatCurrency(form.hourly_rate)}/hr)`
           : `Ordinary Earnings (${form.pay_cycle})`}
-        value={formatCurrency(numbers.ordinaryEarnings)}
+        value={formatCurrency(numbers.ordinaryEarnings - allExtras)}
       />
-      {numbers.overtimePay > 0 && <PreviewRow label="Overtime Pay" value={formatCurrency(numbers.overtimePay)} />}
+      {leaveLoadingAmount > 0 && (
+        <PreviewRow label={`Leave Loading (17.5% × ${form.annual_leave_taken} hrs)`} value={formatCurrency(leaveLoadingAmount)} />
+      )}
+      {form.payItems.filter(i => i.hours > 0 && i.rate > 0).map(item => (
+        <PreviewRow key={item.id} label={item.description || 'Additional Earnings'} value={formatCurrency(item.hours * item.rate)} />
+      ))}
       <PreviewRow label="Gross Pay" value={formatCurrency(numbers.grossPay)} bold />
       {numbers.salarySacrifice > 0 && (
         <PreviewRow label="Pre-Tax Salary Sacrifice" value={`(${formatCurrency(numbers.salarySacrifice)})`} muted />
@@ -347,9 +371,17 @@ export default function PayslipPage() {
   const [emailSending, setEmailSending] = useState(false)
   const [emailSent, setEmailSent] = useState(false)
 
+  const payItemsThisPeriod = form.payItems.reduce((s, item) => s + item.hours * item.rate, 0)
+  const derivedHourlyRate = form.pay_basis === 'hourly'
+    ? form.hourly_rate
+    : form.annual_salary / PERIODS_PER_YEAR[form.pay_cycle] / DEFAULT_HOURS[form.pay_cycle]
+  const leaveLoadingAmount = (form.leave_loading_enabled && form.annual_leave_taken > 0)
+    ? Math.round(derivedHourlyRate * form.annual_leave_taken * 0.175 * 100) / 100
+    : 0
+  const allExtras = payItemsThisPeriod + leaveLoadingAmount
   const effectiveAnnualSalary = form.pay_basis === 'hourly'
-    ? form.hourly_rate * form.ordinary_hours * PERIODS_PER_YEAR[form.pay_cycle]
-    : form.annual_salary
+    ? (form.hourly_rate * form.ordinary_hours + allExtras) * PERIODS_PER_YEAR[form.pay_cycle]
+    : form.annual_salary + allExtras * PERIODS_PER_YEAR[form.pay_cycle]
 
   const numbers: PayslipNumbers = calculatePayslip({
     annualSalary:          effectiveAnnualSalary,
@@ -558,6 +590,8 @@ export default function PayslipPage() {
       numbers:            displayNumbers,
       logo_url:           biz?.logo_url || undefined,
       allowances:         form.allowances.filter(a => a.amount > 0),
+      payItems:           form.payItems.filter(i => i.hours > 0 && i.rate > 0).map(({ description, hours, rate }) => ({ description, hours, rate })),
+      leave_loading_amount: leaveLoadingAmount > 0 ? leaveLoadingAmount : undefined,
       annual_leave_hours:   form.annual_leave_hours   != null ? Math.max(0, Math.round((form.annual_leave_hours   - form.annual_leave_taken)   * 100) / 100) : undefined,
       personal_leave_hours: form.personal_leave_hours != null ? Math.max(0, Math.round((form.personal_leave_hours - form.personal_leave_taken) * 100) / 100) : undefined,
     }
@@ -1044,10 +1078,10 @@ export default function PayslipPage() {
                   )}
                 </>)}
 
-                {/* Shared: salary sacrifice + overtime */}
-                <div>
+                {/* Salary sacrifice */}
+                <div style={{ gridColumn: '1 / -1' }}>
                   <label className="sab-label">Salary Sacrifice to Super (annual amount)</label>
-                  <div style={{ position: 'relative' }}>
+                  <div style={{ position: 'relative', maxWidth: 200 }}>
                     <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.875rem' }}>$</span>
                     <input type="number" min={0} step={form.pay_basis === 'salary' ? 100 : 10} className="sab-input" placeholder="0"
                       value={form.salary_sacrifice || ''}
@@ -1056,24 +1090,85 @@ export default function PayslipPage() {
                       style={{ paddingLeft: '1.5rem' }} />
                   </div>
                 </div>
-                <div>
-                  <label className="sab-label">Overtime Hours (this period)</label>
-                  <input type="number" min={0} step={0.5} className="sab-input" placeholder="0"
-                    value={form.overtime_hours || ''}
-                    onChange={e => setField('overtime_hours', parseFloat(e.target.value) || 0)}
-                    onWheel={e => (e.target as HTMLInputElement).blur()} />
-                </div>
-                {form.overtime_hours > 0 && (
+              </div>
+
+              {/* ── Additional Earnings (penalty rates) ── */}
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: '1rem', paddingTop: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                   <div>
-                    <label className="sab-label">Overtime Rate (per hour)</label>
-                    <div style={{ position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.875rem' }}>$</span>
-                      <input type="number" min={0} step={0.5} className="sab-input" placeholder="0"
-                        value={form.overtime_rate || ''}
-                        onChange={e => setField('overtime_rate', parseFloat(e.target.value) || 0)}
-                        onWheel={e => (e.target as HTMLInputElement).blur()}
-                        style={{ paddingLeft: '1.5rem' }} />
+                    <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)' }}>Additional Earnings</p>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>Penalty rates, overtime, and other earnings this period</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
+                    {[
+                      { label: 'Evening 150%', desc: 'Evening rate (after 6pm)', mult: 1.5 },
+                      { label: 'Saturday 150%', desc: 'Saturday penalty', mult: 1.5 },
+                      { label: 'Sunday 200%', desc: 'Sunday penalty', mult: 2 },
+                      { label: 'P.Holiday 250%', desc: 'Public holiday', mult: 2.5 },
+                      { label: '+ Custom', desc: 'Custom rate', mult: 0 },
+                    ].map(shortcut => (
+                      <button
+                        key={shortcut.label}
+                        type="button"
+                        onClick={() => setField('payItems', [
+                          ...form.payItems,
+                          {
+                            id: Math.random().toString(36).slice(2),
+                            description: shortcut.desc,
+                            hours: 0,
+                            rate: shortcut.mult > 0 ? Math.round(form.hourly_rate * shortcut.mult * 100) / 100 : 0,
+                          }
+                        ])}
+                        style={{ fontSize: '0.75rem', padding: '0.25rem 0.625rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--cream)', color: 'var(--char)', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap' }}
+                      >
+                        {shortcut.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {form.payItems.length === 0 ? (
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--text3)' }}>No additional earnings — use the shortcuts above to add penalty rates.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 110px 70px 32px', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text3)' }}>Description</span>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text3)' }}>Hours</span>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text3)' }}>Rate/hr</span>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text3)', textAlign: 'right' }}>Total</span>
+                      <span />
                     </div>
+                    {form.payItems.map((item, i) => (
+                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 110px 70px 32px', gap: '0.5rem', alignItems: 'center' }}>
+                        <input className="sab-input" placeholder="e.g. Evening rate" value={item.description}
+                          onChange={e => setField('payItems', form.payItems.map((x, j) => j === i ? { ...x, description: e.target.value } : x))} />
+                        <input type="number" min={0} step={0.5} className="sab-input" placeholder="0"
+                          value={item.hours || ''}
+                          onChange={e => setField('payItems', form.payItems.map((x, j) => j === i ? { ...x, hours: parseFloat(e.target.value) || 0 } : x))}
+                          onWheel={e => (e.target as HTMLInputElement).blur()} />
+                        <div style={{ position: 'relative' }}>
+                          <span style={{ position: 'absolute', left: '0.625rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.8125rem' }}>$</span>
+                          <input type="number" min={0} step={0.01} className="sab-input" placeholder="0.00"
+                            value={item.rate || ''}
+                            onChange={e => setField('payItems', form.payItems.map((x, j) => j === i ? { ...x, rate: parseFloat(e.target.value) || 0 } : x))}
+                            onWheel={e => (e.target as HTMLInputElement).blur()}
+                            style={{ paddingLeft: '1.375rem' }} />
+                        </div>
+                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--char)', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                          {formatCurrency(item.hours * item.rate)}
+                        </span>
+                        <button type="button"
+                          onClick={() => setField('payItems', form.payItems.filter((_, j) => j !== i))}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: '1.125rem', lineHeight: 1, padding: '0 4px' }}>×</button>
+                      </div>
+                    ))}
+                    {payItemsThisPeriod > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingRight: 40, borderTop: '1px solid var(--border)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
+                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ember)', fontFamily: 'var(--font-mono)' }}>
+                          + {formatCurrency(payItemsThisPeriod)} additional
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1155,6 +1250,22 @@ export default function PayslipPage() {
                   />
                 </div>
               </div>
+              {form.annual_leave_taken > 0 && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', cursor: 'pointer', marginBottom: '0.5rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={form.leave_loading_enabled}
+                    onChange={e => setField('leave_loading_enabled', e.target.checked)}
+                    style={{ width: 15, height: 15, accentColor: 'var(--ember)', cursor: 'pointer' }}
+                  />
+                  <span style={{ color: 'var(--char)', fontWeight: 500 }}>Include leave loading (17.5%)</span>
+                  {form.leave_loading_enabled && leaveLoadingAmount > 0 && (
+                    <span style={{ color: 'var(--ember)', fontFamily: 'var(--font-mono)', fontWeight: 600, marginLeft: 'auto' }}>
+                      + {formatCurrency(leaveLoadingAmount)}
+                    </span>
+                  )}
+                </label>
+              )}
               {form.annual_leave_hours != null && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', background: 'var(--cream)', borderRadius: '8px', padding: '0.5rem 0.75rem', marginBottom: '1rem' }}>
                   <span style={{ color: 'var(--text2)' }}>{form.annual_leave_hours.toFixed(2)} hrs</span>

@@ -47,6 +47,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.8,
     },
     {
+      url: `${BASE}/blog/instant-asset-write-off-2026`,
+      lastModified: new Date('2026-06-02'),
+      changeFrequency: 'monthly',
+      priority: 0.95,
+    },
+    {
+      url: `${BASE}/blog/eofy-checklist-sole-trader-2026`,
+      lastModified: new Date('2026-06-02'),
+      changeFrequency: 'monthly',
+      priority: 0.95,
+    },
+    {
       url: `${BASE}/blog/payday-super-2026`,
       lastModified: new Date('2026-05-25'),
       changeFrequency: 'monthly',

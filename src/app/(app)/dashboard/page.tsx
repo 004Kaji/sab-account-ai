@@ -405,6 +405,120 @@ function PaydaySuperCalcWidget() {
   )
 }
 
+// ── Australian tax estimate (FY2025-26 brackets + Medicare levy) ──────
+function estimateTax(income: number): number {
+  let tax = 0
+  if (income <= 18200)       tax = 0
+  else if (income <= 45000)  tax = (income - 18200) * 0.19
+  else if (income <= 120000) tax = 5092 + (income - 45000) * 0.325
+  else if (income <= 180000) tax = 29467 + (income - 120000) * 0.37
+  else                       tax = 51667 + (income - 180000) * 0.45
+
+  // Low Income Tax Offset (LITO)
+  let lito = 0
+  if (income <= 37500)       lito = 700
+  else if (income <= 66667)  lito = 700 - (income - 37500) * (700 / 29167)
+
+  // Medicare Levy 2% (simplified — full levy above ~$26,000)
+  const medicare = income > 26000 ? income * 0.02 : 0
+
+  return Math.max(0, tax - lito + medicare)
+}
+
+// ── Tax Savings Tracker widget ────────────────────────────────────────
+function TaxSavingsWidget({ fyIncome, fyLabel }: { fyIncome: number; fyLabel: string }) {
+  const estimatedTax  = estimateTax(fyIncome)
+  const setAsidePct   = fyIncome > 0 ? Math.round((estimatedTax / fyIncome) * 100) : 0
+
+  // Project annual income based on months elapsed in FY
+  const now           = new Date()
+  const fyStartDate   = now.getMonth() >= 6
+    ? new Date(now.getFullYear(), 6, 1)
+    : new Date(now.getFullYear() - 1, 6, 1)
+  const monthsElapsed = Math.max(1, Math.round((now.getTime() - fyStartDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44)))
+  const projectedAnnual = fyIncome > 0 ? Math.round((fyIncome / monthsElapsed) * 12) : 0
+  const projectedTax    = estimateTax(projectedAnnual)
+
+  // Bracket label
+  const bracket = fyIncome <= 18200 ? 'Tax-free threshold'
+    : fyIncome <= 45000 ? '19% bracket'
+    : fyIncome <= 120000 ? '32.5% bracket'
+    : fyIncome <= 180000 ? '37% bracket'
+    : '45% bracket'
+
+  const fc = (n: number) => '$' + Math.round(n).toLocaleString('en-AU')
+
+  if (fyIncome === 0) {
+    return (
+      <div style={{ background: 'linear-gradient(135deg, rgba(200,75,47,0.04) 0%, rgba(200,75,47,0.02) 100%)', border: '1px solid rgba(200,75,47,0.15)', borderRadius: 'var(--r)', padding: '1.25rem 1.5rem', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <span style={{ fontSize: '1.5rem' }}>💰</span>
+        <div>
+          <p style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.2rem' }}>Tax Savings Tracker</p>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text3)' }}>Mark invoices as <strong>paid</strong> to see your estimated tax bill and how much to set aside.</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ background: '#ffffff', border: '1px solid rgba(200,75,47,0.2)', borderRadius: 'var(--r)', padding: '1.5rem', marginBottom: '2rem' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+          <span style={{ fontSize: '1.25rem' }}>💰</span>
+          <div>
+            <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--char)', margin: 0 }}>Tax Savings Tracker — {fyLabel}</h3>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text3)', margin: 0 }}>Based on your paid invoices · ATO FY2025–26 rates</p>
+          </div>
+        </div>
+        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--ember)', background: 'rgba(200,75,47,0.08)', border: '1px solid rgba(200,75,47,0.2)', borderRadius: '999px', padding: '0.2rem 0.625rem' }}>
+          {bracket}
+        </span>
+      </div>
+
+      {/* 3 key numbers */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%,160px),1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+        {[
+          { label: `${fyLabel} Income (paid)`, value: fc(fyIncome), sub: 'Ex-GST from paid invoices', color: '#15803d' },
+          { label: 'Estimated Tax Bill', value: fc(estimatedTax), sub: 'Inc. Medicare levy & LITO', color: 'var(--ember)' },
+          { label: 'Set Aside Per Invoice', value: `${setAsidePct}%`, sub: `~${fc(estimatedTax / Math.max(1, monthsElapsed))} / month`, color: 'var(--char)' },
+        ].map(item => (
+          <div key={item.label} style={{ background: 'var(--cream)', borderRadius: 8, padding: '1rem 1.25rem' }}>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginBottom: '0.375rem', fontWeight: 500 }}>{item.label}</p>
+            <p style={{ fontSize: '1.5rem', fontWeight: 700, color: item.color, fontFamily: 'var(--font-mono)', letterSpacing: '-0.02em', lineHeight: 1, marginBottom: '0.25rem' }}>{item.value}</p>
+            <p style={{ fontSize: '0.7rem', color: 'var(--text3)' }}>{item.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Progress bar: tax as % of income */}
+      <div style={{ marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text3)', fontWeight: 500 }}>Tax portion of income</span>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--ember)' }}>{setAsidePct}%</span>
+        </div>
+        <div style={{ height: 8, background: 'var(--cream2)', borderRadius: 999, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${Math.min(setAsidePct, 100)}%`, background: setAsidePct > 35 ? 'var(--ember)' : setAsidePct > 20 ? '#f59e0b' : '#10b981', borderRadius: 999, transition: 'width 0.6s ease' }} />
+        </div>
+      </div>
+
+      {/* Projection row */}
+      {projectedAnnual > 0 && projectedAnnual !== fyIncome && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 8 }}>
+          <span style={{ fontSize: '0.875rem' }}>📈</span>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text2)', margin: 0 }}>
+            At your current pace, projected annual income is <strong style={{ color: 'var(--char)' }}>{fc(projectedAnnual)}</strong> — estimated full-year tax <strong style={{ color: 'var(--ember)' }}>{fc(projectedTax)}</strong>
+          </p>
+        </div>
+      )}
+
+      <p style={{ fontSize: '0.7rem', color: 'var(--text3)', marginTop: '0.875rem', lineHeight: 1.5 }}>
+        Estimate only. Includes income tax + Medicare levy + LITO. Does not account for deductions, super contributions, or other income. Consult a registered tax agent for personalised advice.
+      </p>
+    </div>
+  )
+}
+
 // ── KPI card ─────────────────────────────────────────────────────────
 function KpiCard({ label, value, sub, accent, valueColor }: { label: string; value: string; sub?: string; accent?: boolean; valueColor?: string }) {
   return (
@@ -461,6 +575,7 @@ export default function DashboardPage() {
   const [kpis, setKpis]             = useState<KPIs>({ invoicedThisMonth: 0, outstanding: 0, gstToRemit: 0, superOwing: 0 })
   const [loading, setLoading]       = useState(true)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [fyPaidIncome, setFyPaidIncome] = useState(0)
 
   // Keep gstCredits and superOwing stable so KPIs can be recalculated on status change
   const gstCreditsRef  = useRef(0)
@@ -531,6 +646,12 @@ export default function DashboardPage() {
         .sort((a, b) => b.total - a.total)
         .slice(0, 3)
       setTopClients(sorted)
+
+      // FY income = paid invoices ex-GST
+      const fyPaid = all
+        .filter(inv => inv.status === 'paid')
+        .reduce((s, inv) => s + (Number(inv.total_inc_gst) - Number(inv.total_gst)), 0)
+      setFyPaidIncome(fyPaid)
 
       setKpis(calcKPIs(all, gstCreditsRef.current, superOwingRef.current, mr.start, mr.end))
       setInvoices(all.slice(0, 8))
@@ -619,6 +740,9 @@ export default function DashboardPage() {
           sub={profile.plan === 'pro' ? 'From payslips this quarter' : 'Pro plan feature'}
         />
       </div>
+
+      {/* ── Tax Savings Tracker ────────────────────────────────── */}
+      <TaxSavingsWidget fyIncome={fyPaidIncome} fyLabel={fyLabel} />
 
       {/* ── Main grid: invoices + sidebar ──────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '1.5rem', alignItems: 'start' }} className="dashboard-grid">

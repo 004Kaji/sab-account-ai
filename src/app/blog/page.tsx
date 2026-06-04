@@ -17,6 +17,22 @@ export const metadata: Metadata = {
 
 const POSTS = [
   {
+    slug: 'instant-asset-write-off-2026',
+    title: '$20,000 Instant Asset Write-Off 2026: What Sole Traders Must Buy Before 30 June',
+    excerpt: 'Hard deadline: 30 June 2026. Assets must be first used or installed ready for use before midnight to claim the full $20,000 deduction. Learn exactly what qualifies, the install-by rule, mixed-use apportionment, and what records to keep.',
+    date: '2 Jun 2026',
+    readTime: '10 min read',
+    tag: 'EOFY',
+  },
+  {
+    slug: 'eofy-checklist-sole-trader-2026',
+    title: 'EOFY 2026 Checklist for Sole Traders: 12 Things to Do Before 30 June',
+    excerpt: 'Less than four weeks until the financial year ends. This checklist covers the instant asset write-off, super contributions, WFH records, vehicle logbooks, bad debt write-offs, and what the ATO is cracking down on in FY2026.',
+    date: '2 Jun 2026',
+    readTime: '11 min read',
+    tag: 'EOFY',
+  },
+  {
     slug: 'payday-super-2026',
     title: 'Payday Super 2026: What Every Australian Employer Must Know Before 1 July',
     excerpt: 'From 1 July 2026, super must be paid within 7 days of every payday — not quarterly. Learn the 7-day rule, SuperStream requirements, penalties for non-compliance, and how to prepare.',
@@ -67,6 +83,7 @@ const POSTS = [
 ]
 
 const TAG_COLORS: Record<string, string> = {
+  EOFY: '#e11d48',
   GST: '#d97706',
   PAYG: '#2563eb',
   Medicare: '#059669',

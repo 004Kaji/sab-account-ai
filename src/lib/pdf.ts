@@ -67,6 +67,8 @@ export interface PayslipPDFData {
   ytdIsActual?: boolean
   logo_url?: string
   allowances?: Array<{ description: string; amount: number }>
+  payItems?: Array<{ description: string; hours: number; rate: number }>
+  leave_loading_amount?: number
   annual_leave_hours?: number
   personal_leave_hours?: number
   numbers: PayslipNumbers
@@ -261,18 +263,27 @@ async function buildPayslipDoc(data: PayslipPDFData) {
 
   // ── SALARY & WAGES ───────────────────────────────────────────────────
   sectionLabel('SALARY & WAGES')
+  const payItemsTotal = (data.payItems || []).reduce((s, i) => s + i.hours * i.rate, 0)
+  const ordinaryDisplay = Math.round((n.ordinaryEarnings - payItemsTotal) * 100) / 100
   if (isHourly) {
     lineItem(
       'Ordinary Hours',
-      formatCurrency(n.ordinaryEarnings),
+      formatCurrency(ordinaryDisplay),
       undefined,
       data.ordinary_hours.toFixed(4),
       formatCurrency(data.hourly_rate),
     )
   } else {
-    lineItem('Ordinary Earnings', formatCurrency(n.ordinaryEarnings))
+    lineItem('Ordinary Earnings', formatCurrency(ordinaryDisplay))
   }
-  if (n.overtimePay > 0)    lineItem('Overtime Pay', formatCurrency(n.overtimePay))
+  if (data.leave_loading_amount && data.leave_loading_amount > 0)
+    lineItem('Leave Loading (17.5%)', formatCurrency(data.leave_loading_amount))
+  if (data.payItems && data.payItems.length > 0) {
+    data.payItems.forEach(item => {
+      if (item.hours > 0 && item.rate > 0)
+        lineItem(item.description || 'Additional Earnings', formatCurrency(Math.round(item.hours * item.rate * 100) / 100))
+    })
+  }
   if (data.allowances && data.allowances.length > 0) {
     data.allowances.forEach(a => lineItem(a.description || 'Allowance', formatCurrency(a.amount)))
   }

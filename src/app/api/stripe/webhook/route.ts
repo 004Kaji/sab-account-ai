@@ -115,7 +115,12 @@ export async function POST(request: NextRequest) {
         // ── Subscription checkout ──────────────────────────────────────
         const userId = session.metadata?.userId
         const plan = session.metadata?.plan
-        if (!userId || !plan) break
+        if (!userId || !plan) {
+          Sentry.captureException(new Error('checkout.session.completed missing userId or plan metadata'), {
+            extra: { sessionId: session.id, metadata: session.metadata },
+          })
+          break
+        }
 
         let trialEndsAt: string | null = null
         let subscriptionStatus = 'trialing'
@@ -130,7 +135,9 @@ export async function POST(request: NextRequest) {
           stripe_customer_id: session.customer as string,
           stripe_subscription_id: session.subscription as string,
           subscription_status: subscriptionStatus,
-          trial_ends_at: trialEndsAt ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+          trial_ends_at: trialEndsAt ?? (subscriptionStatus === 'trialing'
+            ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+            : null),
         }).eq('id', userId)
         if (planErr) {
           Sentry.captureException(new Error(planErr.message), { tags: { feature: 'stripe_webhook', step: 'plan_upgrade' } })
@@ -243,6 +250,8 @@ export async function POST(request: NextRequest) {
           plan: 'free',
           subscription_status: 'cancelled',
           stripe_subscription_id: null,
+          billing_cycle_end: null,
+          trial_ends_at: null,
         }).eq('id', userId)
         await invalidateProfile(userId)
         break
@@ -252,18 +261,18 @@ export async function POST(request: NextRequest) {
         const inv = event.data.object as Stripe.Invoice
         const customerId = inv.customer as string
 
-        // Look up userId first so we can invalidate the profile cache
         const { data: profileRow } = await supabase
           .from('profiles')
           .select('id')
           .eq('stripe_customer_id', customerId)
           .single()
 
-        await supabase.from('profiles').update({
-          subscription_status: 'past_due',
-        }).eq('stripe_customer_id', customerId)
-
-        if (profileRow?.id) await invalidateProfile(profileRow.id as string)
+        if (profileRow?.id) {
+          await supabase.from('profiles').update({
+            subscription_status: 'past_due',
+          }).eq('stripe_customer_id', customerId)
+          await invalidateProfile(profileRow.id as string)
+        }
         break
       }
     }
