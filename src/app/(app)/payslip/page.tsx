@@ -576,7 +576,7 @@ export default function PayslipPage() {
       employment_type:    form.employment_type,
       pay_cycle:          form.pay_cycle,
       pay_basis:          form.pay_basis,
-      annual_salary:      effectiveAnnualSalary,
+      annual_salary:      form.pay_basis === 'salary' ? form.annual_salary : effectiveAnnualSalary,
       hourly_rate:        form.hourly_rate,
       ordinary_hours:     form.ordinary_hours,
       super_fund_name:    form.super_fund_name,
