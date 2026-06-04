@@ -1116,11 +1116,19 @@ export default function PayslipPage() {
                     <p style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>Penalty rates, overtime, and other earnings this period</p>
                   </div>
                   <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
+                    {form.pay_basis === 'salary' && (
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text3)', alignSelf: 'center', whiteSpace: 'nowrap' }}>Salary loading:</span>
+                    )}
                     {[
-                      { label: 'Evening 150%', desc: 'Evening rate (after 6pm)', mult: 1.5 },
-                      { label: 'Saturday 150%', desc: 'Saturday penalty', mult: 1.5 },
-                      { label: 'Sunday 200%', desc: 'Sunday penalty', mult: 2 },
-                      { label: 'P.Holiday 250%', desc: 'Public holiday', mult: 2.5 },
+                      ...(form.pay_basis === 'salary' ? [
+                        { label: 'Sat +50%', desc: 'Saturday loading', mult: 0.5 },
+                        { label: 'Sun +100%', desc: 'Sunday loading', mult: 1.0 },
+                      ] : [
+                        { label: 'Evening 150%', desc: 'Evening rate (after 6pm)', mult: 1.5 },
+                        { label: 'Saturday 150%', desc: 'Saturday penalty', mult: 1.5 },
+                        { label: 'Sunday 200%', desc: 'Sunday penalty', mult: 2 },
+                        { label: 'P.Holiday 250%', desc: 'Public holiday', mult: 2.5 },
+                      ]),
                       { label: '+ Custom', desc: 'Custom rate', mult: 0 },
                     ].map(shortcut => (
                       <button
