@@ -1064,11 +1064,27 @@ export default function PayslipPage() {
                   </div>
                   <div>
                     <label className="sab-label">Ordinary Hours This Period <span style={{ color: 'var(--ember)' }}>*</span></label>
-                    <input type="number" min={0} step={0.5} className="sab-input"
-                      placeholder={String(DEFAULT_HOURS[form.pay_cycle])}
-                      value={form.ordinary_hours || ''}
-                      onChange={e => setField('ordinary_hours', parseFloat(e.target.value) || 0)}
-                      onWheel={e => (e.target as HTMLInputElement).blur()} />
+                    <div style={{ position: 'relative' }}>
+                      <input type="number" min={0} step={0.5} className="sab-input"
+                        placeholder={String(DEFAULT_HOURS[form.pay_cycle])}
+                        value={form.ordinary_hours || ''}
+                        onChange={e => setField('ordinary_hours', parseFloat(e.target.value) || 0)}
+                        onWheel={e => (e.target as HTMLInputElement).blur()}
+                        style={{ paddingRight: form.payItems.some(i => i.hours > 0) ? '7.5rem' : undefined }} />
+                      {form.payItems.some(i => i.hours > 0) && (() => {
+                        const penaltyHours = form.payItems.reduce((s, i) => s + i.hours, 0)
+                        const weekdayHrs = Math.max(0, Math.round((form.ordinary_hours - penaltyHours) * 100) / 100)
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => setField('ordinary_hours', weekdayHrs)}
+                            style={{ position: 'absolute', right: '0.375rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.7rem', padding: '0.2rem 0.5rem', borderRadius: 5, border: '1px solid var(--ember)', background: 'var(--cream)', color: 'var(--ember)', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                          >
+                            Weekday: {weekdayHrs}h
+                          </button>
+                        )
+                      })()}
+                    </div>
                   </div>
                   {form.hourly_rate > 0 && form.ordinary_hours > 0 && (
                     <p style={{ gridColumn: '1 / -1', fontSize: '0.75rem', color: 'var(--text3)', marginTop: '-0.25rem' }}>
