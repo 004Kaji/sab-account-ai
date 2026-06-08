@@ -126,7 +126,7 @@ export async function callClaude(params: {
 
   async function attempt(): Promise<string> {
     const msg = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: params.maxTokens ?? 1000,
       system: params.systemPrompt,
       messages: [{ role: 'user', content: params.userMessage }],
