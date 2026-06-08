@@ -1,0 +1,4 @@
+openai-whisper
+httpx
+elevenlabs>=1.0.0
+sounddevice
