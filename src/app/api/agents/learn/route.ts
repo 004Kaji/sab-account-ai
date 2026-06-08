@@ -98,15 +98,15 @@ Return ONLY valid JSON:
       raw_content:             parsed.raw_content,
     })
 
-    // Append to SANJOG_LEARNINGS.md
-    const learningsPath = path.join(process.cwd(), 'SANJOG_LEARNINGS.md')
-    const newEntry = `\n## Week of ${parsed.week_start}\n\n**What worked:** ${parsed.what_worked}\n\n**What failed:** ${parsed.what_failed}\n\n**Decision rules updated:** ${parsed.decision_rules_updated}\n\n---\n`
-    try {
-      const current = fs.readFileSync(learningsPath, 'utf-8')
-      const updated = current.replace('[Agent will populate from first Sunday onwards]', '')
-      fs.writeFileSync(learningsPath, updated + newEntry, 'utf-8')
-    } catch {
-      fs.appendFileSync(learningsPath, newEntry, 'utf-8')
+    // Append to SANJOG_LEARNINGS.md (local only — Vercel filesystem is read-only)
+    if (process.env.NODE_ENV !== 'production') {
+      const learningsPath = path.join(process.cwd(), 'SANJOG_LEARNINGS.md')
+      const newEntry = `\n## Week of ${parsed.week_start}\n\n**What worked:** ${parsed.what_worked}\n\n**What failed:** ${parsed.what_failed}\n\n**Decision rules updated:** ${parsed.decision_rules_updated}\n\n---\n`
+      try {
+        const current = fs.readFileSync(learningsPath, 'utf-8')
+        const updated = current.replace('[Agent will populate from first Sunday onwards]', '')
+        fs.writeFileSync(learningsPath, updated + newEntry, 'utf-8')
+      } catch { /* non-fatal */ }
     }
 
     const summary = `${parsed.what_worked.slice(0, 150)}`
