@@ -157,7 +157,7 @@ Return ONLY valid JSON: { "subject": "string", "body": "string" }`,
       const emailJSON = JSON.parse(emailRaw) as EmailJSON
 
       await resend.emails.send({
-        from: 'Sanjog Basnet <sanjog@sabaccountai.com.au>',
+        from: 'Sanjog Basnet <basnet@sabaccountai.com>',
         to: accountant.email,
         subject: emailJSON.subject,
         text: emailJSON.body,

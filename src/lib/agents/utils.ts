@@ -6,7 +6,7 @@ import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
 
 const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? 'sanjog.basnet02@gmail.com'
-const AGENT_EMAIL_FROM = 'Basnet <agent@sabaccountai.com.au>'
+const AGENT_EMAIL_FROM = 'Basnet <basnet@sabaccountai.com>'
 
 // ── Types ──────────────────────────────────────────────────────────────
 

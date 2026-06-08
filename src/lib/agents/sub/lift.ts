@@ -246,7 +246,7 @@ export async function liftSendRetentionEmail(user: AtRiskUser): Promise<boolean>
     const resend = new Resend(process.env.RESEND_API_KEY)
 
     const { error } = await resend.emails.send({
-      from:    'Sanjog Basnet <sanjog@sabaccountai.com.au>',
+      from:    'Sanjog Basnet <basnet@sabaccountai.com>',
       to:      user.email,
       subject: email.subject,
       html:    `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px;font-size:15px;line-height:1.7;color:#1f2937">${email.body.replace(/\n/g, '<br>')}</div>`,
