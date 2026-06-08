@@ -6,7 +6,7 @@ import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
 
 const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? 'sanjog.basnet02@gmail.com'
-const AGENT_EMAIL_FROM = 'Basnet <sanjog@sabaccountai.com.au>'
+const AGENT_EMAIL_FROM = 'Basnet <agent@sabaccountai.com.au>'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -72,8 +72,8 @@ function urgencyEmoji(urgency: 'info' | 'warning' | 'urgent'): string {
   return 'ℹ️'
 }
 
-function alertKey(subject: string): string {
-  return subject.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 80)
+function alertKey(subject: string, urgency?: string): string {
+  return (subject.slice(0, 40) + (urgency ?? '')).toLowerCase().replace(/[^a-z0-9]/g, '_')
 }
 
 async function wasAlertSentRecently(key: string, withinMinutes = 30): Promise<boolean> {
@@ -102,7 +102,7 @@ export async function sendAlert(
     return
   }
 
-  const key = alertKey(subject)
+  const key = alertKey(subject, urgency)
   if (await wasAlertSentRecently(key)) {
     console.log(`sendAlert: skipping duplicate — ${subject}`)
     return

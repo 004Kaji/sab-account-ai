@@ -1,108 +1,148 @@
 import { calculatePAYG } from '@/lib/ato'
 import { createServiceClient } from '@/lib/supabase'
-import { callClaude, logSubAgent } from '@/lib/agents/utils'
+import { callClaude, sendAlert, logSubAgent } from '@/lib/agents/utils'
+import { BASNET_PERSONALITY } from '@/lib/agents/personality'
 
 export const FLUX_IDENTITY = `
+${BASNET_PERSONALITY}
 You are Flux, Basnet's engineering sub-agent.
-Your job: code health, error diagnosis, build status.
-You are precise and technical.
-You do not sugarcoat bugs.
-When something is broken you say it plainly.
+Job: code health, error diagnosis, PAYG verification.
+Precise and technical. Never sugarcoat bugs.
 `
 
 export interface FluxReport {
-  newErrors: string[]
-  errorSpikes: { type: string; count: number }[]
-  paygPassing: boolean
-  paygFailures: string[]
-  rlsEnabled: boolean
-  latestDeploymentStatus: string
-  unresolvedErrors: number
+  timestamp:    Date
+  payg: {
+    allPassing: boolean
+    results:    { tc: string; expected: number; actual: number; pass: boolean }[]
+  }
+  sentry: {
+    newErrors:  { type: string; file: string; count: number }[]
+    hasUrgent:  boolean
+  }
+  stripe: {
+    webhookHealthy:   boolean
+    lastWebhookHours: number
+  }
+  supabase: {
+    rlsEnabled: boolean
+    tablesOk:   string[]
+    tablesFail: string[]
+  }
+  overall: 'healthy' | 'warning' | 'critical'
 }
 
-function runPAYGTests(): { passing: boolean; failures: string[] } {
-  const failures: string[] = []
-
-  const tc1 = calculatePAYG({ annualSalary: 1000 * 26, claimingThreshold: true, hasHELP: false, medicareLevyExemption: true, payCycle: 'fortnightly', residencyStatus: 'student' })
-  if (tc1.periodTotal !== 44) failures.push(`TC1: expected $44, got $${tc1.periodTotal}`)
-
-  const tc2 = calculatePAYG({ annualSalary: 2564 * 26, claimingThreshold: true, hasHELP: false, medicareLevyExemption: false, payCycle: 'fortnightly', residencyStatus: 'citizen_pr' })
-  if (tc2.periodTotal !== 468) failures.push(`TC2: expected $468, got $${tc2.periodTotal}`)
-
-  const tc3 = calculatePAYG({ annualSalary: 4240 * 26, claimingThreshold: false, hasHELP: false, medicareLevyExemption: false, payCycle: 'fortnightly', residencyStatus: 'citizen_pr' })
-  if (tc3.periodTotal !== 1226) failures.push(`TC3: expected $1226, got $${tc3.periodTotal}`)
-
-  const tc4 = calculatePAYG({ annualSalary: 3690 * 26, claimingThreshold: false, hasHELP: false, medicareLevyExemption: true, payCycle: 'fortnightly', residencyStatus: 'citizen_pr' })
-  if (tc4.periodTotal !== 1106) failures.push(`TC4: expected $1106, got $${tc4.periodTotal}`)
-
-  const tc5 = calculatePAYG({ annualSalary: 5192 * 26, claimingThreshold: true, hasHELP: false, medicareLevyExemption: false, payCycle: 'fortnightly', residencyStatus: 'citizen_pr' })
-  if (tc5.periodTotal !== 1310) failures.push(`TC5: expected $1310, got $${tc5.periodTotal}`)
-
-  return { passing: failures.length === 0, failures }
+function runPAYGTests(): FluxReport['payg'] {
+  const cases = [
+    { tc: 'TC1', annualSalary: 1000 * 26,  ct: true,  mle: true,  residency: 'student'    as const, expected: 44   },
+    { tc: 'TC2', annualSalary: 2564 * 26,  ct: true,  mle: false, residency: 'citizen_pr' as const, expected: 468  },
+    { tc: 'TC3', annualSalary: 4240 * 26,  ct: false, mle: false, residency: 'citizen_pr' as const, expected: 1226 },
+    { tc: 'TC4', annualSalary: 3690 * 26,  ct: false, mle: true,  residency: 'citizen_pr' as const, expected: 1106 },
+    { tc: 'TC5', annualSalary: 5192 * 26,  ct: true,  mle: false, residency: 'citizen_pr' as const, expected: 1310 },
+  ]
+  const results = cases.map(c => {
+    const r = calculatePAYG({
+      annualSalary: c.annualSalary,
+      claimingThreshold: c.ct,
+      hasHELP: false,
+      medicareLevyExemption: c.mle,
+      payCycle: 'fortnightly',
+      residencyStatus: c.residency,
+    })
+    return { tc: c.tc, expected: c.expected, actual: r.periodTotal, pass: r.periodTotal === c.expected }
+  })
+  return { allPassing: results.every(r => r.pass), results }
 }
 
 export async function runFlux(): Promise<FluxReport> {
   const start = Date.now()
   const supabase = createServiceClient()
   const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-  const [errorsResult, spikesResult, rlsResult, deployResult] = await Promise.allSettled([
-    supabase.from('agent_error_log').select('error_type').eq('resolved', false).gte('created_at', thirtyMinsAgo).limit(20),
-    supabase.from('agent_error_log').select('error_type, frequency').eq('resolved', false).gte('frequency', 5).limit(10),
-    supabase.from('profiles').select('id').limit(1),
-    (async () => {
-      if (!process.env.VERCEL_TOKEN) return 'unknown'
-      try {
-        const res = await fetch('https://api.vercel.com/v6/deployments?limit=1&target=production', {
-          headers: { Authorization: `Bearer ${process.env.VERCEL_TOKEN}` },
-          signal: AbortSignal.timeout(8000),
-        })
-        const data = await res.json() as { deployments?: { state?: string }[] }
-        return data.deployments?.[0]?.state ?? 'unknown'
-      } catch { return 'unknown' }
-    })(),
+  // Run all checks in parallel
+  const [newErrR, spikesR, webhookR, rlsR] = await Promise.allSettled([
+    supabase.from('agent_error_log').select('error_type, file_name, frequency')
+      .eq('resolved', false).gte('created_at', thirtyMinsAgo).limit(20),
+    supabase.from('agent_error_log').select('error_type, frequency')
+      .eq('resolved', false).gte('frequency', 5).limit(10),
+    supabase.from('stripe_events').select('created_at')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('invoices').select('id').limit(1),
   ])
 
-  const newErrors = errorsResult.status === 'fulfilled'
-    ? (errorsResult.value.data ?? []).map(e => e.error_type as string).filter(Boolean)
+  // PAYG tests
+  const payg = runPAYGTests()
+
+  // Sentry errors
+  type ErrRow = { error_type: string | null; file_name: string | null; frequency: number | null }
+  const newErrors = newErrR.status === 'fulfilled'
+    ? (newErrR.value.data ?? []).map((e: ErrRow) => ({
+        type: e.error_type ?? 'unknown',
+        file: e.file_name ?? '',
+        count: e.frequency ?? 1,
+      }))
     : []
+  const hasUrgent = spikesR.status === 'fulfilled' && (spikesR.value.data ?? []).length > 0
 
-  const errorSpikes = spikesResult.status === 'fulfilled'
-    ? (spikesResult.value.data ?? []).map(e => ({ type: e.error_type as string ?? 'unknown', count: e.frequency as number ?? 0 }))
-    : []
-
-  const rlsEnabled = rlsResult.status === 'fulfilled' && !rlsResult.value.error
-
-  const latestDeploymentStatus = deployResult.status === 'fulfilled' ? deployResult.value : 'unknown'
-
-  const { data: unresolvedData } = await supabase.from('agent_error_log')
-    .select('*', { count: 'exact', head: true }).eq('resolved', false)
-  const unresolvedErrors = unresolvedData === null ? 0 : 0
-
-  const paygTests = runPAYGTests()
-
-  const report: FluxReport = {
-    newErrors,
-    errorSpikes,
-    paygPassing: paygTests.passing,
-    paygFailures: paygTests.failures,
-    rlsEnabled,
-    latestDeploymentStatus,
-    unresolvedErrors,
+  // Stripe webhook health
+  let webhookHealthy = true
+  let lastWebhookHours = 0
+  if (webhookR.status === 'fulfilled' && webhookR.value.data) {
+    lastWebhookHours = (Date.now() - new Date(webhookR.value.data.created_at as string).getTime()) / 3600000
+    webhookHealthy = lastWebhookHours < 24
   }
 
-  await logSubAgent('flux', 'scan', '', JSON.stringify(report).slice(0, 500), Date.now() - start, true)
+  // RLS check (if accessible via service role → OK)
+  const rlsEnabled = rlsR.status === 'fulfilled' && !rlsR.value.error
+  const tablesOk = rlsEnabled ? ['invoices'] : []
+  const tablesFail = rlsEnabled ? [] : ['invoices']
+
+  // Overall health
+  let overall: FluxReport['overall'] = 'healthy'
+  if (!payg.allPassing) overall = 'critical'
+  else if (!webhookHealthy || hasUrgent || newErrors.length > 0) overall = 'warning'
+
+  const report: FluxReport = {
+    timestamp: new Date(),
+    payg,
+    sentry: { newErrors, hasUrgent },
+    stripe: { webhookHealthy, lastWebhookHours },
+    supabase: { rlsEnabled, tablesOk, tablesFail },
+    overall,
+  }
+
+  // If PAYG critical — alert immediately
+  if (!payg.allPassing) {
+    const failing = payg.results.filter(r => !r.pass)
+      .map(r => `${r.tc}: expected $${r.expected}, got $${r.actual}`)
+      .join('\n')
+    await sendAlert(
+      'CRITICAL: PAYG calculation broken',
+      `Failing tests:\n${failing}\n\nFix src/lib/ato.ts immediately.`,
+      'urgent', 'flux',
+    )
+  }
+
+  await logSubAgent('flux', 'scan', '', JSON.stringify({ overall, paygPassing: payg.allPassing }).slice(0, 200), Date.now() - start, overall !== 'critical')
   return report
 }
 
-export async function fluxDiagnose(error: string): Promise<string> {
+export async function fluxDiagnose(errorMessage: string, fileName?: string): Promise<string> {
   try {
-    return await callClaude({
+    const context = fileName ? `File: ${fileName}\nError: ${errorMessage}` : `Error: ${errorMessage}`
+    const result = await callClaude({
       systemPrompt: FLUX_IDENTITY,
-      userMessage: `Error reported: ${error}\n\nWhat caused this and what is the one-line fix?`,
-      maxTokens: 200,
+      userMessage: `${context}\n\nOne sentence: what caused this. One sentence: the fix. Maximum 2 sentences total.`,
+      maxTokens: 150,
     })
+    return result
   } catch {
-    return `Error received: ${error}. Check Sentry for full stack trace.`
+    return `Error in ${fileName ?? 'unknown'}: ${errorMessage}. Check logs for stack trace.`
   }
+}
+
+// Day at dawning - used by basnet head agent via watcher
+export function paygAllPassing(): boolean {
+  return runPAYGTests().allPassing
 }

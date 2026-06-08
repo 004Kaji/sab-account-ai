@@ -1,114 +1,173 @@
-# Basnet n8n Workflow Setup
+# Basnet Agent — n8n Workflow Setup
 
-All 6 workflows. Same pattern: Schedule Trigger → HTTP Request.
-URL base: `https://sabaccountai.com`
-Webhook secret: see AGENT_WEBHOOK_SECRET in .env.local
+## Install n8n locally
 
----
+```bash
+npx n8n
+# Opens at: http://localhost:5678
+```
 
-## Workflow 1 — THE HEARTBEAT (most important)
+## Environment variable needed in n8n
 
-**Name:** Basnet Watcher
-**Trigger:** Every 5 minutes
-**Node:** HTTP Request POST
+All HTTP Request nodes need this header:
 
-URL: `https://sabaccountai.com/api/agents/watch`
-Headers: `{ "x-agent-secret": "AGENT_WEBHOOK_SECRET" }`
-Body: `{}`
-
-This is what makes Basnet always watching. Set it up first.
-
----
-
-## Workflow 2 — Morning Briefing
-
-**Name:** Morning Briefing
-**Trigger:** Every day 9 PM UTC (= 7am AEST)
-**Cron:** `0 21 * * *`
-
-URL: `https://sabaccountai.com/api/agents/basnet`
-Body:
-```json
-{
-  "trigger": "morning",
-  "secret": "AGENT_WEBHOOK_SECRET"
-}
+```
+Key:   x-agent-secret
+Value: [your AGENT_WEBHOOK_SECRET value]
 ```
 
 ---
 
-## Workflow 3 — Weekly Content Brief
+## The 7 workflows to create
 
-**Name:** Weekly Content Brief
-**Trigger:** Every Monday 8 PM UTC (= 6am AEST Monday)
-**Cron:** `0 20 * * 1`
+### WORKFLOW 1 — THE HEARTBEAT (most important)
 
-URL: `https://sabaccountai.com/api/agents/basnet`
-Body:
-```json
-{
-  "trigger": "morning",
-  "secret": "AGENT_WEBHOOK_SECRET"
-}
+```
+Name:    Basnet Watcher
+Trigger: Schedule — every 5 minutes
+Node:    HTTP Request
+Method:  POST
+URL:     https://sabaccountai.com.au/api/agents/watch
+Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
+Body:    {}
 ```
 
-Note: Monday trigger runs Atlas + Spark in addition to standard agents.
+This makes Basnet always watching.
+**Set up this one first.**
 
 ---
 
-## Workflow 4 — Accountant Emails
+### WORKFLOW 2 — MORNING BRIEFING
 
-**Name:** Accountant Emails
-**Trigger:** Every Friday 9 PM UTC (= 7am AEST Friday)
-**Cron:** `0 21 * * 4`
-
-URL: `https://sabaccountai.com/api/agents/sab/marketing`
-Body:
-```json
-{
-  "trigger": "accountant_emails",
-  "secret": "AGENT_WEBHOOK_SECRET"
-}
 ```
-
----
-
-## Workflow 5 — Weekly Learning
-
-**Name:** Weekly Learning
-**Trigger:** Every Sunday 10 AM UTC (= 8pm AEST Sunday)
-**Cron:** `0 10 * * 0`
-
-URL: `https://sabaccountai.com/api/agents/basnet`
-Body:
-```json
-{
-  "trigger": "weekly_learn",
-  "secret": "AGENT_WEBHOOK_SECRET"
-}
+Name:    Basnet Morning
+Trigger: Schedule — 7:00am AEST daily
+         (21:00 UTC previous day)
+Node:    HTTP Request
+Method:  POST
+URL:     https://sabaccountai.com.au/api/agents/basnet
+Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
+Body:    { "trigger": "morning" }
 ```
 
 ---
 
-## Workflow 6 — The Watcher (via webhooks route, alternative)
+### WORKFLOW 3 — WEEKLY BRIEF + ATLAS
 
-You can also trigger the heartbeat via the existing webhooks route:
+```
+Name:    Basnet Weekly
+Trigger: Schedule — Monday 6:00am AEST
+         (Sunday 20:00 UTC)
+Node:    HTTP Request
+Method:  POST
+URL:     https://sabaccountai.com.au/api/agents/basnet
+Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
+Body:    { "trigger": "weekly" }
+```
 
-URL: `https://sabaccountai.com/api/agents/webhooks`
-Body:
-```json
-{
-  "secret": "AGENT_WEBHOOK_SECRET",
-  "trigger": "health_check"
-}
+Runs: Spark weekly brief + Relay goal check + Atlas market intel + brand monitor.
+
+---
+
+### WORKFLOW 4 — FRIDAY ACCOUNTANT EMAILS
+
+```
+Name:    Spark Accountant Emails
+Trigger: Schedule — Friday 7:00am AEST
+         (Thursday 21:00 UTC)
+Node:    HTTP Request
+Method:  POST
+URL:     https://sabaccountai.com.au/api/agents/sab
+Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
+Body:    { "trigger": "marketing_run",
+           "data": { "marketingTrigger": "accountant_emails" } }
 ```
 
 ---
 
-## Note on the Watcher workflow
+### WORKFLOW 5 — DAILY SCOUT SCAN
 
-The watcher (`/api/agents/watch`) uses header-based auth:
-- Header name: `x-agent-secret`
-- Header value: your AGENT_WEBHOOK_SECRET
+```
+Name:    Scout Daily
+Trigger: Schedule — 2:00am AEST daily
+         (16:00 UTC previous day)
+Node:    HTTP Request
+Method:  POST
+URL:     https://sabaccountai.com.au/api/agents/sab
+Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
+Body:    { "trigger": "scout_scan" }
+```
 
-In n8n HTTP Request node → Headers tab → Add header.
+Runs at 2am so any product failures are caught before the 7am briefing.
+
+---
+
+### WORKFLOW 6 — DAILY LIFT SCAN
+
+```
+Name:    Lift Daily
+Trigger: Schedule — 3:00am AEST daily
+         (17:00 UTC previous day)
+Node:    HTTP Request
+Method:  POST
+URL:     https://sabaccountai.com.au/api/agents/sab
+Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
+Body:    { "trigger": "lift_scan" }
+```
+
+---
+
+### WORKFLOW 7 — WEEKLY LEARNING
+
+```
+Name:    Basnet Learn
+Trigger: Schedule — Sunday 8:00pm AEST
+         (Sunday 10:00 UTC)
+Node:    HTTP Request
+Method:  POST
+URL:     https://sabaccountai.com.au/api/agents/learn
+Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
+Body:    {}
+```
+
+Reviews the week, updates SANJOG_LEARNINGS.md, sends summary email.
+
+---
+
+## Setup order
+
+1. Install n8n: `npx n8n`
+2. Create Workflow 1 (heartbeat) first
+3. Activate it — check the watch endpoint receives calls
+4. Create Workflows 2–7 in order
+5. Activate all 7
+6. Check your inbox — morning briefing should arrive within 24 hours
+
+---
+
+## Verify n8n is working
+
+After activating Workflow 1, check the `watcher_reports` table in Supabase.
+New rows should appear every 5 minutes.
+If no rows after 10 minutes: check n8n execution log.
+
+---
+
+## Run n8n permanently on Mac
+
+```bash
+# Instead of npx n8n (stops when terminal closes):
+npm install -g n8n
+n8n start --tunnel
+```
+
+Or add to Mac login items via a launchd plist.
+
+---
+
+## Note on Scout and Lift
+
+Workflows 5 and 6 also run automatically inside Workflow 1 (the heartbeat)
+via `runWatcherCycle()`. The dedicated Scout and Lift workflows run deeper
+daily scans at quieter times. If you only want minimal setup,
+Workflows 1 + 2 + 7 is enough to start.

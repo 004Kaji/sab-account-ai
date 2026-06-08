@@ -7,11 +7,14 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 type SystemStatus = 'healthy' | 'warning' | 'critical' | 'unknown'
 
 type WatcherSummary = {
-  revenue?:       { mrr: number; newPaidUsers: number; failedPayments: number; churnedUsers: number }
-  product?:       { newSignups: number; unresolvedErrors: number }
-  codeHealth?:    { allPaygPassing: boolean; failingTests: string[] }
-  visaCompliance?:{ daysUntilExpiry: number; warnings: string[] }
-  growthSignals?: { onboardingGaps: number }
+  revenue?:    { mrr: number; newPaidThisCheck: number; failedPayments: number; churn: number }
+  product?:    { newSignups: number; usersAtLimit: number }
+  codeHealth?: { allPaygPassing: boolean; newErrors: string[] }
+  visa?:       { daysUntilExpiry: number; warnings: string[] }
+  growth?:     { onboardingGaps: number; upgradeSignals: number }
+  // Legacy shape — kept for backward compat with old saved reports
+  visaCompliance?: { daysUntilExpiry: number; warnings: string[] }
+  growthSignals?:  { onboardingGaps: number }
 }
 
 type AlertRow = {
@@ -47,6 +50,9 @@ type DashboardData = {
   subAgentStatus?: SubAgentStatus
   watcher?: { report: WatcherSummary; created_at: string } | null
   outreach?: { emailed: number; replied: number }
+  users?: { total: number; paid: number }
+  lift?: { atRiskCount?: number; upgradeSignals?: number; onboardingGaps?: number; lastRun?: string } | null
+  atlas?: { summary?: string; lastRun?: string } | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -79,13 +85,15 @@ function StatusDot({ status, label }: { status: SystemStatus; label: string }) {
 
 function deriveStatus(watcher: WatcherSummary | undefined): Record<string, SystemStatus> {
   if (!watcher) return { revenue: 'unknown', product: 'unknown', code: 'unknown', ato: 'unknown', visa: 'unknown', growth: 'unknown' }
+  const visaWarnings = (watcher.visa?.warnings ?? watcher.visaCompliance?.warnings ?? []).length
+  const onboardGaps  = watcher.growth?.onboardingGaps ?? watcher.growthSignals?.onboardingGaps ?? 0
   return {
-    revenue: (watcher.revenue?.failedPayments ?? 0) > 0 ? 'critical' : (watcher.revenue?.churnedUsers ?? 0) > 0 ? 'warning' : 'healthy',
-    product: (watcher.product?.unresolvedErrors ?? 0) > 0 ? 'warning' : 'healthy',
+    revenue: (watcher.revenue?.failedPayments ?? 0) > 0 ? 'critical' : (watcher.revenue?.churn ?? 0) > 0 ? 'warning' : 'healthy',
+    product: (watcher.product?.newSignups ?? 0) > 0 ? 'healthy' : 'healthy',
     code:    watcher.codeHealth?.allPaygPassing === false ? 'critical' : 'healthy',
     ato:     watcher.codeHealth?.allPaygPassing === false ? 'critical' : 'healthy',
-    visa:    (watcher.visaCompliance?.warnings?.length ?? 0) > 0 ? 'warning' : 'healthy',
-    growth:  (watcher.growthSignals?.onboardingGaps ?? 0) > 5 ? 'warning' : 'healthy',
+    visa:    visaWarnings > 0 ? 'warning' : 'healthy',
+    growth:  onboardGaps > 5 ? 'warning' : 'healthy',
   }
 }
 
@@ -146,9 +154,9 @@ export default function AgentPage() {
     )
   }
 
-  const watcher    = data.watcher?.report
-  const statuses   = deriveStatus(watcher)
-  const subAgents  = ['flux', 'relay', 'scout', 'atlas', 'spark', 'lift']
+  const watcher     = data.watcher?.report
+  const statuses    = deriveStatus(watcher)
+  const subAgents   = ['flux', 'scout', 'spark', 'atlas', 'lift', 'relay']
   const lastChecked = data.watcher?.created_at ? timeAgo(data.watcher.created_at) : 'never'
 
   return (
@@ -179,22 +187,20 @@ export default function AgentPage() {
       </div>
 
       {/* Section B — Live Metrics */}
-      {watcher && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
-          {[
-            { label: 'MRR', value: `$${(watcher.revenue?.mrr ?? 0).toFixed(0)}` },
-            { label: 'New signups', value: String(watcher.product?.newSignups ?? 0) },
-            { label: 'Errors', value: String(watcher.product?.unresolvedErrors ?? 0) },
-            { label: 'PAYG tests', value: watcher.codeHealth?.allPaygPassing ? '5/5 ✓' : `failing` },
-            { label: 'Visa days', value: watcher.visaCompliance?.daysUntilExpiry !== 999 ? String(watcher.visaCompliance?.daysUntilExpiry) : '—' },
-          ].map(m => (
-            <div key={m.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '0.875rem 1rem' }}>
-              <p style={{ fontSize: '0.7rem', color: 'var(--text3)', marginBottom: '0.25rem', fontWeight: 500 }}>{m.label}</p>
-              <p style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--char)', fontFamily: 'var(--font-mono)', lineHeight: 1 }}>{m.value}</p>
-            </div>
-          ))}
-        </div>
-      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+        {[
+          { label: 'MRR', value: `$${(watcher?.revenue?.mrr ?? 0).toFixed(0)}` },
+          { label: 'Users', value: String(data.users?.total ?? '—') },
+          { label: 'Paid', value: String(data.users?.paid ?? '—') },
+          { label: 'PAYG', value: watcher?.codeHealth?.allPaygPassing ? '5/5 ✓' : watcher?.codeHealth ? 'failing' : '—' },
+          { label: 'Visa days', value: (() => { const d = watcher?.visa?.daysUntilExpiry ?? watcher?.visaCompliance?.daysUntilExpiry; return d && d !== 999 ? String(d) : '—' })() },
+        ].map(m => (
+          <div key={m.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '0.875rem 1rem' }}>
+            <p style={{ fontSize: '0.7rem', color: 'var(--text3)', marginBottom: '0.25rem', fontWeight: 500 }}>{m.label}</p>
+            <p style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--char)', fontFamily: 'var(--font-mono)', lineHeight: 1 }}>{m.value}</p>
+          </div>
+        ))}
+      </div>
 
       {/* Section D — Ask Basnet */}
       <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1.5rem', marginBottom: '1.25rem' }}>
@@ -280,17 +286,31 @@ export default function AgentPage() {
           )}
         </div>
 
-        {/* Section F — Sub-agent Status */}
+        {/* Section — Sub-agent Status (6 agents) */}
         <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1.5rem' }}>
           <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--char)', marginBottom: '1rem' }}>Sub-agents</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {subAgents.map(name => {
               const status = data.subAgentStatus?.[name]
+              const role: Record<string, string> = {
+                flux:  'engineering', scout: 'testing',
+                spark: 'marketing',  atlas: 'intelligence',
+                lift:  'retention',  relay: 'personal ops',
+              }
+              // Amber if last run > 24h, red if failed, green if recent+passing, grey if never run
+              let dotColor = '#9ca3af'
+              if (status) {
+                const hoursSince = (Date.now() - new Date(status.lastRun).getTime()) / 3600000
+                if (!status.success)     dotColor = '#dc2626'
+                else if (hoursSince > 24) dotColor = '#d97706'
+                else                     dotColor = '#16a34a'
+              }
               return (
                 <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: status ? (status.success ? '#16a34a' : '#dc2626') : '#9ca3af', flexShrink: 0, display: 'inline-block' }} />
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, flexShrink: 0, display: 'inline-block' }} />
                     <span style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--char)', textTransform: 'capitalize' }}>{name}</span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text3)' }}>{role[name] ?? ''}</span>
                   </div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>
                     {status ? timeAgo(status.lastRun) : 'not run yet'}
@@ -302,6 +322,53 @@ export default function AgentPage() {
         </div>
 
       </div>
+
+      {/* Section E — User Health (Lift) */}
+      {data.lift && (
+        <div style={{ marginTop: '1.25rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }} className="basnet-grid">
+          <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1.5rem' }}>
+            <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--char)', marginBottom: '1rem' }}>User Health</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {(data.lift.atRiskCount ?? 0) > 0 ? (
+                <div style={{ padding: '0.75rem 1rem', background: '#fffbeb', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                  <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#92400e', margin: 0 }}>
+                    {data.lift.atRiskCount} users at risk
+                  </p>
+                  <p style={{ fontSize: '0.75rem', color: '#b45309', margin: '4px 0 0' }}>Check email for breakdown and actions</p>
+                </div>
+              ) : (
+                <p style={{ fontSize: '0.875rem', color: 'var(--text3)' }}>No at-risk users right now.</p>
+              )}
+              {(data.lift.upgradeSignals ?? 0) > 0 && (
+                <div style={{ padding: '0.75rem 1rem', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                  <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#166534', margin: 0 }}>
+                    {data.lift.upgradeSignals} users ready to upgrade
+                  </p>
+                  <p style={{ fontSize: '0.75rem', color: '#15803d', margin: '4px 0 0' }}>Free users at invoice limit</p>
+                </div>
+              )}
+              {data.lift.lastRun && (
+                <p style={{ fontSize: '0.6875rem', color: 'var(--text3)', margin: 0 }}>Last scan: {timeAgo(data.lift.lastRun)}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Section F — Market Intel (Atlas) */}
+          <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1.5rem' }}>
+            <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--char)', marginBottom: '1rem' }}>Market Intelligence</h2>
+            {data.atlas?.summary ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text)', lineHeight: 1.6 }}>{data.atlas.summary}</p>
+                {data.atlas.lastRun && (
+                  <p style={{ fontSize: '0.6875rem', color: 'var(--text3)' }}>Last scan: {timeAgo(data.atlas.lastRun)} · Next: Monday 6am AEST</p>
+                )}
+              </div>
+            ) : (
+              <p style={{ fontSize: '0.875rem', color: 'var(--text3)' }}>Atlas runs Monday 6am AEST with web search.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       <style>{`
         @media (max-width: 720px) {

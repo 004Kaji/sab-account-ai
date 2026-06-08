@@ -11,7 +11,7 @@ export async function GET() {
     weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1)
     const weekStartStr = weekStart.toISOString().split('T')[0]
 
-    const [briefing, conversations, contentBrief, alerts, subAgentLogs, latestWatcher, emailedCount, repliedCount] = await Promise.all([
+    const [briefing, conversations, contentBrief, alerts, subAgentLogs, latestWatcher, emailedCount, repliedCount, totalUsersR, paidUsersR, latestLiftR, latestAtlasR] = await Promise.all([
       supabase.from('agent_briefings').select('*').eq('briefing_date', today).maybeSingle(),
       supabase.from('agent_conversations').select('*').order('created_at', { ascending: false }).limit(5),
       supabase.from('content_briefs').select('*').eq('week_start', weekStartStr).maybeSingle(),
@@ -20,6 +20,10 @@ export async function GET() {
       supabase.from('watcher_reports').select('report, created_at').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('accountant_outreach').select('*', { count: 'exact', head: true }).not('emailed_at', 'is', null),
       supabase.from('accountant_outreach').select('*', { count: 'exact', head: true }).eq('replied', true),
+      supabase.from('profiles').select('*', { count: 'exact', head: true }),
+      supabase.from('profiles').select('*', { count: 'exact', head: true }).neq('plan', 'free'),
+      supabase.from('agent_logs').select('actions_taken, created_at').eq('agent_name', 'lift').eq('trigger_type', 'daily_scan').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('agent_logs').select('outcome, created_at, input_context').eq('agent_name', 'atlas').eq('trigger_type', 'weekly_intel').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ])
 
     // Derive sub-agent last-run map
@@ -31,6 +35,15 @@ export async function GET() {
       }
     }
 
+    type LiftActions = { atRiskCount?: number; upgradeSignals?: number; onboardingGaps?: number }
+    const liftData = latestLiftR.data
+      ? { ...(latestLiftR.data.actions_taken as LiftActions), lastRun: latestLiftR.data.created_at as string }
+      : null
+
+    const atlasData = latestAtlasR.data
+      ? { summary: latestAtlasR.data.outcome as string, lastRun: latestAtlasR.data.created_at as string }
+      : null
+
     return NextResponse.json({
       briefing: briefing.data,
       conversations: conversations.data ?? [],
@@ -39,6 +52,9 @@ export async function GET() {
       subAgentStatus,
       watcher: latestWatcher.data,
       outreach: { emailed: emailedCount.count ?? 0, replied: repliedCount.count ?? 0 },
+      users: { total: totalUsersR.count ?? 0, paid: paidUsersR.count ?? 0 },
+      lift: liftData,
+      atlas: atlasData,
     })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to load' }, { status: 500 })

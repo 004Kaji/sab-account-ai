@@ -1,123 +1,122 @@
 import { createServiceClient } from '@/lib/supabase'
-import { callClaude, logSubAgent } from '@/lib/agents/utils'
+import { callClaude, readMasterContext, sendAlert, logSubAgent } from '@/lib/agents/utils'
+import { BASNET_PERSONALITY, VOICE_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 
 export const RELAY_IDENTITY = `
-You are Relay, Basnet's user intelligence sub-agent.
-Your job: user health signals, churn risk, support issues.
-You care deeply about users staying and growing.
-You flag problems before they become departures.
+${BASNET_PERSONALITY}
+You are Relay, Basnet's personal ops sub-agent.
+Job: answer questions, track goals, monitor visa,
+manage day-to-day life tasks.
+You read SANJOG_MASTER.md for all context.
+Never give advice that risks the student visa.
+Always flag PR pathway implications.
 `
 
-export interface RelayUser {
-  userId: string
-  email: string
-  signal: 'onboarding_gap' | 'upgrade_signal' | 'churn_risk' | 'payment_issue'
-  detail: string
-}
+type ConvRow = { question: string; answer: string }
 
-export interface RelayReport {
-  onboardingGaps: number
-  upgradeSignals: number
-  churnRisks: number
-  paymentIssues: number
-  users: RelayUser[]
-}
-
-type ProfileRow = {
-  id: string
-  email: string | null
-  plan: string
-  subscription_status: string | null
-  created_at: string
-}
-
-export async function runRelay(): Promise<RelayReport> {
+export async function relayAnswer(question: string, mode?: 'voice' | 'text'): Promise<string> {
   const start = Date.now()
   const supabase = createServiceClient()
-  const twoDaysAgo   = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
-  const fourteenDays = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
-  const weekAgo      = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  const [onboardResult, pastDueResult, oldFreeResult] = await Promise.allSettled([
-    // Users who signed up 48h+ ago on free plan (likely onboarding gap)
-    supabase.from('profiles').select('id, email, plan, subscription_status, created_at')
-      .eq('plan', 'free').lt('created_at', twoDaysAgo).limit(20),
-    // Users with payment issues
-    supabase.from('profiles').select('id, email, plan, subscription_status, created_at')
-      .eq('subscription_status', 'past_due').limit(20),
-    // Free users inactive for 7+ days (potential churn)
-    supabase.from('profiles').select('id, email, plan, subscription_status, created_at')
-      .eq('plan', 'free').lt('created_at', fourteenDays).gt('created_at', weekAgo).limit(10),
+  const [master, recentR] = await Promise.allSettled([
+    readMasterContext(),
+    supabase.from('agent_conversations').select('question, answer')
+      .order('created_at', { ascending: false }).limit(5),
   ])
 
-  const users: RelayUser[] = []
-  let onboardingGaps = 0
-  let upgradeSignals = 0
-  let churnRisks = 0
-  let paymentIssues = 0
+  const masterCtx = master.status === 'fulfilled' ? master.value : ''
+  const recentConvs = recentR.status === 'fulfilled' ? (recentR.value.data ?? []) as ConvRow[] : []
+  const conversationContext = recentConvs.map(c => `Q: ${c.question}\nA: ${c.answer}`).join('\n\n')
 
-  if (onboardResult.status === 'fulfilled') {
-    const rows = (onboardResult.value.data ?? []) as ProfileRow[]
-    for (const r of rows.slice(0, 5)) {
-      onboardingGaps++
-      users.push({
-        userId: r.id,
-        email: r.email ?? '',
-        signal: 'onboarding_gap',
-        detail: `Free user since ${new Date(r.created_at).toLocaleDateString('en-AU')} — no invoice yet`,
-      })
-    }
-  }
+  const systemPrompt = mode === 'voice'
+    ? `${VOICE_PERSONALITY}\n\nFull context:\n${masterCtx}`
+    : `${RELAY_IDENTITY}\n\nFull context:\n${masterCtx}`
 
-  if (pastDueResult.status === 'fulfilled') {
-    const rows = (pastDueResult.value.data ?? []) as ProfileRow[]
-    for (const r of rows) {
-      paymentIssues++
-      users.push({
-        userId: r.id,
-        email: r.email ?? '',
-        signal: 'payment_issue',
-        detail: `${r.plan} plan — payment past due`,
-      })
-    }
-  }
+  const userMessage = [
+    conversationContext ? `Recent conversations:\n${conversationContext}` : '',
+    `Question: ${question}`,
+  ].filter(Boolean).join('\n\n')
 
-  if (oldFreeResult.status === 'fulfilled') {
-    const rows = (oldFreeResult.value.data ?? []) as ProfileRow[]
-    for (const r of rows.slice(0, 3)) {
-      churnRisks++
-      users.push({
-        userId: r.id,
-        email: r.email ?? '',
-        signal: 'churn_risk',
-        detail: `Free user inactive since ${new Date(r.created_at).toLocaleDateString('en-AU')}`,
-      })
-    }
-  }
+  const raw = await callClaude({ systemPrompt, userMessage, maxTokens: mode === 'voice' ? 100 : 500 })
+  const answer = applyPersonality(raw)
 
-  const report: RelayReport = { onboardingGaps, upgradeSignals, churnRisks, paymentIssues, users }
-  await logSubAgent('relay', 'scan', '', JSON.stringify({ onboardingGaps, churnRisks, paymentIssues }), Date.now() - start, true)
-  return report
+  await supabase.from('agent_conversations').insert({
+    agent_name: 'relay',
+    question,
+    answer,
+    context_used: { mode: mode ?? 'text' },
+  })
+
+  await logSubAgent('relay', 'answer', question.slice(0, 100), answer.slice(0, 200), Date.now() - start, true)
+  return answer
 }
 
-export async function relayDraftFollowUp(
-  userId: string,
-  reason: 'onboarding_gap' | 'upgrade_signal' | 'churn_risk' | 'payment_issue',
-): Promise<string> {
-  const prompts: Record<string, string> = {
-    onboarding_gap: 'This user signed up but never created an invoice. Write a 3-sentence email to help them get started with SAB Account AI.',
-    upgrade_signal: 'This free user keeps hitting the invoice limit. Write a 3-sentence email showing the value of upgrading to Starter at $9/month.',
-    churn_risk: 'This paid user has not logged in for 2 weeks. Write a 3-sentence email to re-engage them without being desperate.',
-    payment_issue: 'This user has a failed payment. Write a 3-sentence email to help them update their payment details.',
+function parseDateFromMaster(content: string, pattern: RegExp): string | null {
+  const m = content.match(pattern)
+  return m ? m[1] : null
+}
+
+function daysUntil(dateStr: string): number {
+  return Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86400000)
+}
+
+function daysSince(dateStr: string): number {
+  return Math.ceil((Date.now() - new Date(dateStr).getTime()) / 86400000)
+}
+
+export async function relayVisaCheck(): Promise<{
+  daysUntilExpiry:   number
+  urgency:           'ok' | 'warning' | 'urgent'
+  daysSinceMigAgent: number
+  recommendation:    string
+}> {
+  const content = await readMasterContext()
+
+  const visaDate = parseDateFromMaster(content, /Visa expiry[^:]*:\s*\[?(\d{4}-\d{2}-\d{2})/i)
+  const migDate  = parseDateFromMaster(content, /last consultation date[^:]*:\s*(\d{4}-\d{2}-\d{2})/i)
+
+  const daysUntilExpiry   = visaDate ? daysUntil(visaDate) : 999
+  const daysSinceMigAgent = migDate  ? daysSince(migDate)  : 0
+
+  let urgency: 'ok' | 'warning' | 'urgent' = 'ok'
+  if (daysUntilExpiry < 90)  urgency = 'urgent'
+  else if (daysUntilExpiry < 180) urgency = 'warning'
+
+  const recommendation = urgency === 'urgent'
+    ? `Visa expires in ${daysUntilExpiry} days. Contact migration agent NOW.`
+    : urgency === 'warning'
+      ? `Visa expires in ${daysUntilExpiry} days. Start renewal prep.`
+      : `Visa OK — ${daysUntilExpiry} days remaining.`
+
+  if (urgency === 'urgent') {
+    await sendAlert(
+      `Visa expiry — ${daysUntilExpiry} days`,
+      `Visa expires ${visaDate}. ${daysUntilExpiry} days left. Contact migration agent immediately.`,
+      'urgent', 'relay',
+    )
   }
 
-  try {
-    return await callClaude({
-      systemPrompt: RELAY_IDENTITY,
-      userMessage: `User ID: ${userId}\n\n${prompts[reason]}\n\nShort, personal, 3 sentences max. Sign off as Sanjog, founder.`,
-      maxTokens: 200,
-    })
-  } catch {
-    return `Hi — just checking in from SAB Account AI. Is there anything I can help you with? Reply to this email anytime. — Sanjog`
-  }
+  return { daysUntilExpiry, urgency, daysSinceMigAgent, recommendation }
+}
+
+export async function relayGoalCheck(): Promise<string> {
+  const supabase = createServiceClient()
+
+  const [masterR, profilesR] = await Promise.allSettled([
+    readMasterContext(),
+    supabase.from('profiles').select('*', { count: 'exact', head: true }),
+  ])
+
+  const master = masterR.status === 'fulfilled' ? masterR.value : ''
+  const userCount = profilesR.status === 'fulfilled' ? (profilesR.value.count ?? 0) : 0
+
+  const assessment = await callClaude({
+    systemPrompt: `${RELAY_IDENTITY}\n\nContext: ${master.slice(0, 2000)}`,
+    userMessage: `Compare current state vs north star goals. Is Sanjog on track?
+Current users: ${userCount}.
+One honest paragraph. Specific numbers only. No fluff.`,
+    maxTokens: 300,
+  })
+
+  return applyPersonality(assessment)
 }

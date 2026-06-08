@@ -3,35 +3,24 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import {
-  readMasterContext,
-  sendTelegram,
-  logAgentAction,
-  callClaude,
-  getBaseUrl,
+  readMasterContext, callClaude, sendAlert, logAgentAction, getSABMetrics, getStripeMetrics,
 } from '@/lib/agents/utils'
+import { BASNET_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
+import { runFlux, fluxDiagnose } from '@/lib/agents/sub/flux'
+import { sparkWeeklyBrief, sparkSendAccountantEmails } from '@/lib/agents/sub/spark'
+import { runScout } from '@/lib/agents/sub/scout'
+import { runLift } from '@/lib/agents/sub/lift'
 
-const SAB_PRODUCT_KEYWORDS = ['error', 'bug', 'stripe', 'supabase', 'sentry', 'payg', 'test', 'build', 'security', 'rls', 'webhook']
-const SAB_MARKETING_KEYWORDS = ['content', 'tiktok', 'blog', 'accountant', 'email', 'signup', 'conversion', 'seo', 'social']
+const ENGINEERING_KEYWORDS = ['error', 'bug', 'build', 'stripe webhook', 'supabase', 'sentry', 'deploy', 'code', 'payg', 'test', 'rls', 'ssl', 'security']
+const MARKETING_KEYWORDS   = ['tiktok', 'blog', 'post', 'content', 'what to write', 'this week', 'topic', 'hook', 'linkedin', 'facebook', 'accountant', 'email']
+const QUALITY_KEYWORDS     = ['working', 'broken', 'passing', 'endpoint', 'api', 'route', '401', '500', 'auth protection', 'invoice generation', 'calculation']
 
-function classifyQuestion(question: string): 'product' | 'marketing' | 'general' {
-  const q = question.toLowerCase()
-  if (SAB_PRODUCT_KEYWORDS.some(k => q.includes(k))) return 'product'
-  if (SAB_MARKETING_KEYWORDS.some(k => q.includes(k))) return 'marketing'
+function classifyQuestion(q: string): 'quality' | 'engineering' | 'marketing' | 'general' {
+  const lq = q.toLowerCase()
+  if (QUALITY_KEYWORDS.some(k => lq.includes(k)))     return 'quality'
+  if (ENGINEERING_KEYWORDS.some(k => lq.includes(k))) return 'engineering'
+  if (MARKETING_KEYWORDS.some(k => lq.includes(k)))   return 'marketing'
   return 'general'
-}
-
-async function callSubAgent(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const baseUrl = getBaseUrl()
-  try {
-    const res = await fetch(`${baseUrl}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    return await res.json() as Record<string, unknown>
-  } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : String(err) }
-  }
 }
 
 export async function POST(req: NextRequest) {
@@ -47,87 +36,109 @@ export async function POST(req: NextRequest) {
 
     // ── TRIGGER: health_check ──────────────────────────────────────────
     if (trigger === 'health_check') {
-      const result = await callSubAgent('/api/agents/sab/product-health', { trigger: 'scheduled' })
-      await logAgentAction({
-        agentName: 'sab',
-        triggerType: trigger,
-        outcome: (result.summary as string | undefined) ?? 'health check completed',
-        durationMs: Date.now() - start,
-      })
-      return NextResponse.json({ success: true, ...result })
+      const report = await runFlux()
+      await logAgentAction({ agentName: 'sab', triggerType: trigger, outcome: report.overall, durationMs: Date.now() - start })
+      return NextResponse.json({ success: true, report })
     }
 
     // ── TRIGGER: marketing_run ─────────────────────────────────────────
     if (trigger === 'marketing_run') {
       const marketingTrigger = (body.data?.marketingTrigger as string | undefined) ?? 'weekly_brief'
-      const result = await callSubAgent('/api/agents/sab/marketing', { trigger: marketingTrigger, data: body.data })
-      await logAgentAction({
-        agentName: 'sab',
-        triggerType: trigger,
-        actionsTaken: { marketingTrigger },
-        durationMs: Date.now() - start,
-      })
-      return NextResponse.json({ success: true, ...result })
+
+      if (marketingTrigger === 'weekly_brief') {
+        const stripe = await getStripeMetrics()
+        const brief = await sparkWeeklyBrief({
+          newSignups:    0,
+          mrr:           stripe.mrr,
+          mrrChange:     stripe.mrrChange,
+          churnThisWeek: stripe.churnThisWeek,
+        })
+        await logAgentAction({ agentName: 'sab', triggerType: trigger, decision: brief.weekFocus, durationMs: Date.now() - start })
+        return NextResponse.json({ success: true, brief })
+      }
+
+      if (marketingTrigger === 'accountant_emails') {
+        const result = await sparkSendAccountantEmails()
+        await logAgentAction({ agentName: 'sab', triggerType: trigger, actionsTaken: { sent: result.sent }, durationMs: Date.now() - start })
+        return NextResponse.json({ success: true, ...result })
+      }
+
+      return NextResponse.json({ success: false, error: `Unknown marketingTrigger: ${marketingTrigger}` })
     }
 
     // ── TRIGGER: full_report ───────────────────────────────────────────
     if (trigger === 'full_report') {
-      const [healthResult, marketingResult] = await Promise.all([
-        callSubAgent('/api/agents/sab/product-health', { trigger: 'manual' }),
-        callSubAgent('/api/agents/sab/marketing', { trigger: 'content_brief' }),
+      const stripe = await getStripeMetrics()
+      const [fluxR, briefR] = await Promise.all([
+        runFlux(),
+        sparkWeeklyBrief({ newSignups: 0, mrr: stripe.mrr, mrrChange: stripe.mrrChange, churnThisWeek: stripe.churnThisWeek }),
       ])
 
       const masterContext = await readMasterContext()
-
       const synthesis = await callClaude({
-        systemPrompt: masterContext.slice(0, 1500),
-        userMessage: `Synthesise these two reports into one executive summary for Sanjog.
-Max 150 words. What matters most right now?
+        systemPrompt: `${BASNET_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1000)}`,
+        userMessage: `Synthesise these reports. Max 150 words. What matters most right now?
 
-Health Report: ${JSON.stringify(healthResult)}
-Marketing Report: ${JSON.stringify(marketingResult)}`,
+Flux: ${JSON.stringify({ overall: fluxR.overall, paygPassing: fluxR.payg.allPassing })}
+Spark: ${JSON.stringify({ weekFocus: briefR.weekFocus, urgentFlag: briefR.urgentFlag })}`,
         maxTokens: 250,
       })
 
-      await logAgentAction({
-        agentName: 'sab',
-        triggerType: trigger,
-        outcome: synthesis.slice(0, 200),
-        durationMs: Date.now() - start,
-      })
+      await logAgentAction({ agentName: 'sab', triggerType: trigger, outcome: synthesis.slice(0, 200), durationMs: Date.now() - start })
+      return NextResponse.json({ success: true, synthesis, flux: fluxR, spark: briefR })
+    }
 
-      return NextResponse.json({ success: true, synthesis, healthResult, marketingResult })
+    // ── TRIGGER: scout_scan ────────────────────────────────────────────
+    if (trigger === 'scout_scan') {
+      const report = await runScout()
+      await logAgentAction({ agentName: 'sab', triggerType: trigger, outcome: report.summary, durationMs: Date.now() - start })
+      return NextResponse.json({ success: true, report })
+    }
+
+    // ── TRIGGER: lift_scan ─────────────────────────────────────────────
+    if (trigger === 'lift_scan') {
+      const report = await runLift()
+      await logAgentAction({ agentName: 'sab', triggerType: trigger, outcome: report.summary, durationMs: Date.now() - start })
+      return NextResponse.json({ success: true, report })
     }
 
     // ── TRIGGER: ask ───────────────────────────────────────────────────
     if (trigger === 'ask') {
       const question = body.question ?? ''
       const classification = classifyQuestion(question)
+      const masterContext = await readMasterContext()
+      let answer = ''
 
-      let result: Record<string, unknown>
-
-      if (classification === 'product') {
-        result = await callSubAgent('/api/agents/sab/product-health', { trigger: 'manual' })
+      if (classification === 'quality') {
+        const scout = await runScout()
+        const failing = scout.tests.filter(t => !t.pass)
+        answer = applyPersonality(
+          failing.length === 0
+            ? `All ${scout.tests.length} product tests passing. Product healthy.`
+            : `${failing.length} tests failing: ${failing.map(t => `${t.name} (${t.actual})`).join(', ')}`
+        )
+      } else if (classification === 'engineering') {
+        const diagnosis = await fluxDiagnose(question)
+        answer = applyPersonality(diagnosis)
       } else if (classification === 'marketing') {
-        result = await callSubAgent('/api/agents/sab/marketing', { trigger: 'content_brief' })
+        const sab = await getSABMetrics()
+        answer = await callClaude({
+          systemPrompt: `${BASNET_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1500)}`,
+          userMessage: `SAB metrics: ${JSON.stringify(sab)}\n\nQ: ${question}`,
+          maxTokens: 400,
+        })
+        answer = applyPersonality(answer)
       } else {
-        const masterContext = await readMasterContext()
-        const answer = await callClaude({
-          systemPrompt: `You are the SAB Account AI agent. Context: ${masterContext.slice(0, 1500)}`,
+        answer = await callClaude({
+          systemPrompt: `${BASNET_PERSONALITY}\n\nContext: ${masterContext.slice(0, 2000)}`,
           userMessage: question,
           maxTokens: 500,
         })
-        result = { success: true, answer }
+        answer = applyPersonality(answer)
       }
 
-      await logAgentAction({
-        agentName: 'sab',
-        triggerType: trigger,
-        inputContext: { question, classification },
-        durationMs: Date.now() - start,
-      })
-
-      return NextResponse.json({ success: true, ...result, classification })
+      await logAgentAction({ agentName: 'sab', triggerType: trigger, inputContext: { question, classification }, durationMs: Date.now() - start })
+      return NextResponse.json({ success: true, answer, classification })
     }
 
     return NextResponse.json({ success: false, error: `Unknown trigger: ${trigger}` })
@@ -135,7 +146,7 @@ Marketing Report: ${JSON.stringify(marketingResult)}`,
   } catch (err) {
     Sentry.captureException(err, { tags: { agent: 'sab' } })
     const msg = err instanceof Error ? err.message : String(err)
-    await sendTelegram(`SAB Agent error: ${msg}`, 'urgent').catch(() => {})
+    await sendAlert('SAB agent error', msg, 'urgent', 'sab').catch(() => {})
     return NextResponse.json({ success: false, error: msg })
   }
 }

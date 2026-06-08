@@ -4,37 +4,38 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 import {
-  readMasterContext, callClaude, sendAlert, sendDailyDigest, sendWeeklyReport,
-  logAgentAction, isRateLimited, getStripeMetrics,
+  readMasterContext, callClaude, sendAlert, logAgentAction,
+  isRateLimited, briefingAlreadySentToday, getStripeMetrics,
 } from '@/lib/agents/utils'
-import { BASNET_PERSONALITY } from '@/lib/agents/personality'
+import { BASNET_PERSONALITY, EMAIL_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 import { runFlux, fluxDiagnose } from '@/lib/agents/sub/flux'
-import { runRelay } from '@/lib/agents/sub/relay'
+import { sparkWeeklyBrief, sparkSendAccountantEmails } from '@/lib/agents/sub/spark'
+import { relayAnswer, relayVisaCheck, relayGoalCheck } from '@/lib/agents/sub/relay'
 import { runScout } from '@/lib/agents/sub/scout'
-import { atlasWeeklyIntel } from '@/lib/agents/sub/atlas'
-import { sparkWeeklyBrief } from '@/lib/agents/sub/spark'
-import { liftScanForChurnRisk } from '@/lib/agents/sub/lift'
+import { runLift } from '@/lib/agents/sub/lift'
+import { atlasResearch, atlasWeeklyIntel, atlasMonitorBrand } from '@/lib/agents/sub/atlas'
 import {
   runWatcherCycle, evaluateAndAlert, saveWatcherReport,
-  generateProactiveInsight, getLastProactiveInsightTime,
+  proactiveInsight, getLastProactiveInsightTime,
 } from '@/lib/agents/watcher'
 
-type QuestionClass = 'ENGINEERING' | 'USER_HEALTH' | 'PRODUCT_TEST' | 'MARKET_INTEL' | 'CONTENT' | 'REVENUE' | 'LIFE' | 'GENERAL'
+// ── Classify question ──────────────────────────────────────────────────
+
+type QuestionClass = 'QUALITY' | 'RETENTION' | 'MARKET' | 'SAB_PRODUCT' | 'SAB_MARKETING' | 'PERSONAL' | 'GENERAL'
 
 const KEYWORDS: Record<QuestionClass, string[]> = {
-  ENGINEERING:  ['error', 'bug', 'build', 'stripe webhook', 'supabase', 'sentry', 'deploy', 'code', 'payg', 'test', 'rls', 'ssl', 'security'],
-  USER_HEALTH:  ['user', 'churn', 'signup', 'retention', 'conversion', 'onboarding', 'free tier', 'upgrade', 'past due'],
-  PRODUCT_TEST: ['working', 'broken', 'check', 'invoice generation', 'calculation'],
-  MARKET_INTEL: ['competitor', 'xero', 'myob', 'market', 'news', 'ato update', 'law change', 'payday super update'],
-  CONTENT:      ['tiktok', 'blog', 'post', 'content', 'what to write', 'this week', 'topic', 'hook', 'linkedin', 'facebook'],
-  REVENUE:      ['mrr', 'revenue', 'churn', 'paid users', 'retention', 'upgrade', 'pricing'],
-  LIFE:         ['visa', 'pr', 'university', 'goals', 'dream', 'north star', 'tired', 'overwhelmed', 'should i', 'what do i do'],
-  GENERAL:      [],
+  QUALITY:       ['working', 'broken', 'passing', 'test endpoint', 'auth protection', 'security check', 'invoice generation', '401', '500'],
+  RETENTION:     ['churn', 'at risk', 'inactive', 'retention', 'not using', 'upgrade', 'conversion', 'lost user'],
+  MARKET:        ['competitor', 'xero', 'myob', 'market', 'news', 'ato update', 'law change', 'payday super news', 'pricing', 'what are competitors'],
+  SAB_PRODUCT:   ['error', 'bug', 'build', 'stripe webhook', 'supabase', 'sentry', 'deploy', 'code', 'payg', 'test', 'rls', 'ssl', 'security'],
+  SAB_MARKETING: ['tiktok', 'blog', 'post', 'content', 'what to write', 'topic', 'hook', 'linkedin', 'facebook', 'accountant', 'email', 'signup'],
+  PERSONAL:      ['visa', 'pr', 'university', 'goals', 'dream', 'north star', 'tired', 'overwhelmed', 'should i', 'what do i do', 'how am i'],
+  GENERAL:       [],
 }
 
 function classify(question: string): QuestionClass {
   const q = question.toLowerCase()
-  for (const cls of ['ENGINEERING', 'USER_HEALTH', 'PRODUCT_TEST', 'MARKET_INTEL', 'CONTENT', 'REVENUE', 'LIFE'] as const) {
+  for (const cls of ['QUALITY', 'RETENTION', 'MARKET', 'SAB_PRODUCT', 'SAB_MARKETING', 'PERSONAL'] as const) {
     if (KEYWORDS[cls].some(k => q.includes(k))) return cls
   }
   return 'GENERAL'
@@ -42,6 +43,12 @@ function classify(question: string): QuestionClass {
 
 function isMonday(): boolean {
   return new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney', weekday: 'long' }) === 'Monday'
+}
+
+function weekdayDate(): string {
+  return new Date().toLocaleString('en-AU', {
+    timeZone: 'Australia/Sydney', weekday: 'long', day: 'numeric', month: 'long',
+  })
 }
 
 export async function POST(req: NextRequest) {
@@ -57,85 +64,106 @@ export async function POST(req: NextRequest) {
 
     const trigger = body.trigger ?? 'ask'
 
-    // ── TRIGGER: watch ─────────────────────────────────────────────────
-    if (trigger === 'watch') {
-      const report = await runWatcherCycle()
-      const alertsSent = await evaluateAndAlert(report)
-      const lastInsight = await getLastProactiveInsightTime()
-      if (!lastInsight || lastInsight < new Date(Date.now() - 3600000)) {
-        await generateProactiveInsight(report).catch(() => null)
-      }
-      await saveWatcherReport(report, alertsSent)
-      await logAgentAction({ agentName: 'basnet', triggerType: trigger, actionsTaken: { alertsSent }, outcome: 'watch cycle complete' })
-      return NextResponse.json({ success: true, alertsSent, timestamp: report.timestamp })
-    }
-
     // ── TRIGGER: morning ───────────────────────────────────────────────
     if (trigger === 'morning') {
-      if (await isRateLimited('basnet-morning', 2)) {
+      if (await isRateLimited('basnet_morning', 2)) {
         return NextResponse.json({ success: true, message: 'Morning briefing already ran today' })
       }
+      if (await briefingAlreadySentToday()) {
+        return NextResponse.json({ success: true, message: 'Briefing already sent today' })
+      }
 
+      const masterContext = await readMasterContext()
       const monday = isMonday()
 
-      // Run sub-agents in parallel
-      const [fluxR, relayR, liftR, atlasR, sparkR] = await Promise.allSettled([
+      const [personalR, sabR, scoutR, liftR] = await Promise.allSettled([
+        Promise.all([relayVisaCheck(), relayGoalCheck()]),
         runFlux(),
-        runRelay(),
-        liftScanForChurnRisk(),
-        monday ? atlasWeeklyIntel() : Promise.resolve(null),
-        monday ? (async () => {
-          const watcher = await runWatcherCycle()
-          return sparkWeeklyBrief(watcher)
-        })() : Promise.resolve(null),
+        runScout(),
+        runLift(),
       ])
 
-      const flux  = fluxR.status === 'fulfilled' ? fluxR.value : null
-      const relay = relayR.status === 'fulfilled' ? relayR.value : null
-      const lift  = liftR.status === 'fulfilled' ? liftR.value : null
-      const atlas = atlasR.status === 'fulfilled' ? atlasR.value : null
-      const spark = sparkR.status === 'fulfilled' ? sparkR.value : null
+      const visa   = personalR.status === 'fulfilled' ? personalR.value[0] : null
+      const goals  = personalR.status === 'fulfilled' ? personalR.value[1] : null
+      const flux   = sabR.status    === 'fulfilled' ? sabR.value    : null
+      const scout  = scoutR.status  === 'fulfilled' ? scoutR.value  : null
+      const lift   = liftR.status   === 'fulfilled' ? liftR.value   : null
 
-      const stripeMetrics = await getStripeMetrics()
-      const masterContext = await readMasterContext()
+      const stripe = await getStripeMetrics()
 
-      const briefingInput = JSON.stringify({
-        payg: flux ? (flux.paygPassing ? 'all 5 passing' : `FAILING: ${flux.paygFailures.join(', ')}`) : 'not checked',
-        unresolvedErrors: flux?.unresolvedErrors ?? 0,
-        onboardingGaps: relay?.onboardingGaps ?? 0,
-        atRiskUsers: lift?.totalAtRisk ?? 0,
-        mrr: stripeMetrics.mrr,
-        mrrChange: stripeMetrics.mrrChange,
-        newPaidThisWeek: stripeMetrics.newPaidThisWeek,
-        churn: stripeMetrics.churnThisWeek,
+      const briefingData = JSON.stringify({
+        urgent: visa?.urgency === 'urgent' ? `Visa expires in ${visa.daysUntilExpiry} days` : null,
+        payg: flux ? (flux.payg.allPassing ? '5/5 passing' : `FAILING: ${flux.payg.results.filter(r => !r.pass).map(r => r.tc).join(', ')}`) : 'unknown',
+        mrr: stripe.mrr,
+        newPaid: stripe.newPaidThisWeek,
+        churn: stripe.churnThisWeek,
+        goals: goals ? goals.slice(0, 200) : null,
         monday,
-        weekFocus: spark?.weekFocus ?? null,
-        atlasIntel: atlas ? atlas.slice(0, 200) : null,
+        // Only include Scout/Lift if they have something bad to report
+        scoutAlert: scout?.criticalFail ? `Critical product failure: ${scout.tests.filter(t => !t.pass).map(t => t.name).join(', ')}` : null,
+        liftAlert: (lift?.atRiskUsers.length ?? 0) > 0 ? `${lift!.atRiskUsers.length} users at risk` : null,
       })
 
+      const today = new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney', weekday: 'long', day: 'numeric', month: 'long' })
+
       const briefing = await callClaude({
-        systemPrompt: `${BASNET_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1000)}`,
-        userMessage: `Morning briefing data: ${briefingInput}\n\nWrite the morning briefing. Max 5 sentences. Start with the single most important thing. End with today's one focus. Use Basnet's voice — direct, specific, honest.`,
+        systemPrompt: `${EMAIL_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1000)}`,
+        userMessage: `Morning briefing — ${today}
+
+Data: ${briefingData}
+
+Write morning briefing. Max 5 sentences.
+Format: URGENT (if any) · SAB TODAY · FOCUS · NORTH STAR CHECK
+Direct. Specific numbers. Basnet voice.`,
         maxTokens: 300,
       })
 
-      const today = new Date().toISOString().split('T')[0]
-      const sections = [{ title: 'Today', content: briefing }]
-      if (monday && spark) sections.push({ title: `This week — ${spark.weekFocus}`, content: `Blog: ${spark.blogTitle}\nHook: ${spark.tiktokHook1}` })
-      if (monday && atlas) sections.push({ title: 'Market intel', content: atlas })
-
-      await sendDailyDigest(sections)
-
       const supabase = createServiceClient()
+      const todayStr = new Date().toISOString().split('T')[0]
       await supabase.from('agent_briefings').upsert({
-        briefing_date: today,
-        metrics: JSON.parse(briefingInput) as Record<string, unknown>,
+        briefing_date: todayStr,
+        metrics: JSON.parse(briefingData) as Record<string, unknown>,
         content: briefing,
         sent_to_telegram: true,
       }, { onConflict: 'briefing_date' })
 
+      await sendAlert(`Morning — ${weekdayDate()}`, briefing, 'info', 'basnet')
       await logAgentAction({ agentName: 'basnet', triggerType: trigger, outcome: briefing.slice(0, 200), durationMs: Date.now() - start })
       return NextResponse.json({ success: true, briefing })
+    }
+
+    // ── TRIGGER: weekly ────────────────────────────────────────────────
+    if (trigger === 'weekly') {
+      const stripe = await getStripeMetrics()
+      const [briefR, goalsR, atlasR] = await Promise.allSettled([
+        sparkWeeklyBrief({ newSignups: 0, mrr: stripe.mrr, mrrChange: stripe.mrrChange, churnThisWeek: stripe.churnThisWeek }),
+        relayGoalCheck(),
+        atlasWeeklyIntel(),
+      ])
+
+      const brief = briefR.status === 'fulfilled' ? briefR.value : null
+      const goals = goalsR.status === 'fulfilled' ? goalsR.value : null
+      const atlas = atlasR.status === 'fulfilled' ? atlasR.value : null
+
+      // Run brand monitoring in background — don't block weekly brief
+      atlasMonitorBrand().catch(() => null)
+
+      const summaryParts = [
+        brief ? `Week focus: ${brief.weekFocus}` : '',
+        brief ? `Blog: ${brief.blogTitle}` : '',
+        goals ? `Goals: ${goals.slice(0, 150)}` : '',
+      ]
+
+      if (atlas) {
+        summaryParts.push(`\nMarket intelligence this week:\n${atlas.summary}`)
+        if (atlas.actionItem) summaryParts.push(`Action: ${atlas.actionItem}`)
+      }
+
+      const summary = summaryParts.filter(Boolean).join('\n')
+
+      await sendAlert(`Weekly — ${weekdayDate()}`, summary, 'info', 'basnet')
+      await logAgentAction({ agentName: 'basnet', triggerType: trigger, outcome: summary.slice(0, 200), durationMs: Date.now() - start })
+      return NextResponse.json({ success: true, brief, goals, atlas })
     }
 
     // ── TRIGGER: ask ───────────────────────────────────────────────────
@@ -148,37 +176,69 @@ export async function POST(req: NextRequest) {
       let answer = ''
       let agentUsed = 'basnet'
 
-      if (cls === 'ENGINEERING') {
-        const flux = await runFlux().catch(() => null)
-        const context = flux ? `PAYG: ${flux.paygPassing ? '✓' : 'FAILING'}, Errors: ${flux.unresolvedErrors}, Deploy: ${flux.latestDeploymentStatus}` : ''
-        answer = await callClaude({ systemPrompt: `${BASNET_PERSONALITY}\n${masterContext.slice(0, 1000)}`, userMessage: `${context}\n\nQ: ${question}`, maxTokens: 400 })
-        agentUsed = 'flux'
-      } else if (cls === 'USER_HEALTH' || cls === 'REVENUE') {
-        const [relay, lift, stripe] = await Promise.all([runRelay().catch(() => null), liftScanForChurnRisk().catch(() => null), getStripeMetrics()])
-        const context = `MRR: $${stripe.mrr.toFixed(0)}, Onboarding gaps: ${relay?.onboardingGaps ?? 0}, At-risk: ${lift?.totalAtRisk ?? 0}, Payment issues: ${relay?.paymentIssues ?? 0}`
-        answer = await callClaude({ systemPrompt: `${BASNET_PERSONALITY}\n${masterContext.slice(0, 1000)}`, userMessage: `${context}\n\nQ: ${question}`, maxTokens: 400 })
-        agentUsed = 'relay+lift'
-      } else if (cls === 'PRODUCT_TEST') {
-        const scout = await runScout().catch(() => null)
-        const context = scout ? `Product status: ${scout.overallStatus}. Tests: ${scout.tests.filter(t => t.passed).length}/${scout.tests.length} passing.` : ''
-        answer = await callClaude({ systemPrompt: `${BASNET_PERSONALITY}\n${masterContext.slice(0, 1000)}`, userMessage: `${context}\n\nQ: ${question}`, maxTokens: 400 })
+      if (cls === 'QUALITY') {
+        const scout = await runScout()
+        const failing = scout.tests.filter(t => !t.pass)
+        answer = failing.length === 0
+          ? `All ${scout.tests.length} product tests passing. Product healthy.`
+          : `${failing.length} tests failing: ${failing.map(t => `${t.name} — ${t.actual}`).join(', ')}`
         agentUsed = 'scout'
+      } else if (cls === 'RETENTION') {
+        const lift = await runLift()
+        answer = lift.atRiskUsers.length === 0
+          ? `No at-risk users right now. ${lift.upgradeSignals} users near upgrade threshold.`
+          : `${lift.atRiskUsers.length} at-risk users. Top risk: ${lift.atRiskUsers[0]?.riskReason ?? 'unknown'}. Action: ${lift.atRiskUsers[0]?.action ?? 'check dashboard'}`
+        agentUsed = 'lift'
+      } else if (cls === 'MARKET') {
+        answer = await atlasResearch(question)
+        agentUsed = 'atlas'
+      } else if (cls === 'SAB_PRODUCT') {
+        answer = await fluxDiagnose(question)
+        agentUsed = 'flux'
+      } else if (cls === 'SAB_MARKETING') {
+        answer = await callClaude({
+          systemPrompt: `${BASNET_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1500)}`,
+          userMessage: question,
+          maxTokens: 400,
+        })
+        agentUsed = 'spark'
+      } else if (cls === 'PERSONAL') {
+        answer = await relayAnswer(question)
+        agentUsed = 'relay'
       } else {
-        answer = await callClaude({ systemPrompt: `${BASNET_PERSONALITY}\n${masterContext.slice(0, 2000)}`, userMessage: question, maxTokens: 500 })
+        answer = await callClaude({
+          systemPrompt: `${BASNET_PERSONALITY}\n\nContext: ${masterContext.slice(0, 2000)}`,
+          userMessage: question,
+          maxTokens: 500,
+        })
       }
+
+      answer = applyPersonality(answer)
 
       const supabase = createServiceClient()
       await supabase.from('agent_conversations').insert({ agent_name: agentUsed, question, answer, context_used: { classification: cls } })
       await logAgentAction({ agentName: 'basnet', triggerType: trigger, inputContext: { question, cls }, decision: agentUsed, durationMs: Date.now() - start })
-
       return NextResponse.json({ success: true, answer, agentUsed, classification: cls })
+    }
+
+    // ── TRIGGER: watch ─────────────────────────────────────────────────
+    if (trigger === 'watch') {
+      const report = await runWatcherCycle()
+      const alertsSent = await evaluateAndAlert(report, null)
+      const lastInsight = await getLastProactiveInsightTime()
+      if (!lastInsight || lastInsight < new Date(Date.now() - 3600000)) {
+        await proactiveInsight(report).catch(() => null)
+      }
+      await saveWatcherReport(report, alertsSent)
+      await logAgentAction({ agentName: 'basnet', triggerType: trigger, actionsTaken: { alertsSent }, outcome: 'watch cycle complete' })
+      return NextResponse.json({ success: true, alertsSent, timestamp: report.timestamp })
     }
 
     // ── TRIGGER: sentry_webhook ────────────────────────────────────────
     if (trigger === 'sentry_webhook') {
       const payload = body.payload ?? {}
       const errorType = payload.error as string | undefined
-      const fileName  = payload.file as string | undefined
+      const fileName  = payload.file  as string | undefined
       const message   = payload.message as string | undefined
       const count     = (payload.count as number | undefined) ?? 1
 
@@ -197,27 +257,26 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      const diagnosis = await fluxDiagnose(`${errorType}: ${message} (${fileName})`).catch(() => '')
+      const diagnosis = await fluxDiagnose(`${errorType}: ${message}`, fileName).catch(() => '')
       await sendAlert(`Sentry: ${errorType}`, `${message}\nFile: ${fileName}\nCount: ${count}\n\n${diagnosis}`, severity === 'critical' ? 'urgent' : 'warning', 'flux')
-
       await logAgentAction({ agentName: 'basnet', triggerType: trigger, inputContext: payload, decision: severity, durationMs: Date.now() - start })
       return NextResponse.json({ success: true, received: true, severity })
     }
 
     // ── TRIGGER: stripe_event ──────────────────────────────────────────
     if (trigger === 'stripe_event') {
-      const payload = body.payload ?? {}
+      const payload  = body.payload ?? {}
       const eventType = payload.type as string | undefined
 
       if (eventType === 'checkout.session.completed') {
         const plan = (payload.plan as string | undefined) ?? 'unknown'
-        await sendAlert(`New paid user — ${plan} plan`, `A user just upgraded to ${plan}. Total MRR is growing.`, 'info', 'basnet')
+        await sendAlert(`New paid user — ${plan}`, `User upgraded to ${plan}. MRR is growing.`, 'info', 'basnet')
       } else if (eventType === 'invoice.payment_failed') {
         const email = (payload.customer_email as string | undefined) ?? 'unknown'
-        await sendAlert(`Payment failed — ${email}`, `Failed payment for ${email}. Check Stripe for retry status.`, 'urgent', 'basnet')
+        await sendAlert(`Payment failed — ${email}`, `Failed payment for ${email}. Check Stripe for retry.`, 'urgent', 'basnet')
       } else if (eventType === 'customer.subscription.deleted') {
         const plan = (payload.plan as string | undefined) ?? 'unknown'
-        await sendAlert(`User churned — ${plan} plan`, `A ${plan} subscription was cancelled. Check Stripe for reason.`, 'warning', 'basnet')
+        await sendAlert(`User churned — ${plan}`, `${plan} subscription cancelled. Check Stripe for reason.`, 'warning', 'basnet')
       }
 
       await logAgentAction({ agentName: 'basnet', triggerType: trigger, inputContext: { eventType }, durationMs: Date.now() - start })
@@ -227,52 +286,11 @@ export async function POST(req: NextRequest) {
     // ── TRIGGER: new_signup ────────────────────────────────────────────
     if (trigger === 'new_signup') {
       const payload = body.payload ?? {}
-      const email  = payload.email as string | undefined
+      const email  = payload.email  as string | undefined
       const source = (payload.source as string | undefined) ?? 'direct'
-      await sendAlert(`New signup — ${source}`, `${email ?? 'new user'} just joined via ${source}.`, 'info', 'basnet')
+      await sendAlert(`New signup — ${source}`, `${email ?? 'new user'} joined via ${source}.`, 'info', 'basnet')
       await logAgentAction({ agentName: 'basnet', triggerType: trigger, inputContext: { email, source }, durationMs: Date.now() - start })
       return NextResponse.json({ success: true, received: true })
-    }
-
-    // ── TRIGGER: weekly_learn ──────────────────────────────────────────
-    if (trigger === 'weekly_learn') {
-      const supabase = createServiceClient()
-      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-      const [convR, briefR, errR] = await Promise.all([
-        supabase.from('agent_conversations').select('question, answer').gte('created_at', weekAgo).limit(20),
-        supabase.from('agent_briefings').select('content').gte('created_at', weekAgo).limit(7),
-        supabase.from('agent_error_log').select('error_type, resolved, frequency').gte('created_at', weekAgo).limit(10),
-      ])
-
-      const weekData = {
-        conversations: (convR.data ?? []).length,
-        briefings: (briefR.data ?? []).length,
-        errors: (errR.data ?? []).length,
-        resolvedErrors: (errR.data ?? []).filter(e => e.resolved).length,
-      }
-
-      const learning = await callClaude({
-        systemPrompt: `${BASNET_PERSONALITY}`,
-        userMessage: `You are Basnet reviewing your own week.\n\nData: ${JSON.stringify(weekData)}\n\nSample conversations: ${(convR.data ?? []).slice(0, 3).map(c => `Q: ${c.question}`).join('\n')}\n\nWhat worked? What failed? What should change? Write one paragraph. Specific. Honest.`,
-        maxTokens: 300,
-      })
-
-      const weekStart = new Date()
-      weekStart.setDate(weekStart.getDate() - 7)
-      const weekStartStr = weekStart.toISOString().split('T')[0]
-
-      await supabase.from('agent_learnings').insert({
-        week_start: weekStartStr, what_worked: learning, what_failed: '', decision_rules_updated: '', raw_content: learning,
-      })
-
-      const { fs, path } = await import('fs').then(m => ({ fs: m, path: require('path') as typeof import('path') }))
-      const learningsPath = path.join(process.cwd(), 'SANJOG_LEARNINGS.md')
-      const entry = `\n## Week of ${weekStartStr}\n\n${learning}\n\n---\n`
-      try { fs.appendFileSync(learningsPath, entry) } catch { /* non-fatal */ }
-
-      await sendWeeklyReport(learning)
-      await logAgentAction({ agentName: 'basnet', triggerType: trigger, outcome: learning.slice(0, 200), durationMs: Date.now() - start })
-      return NextResponse.json({ success: true, learning })
     }
 
     return NextResponse.json({ success: false, error: `Unknown trigger: ${trigger}` })
