@@ -92,6 +92,9 @@ const NAV_ICONS: Record<string, React.ReactElement> = {
   ),
 }
 
+const INACTIVITY_MS = 30 * 60 * 1000  // sign out after 30 min idle
+const WARN_MS       = 28 * 60 * 1000  // warn at 28 min (2 min before)
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -104,6 +107,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [showReferralModal, setShowReferralModal] = useState(false)
   const [referralLink, setReferralLink] = useState('')
+  const [showIdleWarning, setShowIdleWarning] = useState(false)
 
   useEffect(() => {
     const supabase = createBrowserClient()
@@ -172,6 +176,33 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
 
     init()
+  }, [router])
+
+  // Inactivity auto sign-out
+  useEffect(() => {
+    let warnTimer: ReturnType<typeof setTimeout>
+    let signOutTimer: ReturnType<typeof setTimeout>
+
+    function reset() {
+      clearTimeout(warnTimer)
+      clearTimeout(signOutTimer)
+      setShowIdleWarning(false)
+      warnTimer = setTimeout(() => setShowIdleWarning(true), WARN_MS)
+      signOutTimer = setTimeout(async () => {
+        await createBrowserClient().auth.signOut()
+        router.replace('/login')
+      }, INACTIVITY_MS)
+    }
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'] as const
+    events.forEach(e => window.addEventListener(e, reset, { passive: true }))
+    reset()
+
+    return () => {
+      clearTimeout(warnTimer)
+      clearTimeout(signOutTimer)
+      events.forEach(e => window.removeEventListener(e, reset))
+    }
   }, [router])
 
   async function handleSignOut() {
@@ -394,6 +425,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             )}
           </header>
+
+          {showIdleWarning && (
+            <div style={{
+              background: 'rgba(201,147,58,0.12)',
+              borderBottom: '1px solid rgba(201,147,58,0.3)',
+              padding: '0.6rem 1.5rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap',
+            }}>
+              <p style={{ fontSize: '0.875rem', color: '#B8832A', fontWeight: 500, margin: 0 }}>
+                ⏱ You&apos;ll be signed out in 2 minutes due to inactivity.
+              </p>
+              <button
+                onClick={() => setShowIdleWarning(false)}
+                style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#B8832A', background: 'none', border: '1px solid rgba(201,147,58,0.4)', borderRadius: 6, padding: '0.25rem 0.75rem', cursor: 'pointer' }}
+              >
+                Stay signed in
+              </button>
+            </div>
+          )}
 
           {profile.subscription_status === 'past_due' && (
             <div style={{

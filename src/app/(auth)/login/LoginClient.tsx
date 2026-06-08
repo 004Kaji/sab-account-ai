@@ -77,6 +77,8 @@ export default function LoginPage() {
     setGoogleLoading(true)
     try {
       const supabase = createBrowserClient()
+      // Clear any stale admin redirect that may have been left by a previous session
+      localStorage.removeItem('post_auth_redirect')
       await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {

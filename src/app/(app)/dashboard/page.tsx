@@ -683,6 +683,23 @@ export default function DashboardPage() {
   const fyLabel   = fyRange().fy_label
   const monthName = new Date().toLocaleString('en-AU', { month: 'long' })
 
+  // ── Onboarding checklist ─────────────────────────────────────────
+  const hasBusinessName = !!(profile.business_name?.trim())
+  const hasInvoice      = invoices.length > 0
+  const hasClient       = invoices.some(inv => inv.client_name?.trim())
+  const allDone         = hasBusinessName && hasInvoice && hasClient
+
+  const [checklistDismissed, setChecklistDismissed] = useState(() => {
+    try { return localStorage.getItem(`onboarding_dismissed_${profile.id}`) === '1' } catch { return false }
+  })
+
+  function dismissChecklist() {
+    try { localStorage.setItem(`onboarding_dismissed_${profile.id}`, '1') } catch {}
+    setChecklistDismissed(true)
+  }
+
+  const showChecklist = !checklistDismissed && !allDone
+
   if (loading) {
     return (
       <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -713,6 +730,96 @@ export default function DashboardPage() {
           </Link>
         </div>
       </div>
+
+      {/* ── Onboarding checklist ───────────────────────────────── */}
+      {showChecklist && (
+        <div style={{
+          background: 'white', border: '1px solid var(--border)',
+          borderRadius: 'var(--r2)', padding: '1.25rem 1.5rem',
+          marginBottom: '1.5rem', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div>
+              <p style={{ fontWeight: 700, color: 'var(--char)', margin: '0 0 0.2rem', fontSize: '0.95rem' }}>
+                Get started — 3 quick steps
+              </p>
+              <p style={{ color: 'var(--text3)', fontSize: '0.8rem', margin: 0 }}>
+                Complete these to get the most out of SAB Account AI
+              </p>
+            </div>
+            <button
+              onClick={dismissChecklist}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: '1.1rem', padding: '0.25rem', lineHeight: 1 }}
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+            {[
+              {
+                done: hasBusinessName,
+                label: 'Add your business name',
+                sub: 'So your invoices look professional',
+                href: '/settings?tab=business',
+              },
+              {
+                done: hasInvoice,
+                label: 'Create your first invoice',
+                sub: 'ATO-compliant, takes under 2 minutes',
+                href: '/invoice',
+              },
+              {
+                done: hasClient,
+                label: 'Add your first client',
+                sub: 'Save client details for repeat invoices',
+                href: '/clients',
+              },
+            ].map(step => (
+              <div key={step.label} style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+                <div style={{
+                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                  background: step.done ? 'rgba(34,197,94,0.12)' : 'var(--cream)',
+                  border: `2px solid ${step.done ? '#16a34a' : 'var(--border)'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {step.done && <span style={{ color: '#16a34a', fontSize: '0.7rem', fontWeight: 700 }}>✓</span>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <span style={{
+                    fontSize: '0.875rem', fontWeight: 500,
+                    color: step.done ? 'var(--text3)' : 'var(--char)',
+                    textDecoration: step.done ? 'line-through' : 'none',
+                  }}>
+                    {step.label}
+                  </span>
+                  {!step.done && <span style={{ fontSize: '0.78rem', color: 'var(--text3)', marginLeft: '0.5rem' }}>{step.sub}</span>}
+                </div>
+                {!step.done && (
+                  <Link href={step.href} style={{
+                    fontSize: '0.78rem', fontWeight: 600, color: 'var(--ember)',
+                    textDecoration: 'none', whiteSpace: 'nowrap',
+                  }}>
+                    Go →
+                  </Link>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop: '1rem', background: 'var(--cream)', borderRadius: 'var(--r)', height: 6, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', borderRadius: 'var(--r)', background: 'var(--ember)',
+              width: `${([hasBusinessName, hasInvoice, hasClient].filter(Boolean).length / 3) * 100}%`,
+              transition: 'width 0.4s ease',
+            }} />
+          </div>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text3)', margin: '0.4rem 0 0' }}>
+            {[hasBusinessName, hasInvoice, hasClient].filter(Boolean).length} of 3 complete
+          </p>
+        </div>
+      )}
 
       {/* ── KPI cards ──────────────────────────────────────────── */}
       <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))', gap: '1rem', marginBottom: '2rem' }}>
