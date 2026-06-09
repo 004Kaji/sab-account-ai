@@ -98,8 +98,13 @@ export async function POST(req: NextRequest) {
         agentUsed = 'flux'
       }
     } else if (classification === 'USER_HEALTH') {
-      const lift = await liftScanForChurnRisk().catch(() => null)
-      subAgentContext = `At-risk: ${lift?.totalAtRisk ?? 0}. MRR: $${stripeMetrics.mrr.toFixed(0)}`
+      const supabase = createServiceClient()
+      const [lift, totalR, paidR] = await Promise.all([
+        liftScanForChurnRisk().catch(() => null),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).neq('plan', 'free'),
+      ])
+      subAgentContext = `Total users: ${totalR.count ?? 0}. Paid users: ${paidR.count ?? 0}. At-risk: ${lift?.totalAtRisk ?? 0}. MRR: $${stripeMetrics.mrr.toFixed(0)}`
       agentUsed = 'lift'
     } else if (classification === 'MARKET_INTEL') {
       const intel = await atlasResearch(question).catch(() => null)

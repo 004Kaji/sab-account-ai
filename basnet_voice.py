@@ -1,6 +1,6 @@
 """
 Basnet Voice — runs on MacBook only. NOT deployed to Vercel.
-Say "Hey Basnet" to wake, then ask your question.
+Press Enter to speak, Basnet listens for 8 seconds and responds.
 Calls /api/agents/voice and speaks the response.
 
 Requirements: pip3 install -r basnet_requirements.txt
@@ -10,11 +10,16 @@ Requirements: pip3 install -r basnet_requirements.txt
 import asyncio
 import httpx
 import os
+import ssl
 import subprocess
 import tempfile
 from pathlib import Path
 
-AGENT_URL        = "https://sabaccountai.com.au/api/agents/voice"
+# Fix SSL certificate issue on Mac
+ssl._create_default_https_context = ssl._create_unverified_context
+os.environ['PYTHONHTTPSVERIFY'] = '0'
+
+AGENT_URL        = "https://sabaccountai.com/api/agents/voice"
 WEBHOOK_SECRET   = os.environ.get("AGENT_WEBHOOK_SECRET", "")
 ELEVENLABS_KEY   = os.environ.get("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE = os.environ.get("ELEVENLABS_VOICE_ID", "")
@@ -25,12 +30,13 @@ async def transcribe(audio_path: str) -> str:
     subprocess.run(
         [
             "whisper", audio_path,
-            "--model", "base",
+            "--model", "tiny",
             "--language", "en",
             "--output_format", "txt",
             "--output_dir", "/tmp",
         ],
         capture_output=True,
+        env={**os.environ, "PYTHONHTTPSVERIFY": "0"},
     )
     if txt_path.exists():
         text = txt_path.read_text().strip()
@@ -49,29 +55,10 @@ async def record(seconds: int = 8) -> str:
     return tmp
 
 
-def detect_wake(audio_path: str) -> bool:
-    txt_path = Path("/tmp") / (Path(audio_path).stem + ".txt")
-    subprocess.run(
-        [
-            "whisper", audio_path,
-            "--model", "tiny",
-            "--language", "en",
-            "--output_format", "txt",
-            "--output_dir", "/tmp",
-        ],
-        capture_output=True,
-    )
-    if txt_path.exists():
-        text = txt_path.read_text().lower()
-        txt_path.unlink(missing_ok=True)
-        return any(w in text for w in ["basnet", "hey basnet", "bas net"])
-    return False
-
-
 async def ask_basnet(text: str) -> str:
     if not WEBHOOK_SECRET:
         return "AGENT_WEBHOOK_SECRET not set."
-    async with httpx.AsyncClient(timeout=15) as c:
+    async with httpx.AsyncClient(timeout=20) as c:
         try:
             r = await c.post(AGENT_URL, json={
                 "secret": WEBHOOK_SECRET,
@@ -84,7 +71,6 @@ async def ask_basnet(text: str) -> str:
 
 
 async def speak(text: str):
-    # Option A: ElevenLabs (if key set)
     if ELEVENLABS_KEY and ELEVENLABS_VOICE:
         async with httpx.AsyncClient() as c:
             try:
@@ -108,48 +94,43 @@ async def speak(text: str):
                     Path(tmp).unlink(missing_ok=True)
                     return
             except Exception:
-                pass  # Fall through to Mac say
+                pass
 
-    # Option B: Mac built-in (free fallback)
     clean = text.replace("'", "").replace('"', "")
     subprocess.run(["say", "-v", "Daniel", clean])
 
 
 async def main():
     print("=" * 50)
-    print("Basnet Voice — Running")
-    print("Say 'Hey Basnet' to start")
+    print("Basnet Voice — Ready")
+    print("Press ENTER to speak, then talk for 8 seconds")
     print("Ctrl+C to stop")
     if not ELEVENLABS_KEY:
-        print("No ElevenLabs key — using Mac say")
+        print("Using Mac say (no ElevenLabs key)")
     if not WEBHOOK_SECRET:
         print("WARNING: AGENT_WEBHOOK_SECRET not set")
     print("=" * 50)
 
-    await speak("Basnet online. Watching SAB Account AI. Say hey Basnet anytime.")
+    await speak("Basnet online. Press Enter to speak.")
 
     while True:
         try:
-            wake_audio = await record(seconds=3)
-            detected   = detect_wake(wake_audio)
-            Path(wake_audio).unlink(missing_ok=True)
-
-            if not detected:
-                continue
-
-            # Wake word detected
+            input("\nPress Enter to speak...")
             subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"])
-            print("\n[Listening...]")
+            print("[Recording for 8 seconds — speak now...]")
 
             q_audio  = await record(seconds=8)
+            print("[Transcribing...]")
             question = await transcribe(q_audio)
             Path(q_audio).unlink(missing_ok=True)
 
             if not question or len(question) < 3:
-                await speak("Did not catch that.")
+                print("[Could not hear you clearly]")
+                await speak("Did not catch that. Try again.")
                 continue
 
             print(f"You:    {question}")
+            print("[Thinking...]")
             answer = await ask_basnet(question)
             print(f"Basnet: {answer}\n")
             await speak(answer)
@@ -160,7 +141,7 @@ async def main():
             break
         except Exception as e:
             print(f"Error: {e}")
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
 
 
 if __name__ == "__main__":
