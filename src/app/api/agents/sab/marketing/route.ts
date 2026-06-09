@@ -213,7 +213,7 @@ Return ONLY valid JSON (no markdown):
 
         try {
           await resend.emails.send({
-            from: 'Sanjog Basnet <sanjog@sabaccountai.com.au>',
+            from: 'Sanjog Basnet <basnet@sabaccountai.com>',
             to: accountant.email,
             subject: emailJSON.subject,
             text: emailJSON.body,
