@@ -77,10 +77,12 @@ export async function POST(req: NextRequest) {
     let subAgentContext = ''
     let agentUsed = 'basnet'
 
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
+    const githubRepo = process.env.GITHUB_REPO ?? ''
+
     if (classification === 'PERSONAL') {
-      // Relay handles personal questions natively
-      const answer = await relayAnswer(question, 'voice')
-      const clean = stripMarkdown(applyPersonality(answer))
+      const result = await relayAnswer(question, 'voice')
+      const clean = stripMarkdown(applyPersonality(result.answer))
 
       await logAgentAction({
         agentName: 'voice', triggerType: mode,
@@ -88,14 +90,17 @@ export async function POST(req: NextRequest) {
         decision: 'relay', outcome: 'answered', durationMs: Date.now() - start,
       })
 
-      return NextResponse.json({ response: clean, agentUsed: 'relay', classification })
+      return NextResponse.json({ response: clean, agentUsed: 'relay', classification, url: result.url })
     }
+
+    let actionUrl: string | undefined
 
     if (classification === 'ENGINEERING') {
       const flux = await runFlux().catch(() => null)
       if (flux) {
         subAgentContext = `PAYG: ${flux.payg.allPassing ? 'all passing' : 'FAILING'}, new errors: ${flux.sentry.newErrors.length}, status: ${flux.overall}`
         agentUsed = 'flux'
+        actionUrl = githubRepo ? `https://github.com/${githubRepo}/issues` : `${appUrl}/dashboard/agent`
       }
     } else if (classification === 'USER_HEALTH') {
       const supabase = createServiceClient()
@@ -106,9 +111,16 @@ export async function POST(req: NextRequest) {
       ])
       subAgentContext = `Total users: ${totalR.count ?? 0}. Paid users: ${paidR.count ?? 0}. At-risk: ${lift?.totalAtRisk ?? 0}. MRR: $${stripeMetrics.mrr.toFixed(0)}`
       agentUsed = 'lift'
+      actionUrl = `${appUrl}/dashboard/agent`
     } else if (classification === 'MARKET_INTEL') {
       const intel = await atlasResearch(question).catch(() => null)
-      if (intel) { subAgentContext = intel; agentUsed = 'atlas' }
+      if (intel) {
+        subAgentContext = intel
+        agentUsed = 'atlas'
+        // Extract first URL from atlas research if present
+        const urlMatch = intel.match(/https?:\/\/[^\s)]+/)
+        actionUrl = urlMatch ? urlMatch[0] : undefined
+      }
     }
 
     const systemPrompt = `${VOICE_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1500)}`
@@ -120,7 +132,6 @@ export async function POST(req: NextRequest) {
 
     const raw = await callClaude({ systemPrompt, userMessage, maxTokens: 120 })
 
-    // Enforce voice constraints
     const clean = stripMarkdown(applyPersonality(raw))
     const sentences = clean.split(/[.!?]+/).filter(s => s.trim().length > 0)
     const response = sentences.slice(0, 2).join('. ').trim() + (sentences.length > 0 ? '.' : '')
@@ -139,7 +150,7 @@ export async function POST(req: NextRequest) {
       decision: agentUsed, outcome: 'answered', durationMs: Date.now() - start,
     })
 
-    return NextResponse.json({ response, agentUsed, classification })
+    return NextResponse.json({ response, agentUsed, classification, url: actionUrl })
 
   } catch (err) {
     Sentry.captureException(err, { tags: { agent: 'voice' } })

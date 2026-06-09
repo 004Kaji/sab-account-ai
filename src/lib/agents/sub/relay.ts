@@ -68,7 +68,12 @@ function needsWebSearch(question: string): boolean {
   return WEB_SEARCH_TRIGGERS.some(t => q.includes(t))
 }
 
-export async function relayAnswer(question: string, mode?: 'voice' | 'text' | 'local'): Promise<string> {
+export interface RelayResult {
+  answer: string
+  url?: string
+}
+
+export async function relayAnswer(question: string, mode?: 'voice' | 'text' | 'local'): Promise<RelayResult> {
   const start = Date.now()
   const supabase = createServiceClient()
 
@@ -83,9 +88,8 @@ export async function relayAnswer(question: string, mode?: 'voice' | 'text' | 'l
         context_used: { mode: 'local', source: 'mac-agent' },
       })
       await logSubAgent('relay', 'answer_local', question.slice(0, 100), localAnswer.slice(0, 200), Date.now() - start, true)
-      return localAnswer
+      return { answer: localAnswer }
     }
-    // Fall through to cloud answer if local is offline
   }
 
   const [master, recentR] = await Promise.allSettled([
@@ -98,11 +102,13 @@ export async function relayAnswer(question: string, mode?: 'voice' | 'text' | 'l
   const recentConvs = recentR.status === 'fulfilled' ? (recentR.value.data ?? []) as ConvRow[] : []
   const conversationContext = recentConvs.map(c => `Q: ${c.question}\nA: ${c.answer}`).join('\n\n')
 
-  // Web search for questions that need current information (voice uses shorter results)
+  // Web search for questions that need current information
   let webContext = ''
+  let topUrl: string | undefined
   if (needsWebSearch(question)) {
     const searchQuery = `${question} Australia 2026`
     const results = await tavilySearch(searchQuery, { maxResults: 3, includeAnswer: true })
+    if (results.results.length > 0) topUrl = results.results[0].url
     if (results.answer) {
       webContext = `\n\nLive web search results for "${searchQuery}":\n${results.answer}`
     } else if (results.results.length > 0) {
@@ -134,11 +140,11 @@ Full context:\n${masterCtx}${webContext}`
     agent_name: 'relay',
     question,
     answer,
-    context_used: { mode: mode ?? 'text', webSearchUsed: webContext.length > 0 },
+    context_used: { mode: mode ?? 'text', webSearchUsed: hasWebResults, topUrl },
   })
 
   await logSubAgent('relay', 'answer', question.slice(0, 100), answer.slice(0, 200), Date.now() - start, true)
-  return answer
+  return { answer, url: topUrl }
 }
 
 function parseDateFromMaster(content: string, pattern: RegExp): string | null {

@@ -203,7 +203,7 @@ Direct. Specific numbers. Basnet voice.`,
         })
         agentUsed = 'spark'
       } else if (cls === 'PERSONAL') {
-        answer = await relayAnswer(question)
+        answer = (await relayAnswer(question)).answer
         agentUsed = 'relay'
       } else {
         answer = await callClaude({

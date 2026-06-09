@@ -55,9 +55,9 @@ async def record(seconds: int = 8) -> str:
     return tmp
 
 
-async def ask_basnet(text: str) -> str:
+async def ask_basnet(text: str) -> tuple[str, str | None]:
     if not WEBHOOK_SECRET:
-        return "AGENT_WEBHOOK_SECRET not set."
+        return "AGENT_WEBHOOK_SECRET not set.", None
     async with httpx.AsyncClient(timeout=20) as c:
         try:
             r = await c.post(AGENT_URL, json={
@@ -65,9 +65,27 @@ async def ask_basnet(text: str) -> str:
                 "input":  text,
                 "mode":   "voice",
             })
-            return r.json().get("response", "Could not reach Basnet.")
+            data = r.json()
+            return data.get("response", "Could not reach Basnet."), data.get("url")
         except Exception as e:
-            return f"Connection error: {e}"
+            return f"Connection error: {e}", None
+
+
+YES_WORDS = {"yes", "yeah", "yep", "sure", "open", "show", "go", "do it", "ok", "okay", "please"}
+
+def is_yes(text: str) -> bool:
+    return any(w in text.lower() for w in YES_WORDS)
+
+
+async def ask_to_open_browser(url: str) -> bool:
+    await speak("Want me to open that in your browser?")
+    subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"])
+    print("[Listening for 3 seconds...]")
+    audio = await record(seconds=3)
+    reply = await transcribe(audio)
+    Path(audio).unlink(missing_ok=True)
+    print(f"[You said: {reply}]")
+    return is_yes(reply)
 
 
 async def speak(text: str):
@@ -131,9 +149,18 @@ async def main():
 
             print(f"You:    {question}")
             print("[Thinking...]")
-            answer = await ask_basnet(question)
+            answer, url = await ask_basnet(question)
             print(f"Basnet: {answer}\n")
             await speak(answer)
+
+            # Offer to open browser if a URL was returned
+            if url:
+                print(f"[URL available: {url}]")
+                should_open = await ask_to_open_browser(url)
+                if should_open:
+                    print(f"[Opening {url}]")
+                    subprocess.run(["open", url])
+                    await speak("Opening now.")
 
         except KeyboardInterrupt:
             print("\nBasnet signing off.")

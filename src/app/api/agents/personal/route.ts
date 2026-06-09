@@ -26,9 +26,9 @@ export async function POST(req: NextRequest) {
     if (trigger === 'ask') {
       const question = body.question ?? ''
       if (!question) return NextResponse.json({ success: false, error: 'question required' })
-      const answer = await relayAnswer(question)
+      const result = await relayAnswer(question)
       await logAgentAction({ agentName: 'personal', triggerType: trigger, inputContext: { question }, durationMs: Date.now() - start })
-      return NextResponse.json({ success: true, answer })
+      return NextResponse.json({ success: true, answer: result.answer, url: result.url })
     }
 
     // ── TRIGGER: visa ──────────────────────────────────────────────────
