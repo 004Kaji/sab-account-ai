@@ -72,10 +72,36 @@ async def ask_basnet(text: str) -> tuple[str, str | None]:
 
 
 YES_WORDS = {"yes", "yeah", "yep", "sure", "open", "show", "go", "do it", "ok", "okay", "please"}
+FILTER_WORDS = {"filter", "sort", "recent", "latest", "new", "today", "date", "newest"}
 
 def is_yes(text: str) -> bool:
     return any(w in text.lower() for w in YES_WORDS)
 
+def is_filter_request(text: str) -> bool:
+    return any(w in text.lower() for w in FILTER_WORDS)
+
+def build_filtered_url(base_url: str, request: str) -> str:
+    """Build a filtered version of a URL based on a natural language request."""
+    r = request.lower()
+    # SEEK — add sort by date
+    if "seek.com" in base_url and any(w in r for w in ["recent", "latest", "new", "date", "newest", "today"]):
+        sep = "&" if "?" in base_url else "?"
+        return base_url + sep + "sortmode=ListedDate"
+    # LinkedIn — sort by recent
+    if "linkedin.com" in base_url and any(w in r for w in ["recent", "latest", "new", "date"]):
+        sep = "&" if "?" in base_url else "?"
+        return base_url + sep + "f_TPR=r86400"  # last 24 hours
+    return base_url
+
+def open_in_chrome(url: str):
+    """Open URL as a new tab in existing Chrome window."""
+    result = subprocess.run(
+        ["open", "-a", "Google Chrome", url],
+        capture_output=True
+    )
+    if result.returncode != 0:
+        # Fallback to default browser
+        subprocess.run(["open", url])
 
 async def ask_to_open_browser(url: str) -> bool:
     await speak("Want me to open that in your browser?")
@@ -131,6 +157,8 @@ async def main():
 
     await speak("Basnet online. Press Enter to speak.")
 
+    last_url: str | None = None  # track last opened URL for follow-up navigation
+
     while True:
         try:
             input("\nPress Enter to speak...")
@@ -148,6 +176,16 @@ async def main():
                 continue
 
             print(f"You:    {question}")
+
+            # Handle follow-up filter/navigation on the last opened URL
+            if last_url and is_filter_request(question):
+                filtered = build_filtered_url(last_url, question)
+                print(f"[Navigating to: {filtered}]")
+                open_in_chrome(filtered)
+                last_url = filtered
+                await speak("Done. Filtered by most recent.")
+                continue
+
             print("[Thinking...]")
             answer, url = await ask_basnet(question)
             print(f"Basnet: {answer}\n")
@@ -159,8 +197,9 @@ async def main():
                 should_open = await ask_to_open_browser(url)
                 if should_open:
                     print(f"[Opening {url}]")
-                    subprocess.run(["open", url])
-                    await speak("Opening now.")
+                    open_in_chrome(url)
+                    last_url = url
+                    await speak("Opening now. Press Enter to ask a follow-up.")
 
         except KeyboardInterrupt:
             print("\nBasnet signing off.")
