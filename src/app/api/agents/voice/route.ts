@@ -166,9 +166,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         response: clean, agentUsed: 'relay', classification,
         url: result.url,
-        warning:     meta.warning,
-        topic:       meta.topic,
-        is_complete: meta.isComplete,
+        warning:         meta.warning,
+        topic:           meta.topic,
+        is_complete:     meta.isComplete && history.length >= 2,
         next_suggestion: meta.nextSuggestion,
       })
     }
@@ -203,24 +203,48 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const systemPrompt = `${VOICE_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1500)}`
+    const historyText = history.slice(-3).map(h => `Q: ${h.q}\nA: ${h.a}`).join('\n')
+
+    const systemPrompt = `${VOICE_PERSONALITY}
+
+Context: ${masterContext.slice(0, 1200)}
+
+You must return ONLY valid JSON with these fields:
+- "response": your spoken answer (2 sentences max, plain English, no markdown)
+- "warning": one sentence if the answer involves visa risk, PR risk, or working over 48h/fortnight — null if safe
+- "topic": 3-4 words for the current topic (e.g. "Darwin part-time jobs")
+- "is_complete": true only if the topic is fully resolved AND at least 2 exchanges have happened — false otherwise
+- "next_suggestion": if is_complete is true, one sentence on what to discuss next — null otherwise`
+
     const userMessage = [
-      subAgentContext   ? `Live data: ${subAgentContext}` : '',
-      conversationContext ? `Recent conversation:\n${conversationContext}` : '',
-      currentTopic      ? `Current topic: ${currentTopic}` : '',
+      subAgentContext     ? `Live data: ${subAgentContext}` : '',
+      historyText         ? `Recent conversation:\n${historyText}` : '',
+      currentTopic        ? `Current topic: ${currentTopic}` : '',
+      `Exchanges so far this topic: ${history.length}`,
       `Question: ${question}`,
     ].filter(Boolean).join('\n\n')
 
-    const raw = await callClaude({ systemPrompt, userMessage, maxTokens: 150 })
+    const raw = await callClaude({ systemPrompt, userMessage, maxTokens: 250, expectJson: true })
 
-    const clean = stripMarkdown(applyPersonality(raw))
-    const sentences = clean.split(/[.!?]+/).filter(s => s.trim().length > 0)
-    const response = sentences.slice(0, 2).join('. ').trim() + (sentences.length > 0 ? '.' : '')
+    let response = ''
+    let meta: ResponseMeta = { warning: null, topic: currentTopic ?? 'general', isComplete: false, nextSuggestion: null }
 
-    // Risk + topic analysis
-    const meta = await analyseResponse({
-      question, answer: response, currentTopic, masterContext, history,
-    })
+    try {
+      type Combined = { response?: string; warning?: string | null; topic?: string; is_complete?: boolean; next_suggestion?: string | null }
+      const parsed = JSON.parse(raw) as Combined
+      response = stripMarkdown(applyPersonality(parsed.response ?? ''))
+      meta = {
+        warning:        parsed.warning ?? null,
+        topic:          parsed.topic ?? currentTopic ?? 'general',
+        isComplete:     (parsed.is_complete ?? false) && history.length >= 2,
+        nextSuggestion: parsed.next_suggestion ?? null,
+      }
+    } catch {
+      response = stripMarkdown(applyPersonality(raw))
+    }
+
+    const sentences = response.split(/[.!?]+/).filter(s => s.trim().length > 0)
+    response = sentences.slice(0, 2).join('. ').trim() + (sentences.length > 0 ? '.' : '')
 
     const supabase = createServiceClient()
     await supabase.from('agent_conversations').insert({

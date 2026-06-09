@@ -14,6 +14,7 @@ import ssl
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 # Fix SSL certificate issue on Mac
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -57,8 +58,8 @@ async def record(seconds: int = 8) -> str:
 
 async def ask_basnet(
     text: str,
-    history: list[dict],
-    current_topic: str | None,
+    history: list,
+    current_topic: Optional[str],
 ) -> dict:
     if not WEBHOOK_SECRET:
         return {"response": "AGENT_WEBHOOK_SECRET not set.", "url": None, "warning": None,
@@ -164,9 +165,9 @@ async def main():
 
     await speak("Basnet online. Press Enter to speak.")
 
-    last_url:      str | None = None   # last opened URL for follow-up navigation
-    history:       list[dict] = []     # session conversation history
-    current_topic: str | None = None   # active topic being discussed
+    last_url = None       # last opened URL for follow-up navigation
+    history = []          # session conversation history
+    current_topic = None  # active topic being discussed
 
     while True:
         try:
