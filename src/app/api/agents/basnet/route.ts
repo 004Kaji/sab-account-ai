@@ -29,7 +29,7 @@ const KEYWORDS: Record<QuestionClass, string[]> = {
   MARKET:        ['competitor', 'xero', 'myob', 'market', 'news', 'ato update', 'law change', 'payday super news', 'pricing', 'what are competitors'],
   SAB_PRODUCT:   ['error', 'bug', 'build', 'stripe webhook', 'supabase', 'sentry', 'deploy', 'code', 'payg', 'test', 'rls', 'ssl', 'security'],
   SAB_MARKETING: ['tiktok', 'blog', 'post', 'content', 'what to write', 'topic', 'hook', 'linkedin', 'facebook', 'accountant', 'email', 'signup'],
-  PERSONAL:      ['visa', 'pr', 'university', 'goals', 'dream', 'north star', 'tired', 'overwhelmed', 'should i', 'what do i do', 'how am i'],
+  PERSONAL:      ['visa', 'pr', 'university', 'goals', 'dream', 'north star', 'tired', 'overwhelmed', 'should i', 'what do i do', 'how am i', 'sub-agent', 'who are you', 'what can you do', 'tell me about you', 'your agents', 'your name'],
   GENERAL:       [],
 }
 

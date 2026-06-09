@@ -18,7 +18,7 @@ const KEYWORDS: Record<QuestionClass, string[]> = {
   ENGINEERING:  ['error', 'bug', 'build', 'stripe webhook', 'supabase', 'sentry', 'deploy', 'code', 'payg', 'test', 'rls'],
   USER_HEALTH:  ['user', 'churn', 'signup', 'retention', 'mrr', 'revenue', 'paid users'],
   MARKET_INTEL: ['competitor', 'xero', 'myob', 'market', 'ato update', 'payday super'],
-  PERSONAL:     ['visa', 'pr', 'university', 'goals', 'dream', 'north star', 'tired', 'overwhelmed'],
+  PERSONAL:     ['visa', 'pr', 'university', 'goals', 'dream', 'north star', 'tired', 'overwhelmed', 'sub-agent', 'agent', 'what can you do', 'who are you', 'tell me about you', 'your name'],
   GENERAL:      [],
 }
 

@@ -30,7 +30,7 @@ async def transcribe(audio_path: str) -> str:
     subprocess.run(
         [
             "whisper", audio_path,
-            "--model", "tiny",
+            "--model", "small.en",
             "--language", "en",
             "--output_format", "txt",
             "--output_dir", "/tmp",
