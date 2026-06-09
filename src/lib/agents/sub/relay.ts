@@ -111,7 +111,7 @@ export async function relayAnswer(question: string, mode?: 'voice' | 'text' | 'l
   }
 
   const systemPrompt = mode === 'voice'
-    ? `${VOICE_PERSONALITY}\n\nFull context:\n${masterCtx}`
+    ? `${VOICE_PERSONALITY}\n\nFull context:\n${masterCtx}${webContext}`
     : `${RELAY_IDENTITY}\n\nFull context:\n${masterCtx}${webContext}`
 
   const userMessage = [
