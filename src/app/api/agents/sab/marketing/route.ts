@@ -12,7 +12,7 @@ import {
   getSABMetrics,
   getStripeMetrics,
   isRateLimited,
-} from '@/lib/agents/utils'
+} from '@/lib/agents/toolkits/sab-marketing-toolkit'
 
 type WeeklyBriefJSON = {
   focus_this_week: string

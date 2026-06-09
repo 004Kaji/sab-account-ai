@@ -42,6 +42,14 @@ type ContentBrief = {
 
 type SubAgentStatus = Record<string, { lastRun: string; success: boolean }>
 
+type ApprovalItem = {
+  id: string
+  platform: string
+  content: string
+  status: string
+  createdAt: string
+}
+
 type DashboardData = {
   briefing?: { briefing_date: string; content: string; sent_to_telegram: boolean } | null
   conversations?: ConvRow[]
@@ -100,20 +108,31 @@ function deriveStatus(watcher: WatcherSummary | undefined): Record<string, Syste
 // ── Main page ─────────────────────────────────────────────────────────
 
 export default function AgentPage() {
-  const [data, setData]         = useState<DashboardData>({})
-  const [loading, setLoading]   = useState(true)
-  const [question, setQuestion] = useState('')
-  const [exchanges, setExchanges] = useState<{ q: string; a: string; agent: string }[]>([])
-  const [asking, setAsking]     = useState(false)
-  const textareaRef             = useRef<HTMLTextAreaElement>(null)
+  const [data, setData]             = useState<DashboardData>({})
+  const [loading, setLoading]       = useState(true)
+  const [question, setQuestion]     = useState('')
+  const [exchanges, setExchanges]   = useState<{ q: string; a: string; agent: string }[]>([])
+  const [asking, setAsking]         = useState(false)
+  const [approvals, setApprovals]   = useState<ApprovalItem[]>([])
+  const [approving, setApproving]   = useState<string | null>(null)
+  const textareaRef                 = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => { document.title = 'Basnet — SAB Account AI' }, [])
 
   const loadData = useCallback(async () => {
     try {
-      const res = await fetch('/api/agents/dashboard-data')
-      const json = await res.json() as DashboardData
-      setData(json)
+      const [dashRes, approvalRes] = await Promise.allSettled([
+        fetch('/api/agents/dashboard-data'),
+        fetch('/api/agents/approvals'),
+      ])
+      if (dashRes.status === 'fulfilled') {
+        const json = await dashRes.value.json() as DashboardData
+        setData(json)
+      }
+      if (approvalRes.status === 'fulfilled') {
+        const json = await approvalRes.value.json() as { queue?: ApprovalItem[] }
+        setApprovals(json.queue ?? [])
+      }
     } catch { /* non-fatal */ } finally {
       setLoading(false)
     }
@@ -124,6 +143,20 @@ export default function AgentPage() {
     const interval = setInterval(loadData, 60000)
     return () => clearInterval(interval)
   }, [loadData])
+
+  async function handleApproval(id: string, action: 'approve' | 'reject') {
+    setApproving(id)
+    try {
+      await fetch('/api/agents/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action }),
+      })
+      setApprovals(prev => prev.filter(a => a.id !== id))
+    } catch { /* non-fatal */ } finally {
+      setApproving(null)
+    }
+  }
 
   async function handleAsk(e: React.FormEvent) {
     e.preventDefault()
@@ -366,6 +399,42 @@ export default function AgentPage() {
             ) : (
               <p style={{ fontSize: '0.875rem', color: 'var(--text3)' }}>Atlas runs Monday 6am AEST with web search.</p>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Section G — Pending Social Approvals */}
+      {approvals.length > 0 && (
+        <div style={{ marginTop: '1.25rem', background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1.5rem' }}>
+          <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--char)', marginBottom: '1rem' }}>
+            Pending Posts — {approvals.length} waiting for approval
+          </h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+            {approvals.map(a => (
+              <div key={a.id} style={{ padding: '0.875rem 1rem', background: 'var(--cream)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--char)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{a.platform}</span>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text3)' }}>{timeAgo(a.createdAt)}</span>
+                </div>
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text)', lineHeight: 1.5, marginBottom: '0.75rem', whiteSpace: 'pre-wrap' }}>{a.content}</p>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => void handleApproval(a.id, 'approve')}
+                    disabled={approving === a.id}
+                    style={{ padding: '0.375rem 0.875rem', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.8125rem', fontWeight: 500, cursor: approving === a.id ? 'not-allowed' : 'pointer', opacity: approving === a.id ? 0.6 : 1 }}
+                  >
+                    {approving === a.id ? 'Posting…' : 'Approve & Post'}
+                  </button>
+                  <button
+                    onClick={() => void handleApproval(a.id, 'reject')}
+                    disabled={approving === a.id}
+                    style={{ padding: '0.375rem 0.875rem', background: 'transparent', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '0.8125rem', cursor: approving === a.id ? 'not-allowed' : 'pointer' }}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

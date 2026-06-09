@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import {
   readMasterContext, callClaude, sendAlert, logAgentAction, getSABMetrics, getStripeMetrics,
-} from '@/lib/agents/utils'
+} from '@/lib/agents/toolkits/sab-tech-toolkit'
 import { BASNET_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 import { runFlux, fluxDiagnose } from '@/lib/agents/sub/flux'
 import { sparkWeeklyBrief, sparkSendAccountantEmails } from '@/lib/agents/sub/spark'

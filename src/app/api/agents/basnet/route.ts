@@ -6,7 +6,7 @@ import { createServiceClient } from '@/lib/supabase'
 import {
   readMasterContext, callClaude, sendAlert, logAgentAction,
   isRateLimited, briefingAlreadySentToday, getStripeMetrics,
-} from '@/lib/agents/utils'
+} from '@/lib/agents/toolkits/basnet-toolkit'
 import { BASNET_PERSONALITY, EMAIL_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 import { runFlux, fluxDiagnose } from '@/lib/agents/sub/flux'
 import { sparkWeeklyBrief, sparkSendAccountantEmails } from '@/lib/agents/sub/spark'

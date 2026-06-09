@@ -1,0 +1,19 @@
+{
+  "name": "basnet-local-agent",
+  "version": "1.0.0",
+  "description": "Basnet personal agent — runs on Mac, gives cloud agent access to local files and web search",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "node dist/index.js",
+    "dev": "ts-node index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "ts-node": "^10.9.2",
+    "typescript": "^5"
+  }
+}

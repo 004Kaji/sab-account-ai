@@ -242,6 +242,31 @@ Under SAB Agents, these sub-agents run automatically:
 
 ---
 
+## AGENT SYSTEM — CREDENTIALS & SERVICES (updated June 2026)
+
+### Connected platforms
+- **GitHub:** 004Kaji/sab-account-ai — Flux can read code, open PRs, create issues
+- **LinkedIn:** sabaccountai app (Client ID: 86ybbkwds753b6) — Spark can post after approval
+- **Instagram:** @sabaccountai connected to SAB Account AI Facebook Page — needs Meta App Review before auto-posting (App ID: 851364074258249)
+- **TikTok:** content only — Spark drafts scripts, you post manually
+
+### Local Mac agent
+- Runs at http://127.0.0.1:3099 as a launchd background service
+- Starts automatically on Mac boot — no need to run manually
+- Gives Relay access to ~/Documents, ~/Desktop, ~/Downloads + web search
+- Logs: ~/Library/Logs/basnet-local-agent.log
+- Stop: `launchctl unload ~/Library/LaunchAgents/com.basnet.local-agent.plist`
+- Start: `launchctl load ~/Library/LaunchAgents/com.basnet.local-agent.plist`
+
+### Approval queue
+- Social posts go to /dashboard/agent — approve or reject before they post
+- GitHub PRs opened by Flux go to 004Kaji/sab-account-ai — review and merge yourself, never auto-merged
+
+### Pending
+- Instagram auto-posting: submit Meta App Review at developers.facebook.com/apps/851364074258249/review
+
+---
+
 ## NOTES FOR THE AGENT
 
 - I am 100% aware my PR pathway depends on staying on the right side of visa rules. Never suggest anything that could jeopardise this.

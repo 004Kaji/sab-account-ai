@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase'
-import { callClaude, readMasterContext, sendAlert, logSubAgent } from '@/lib/agents/utils'
+import { callClaude, readMasterContext, sendAlert, logSubAgent, tavilySearch } from '@/lib/agents/toolkits/personal-toolkit'
 import { BASNET_PERSONALITY, VOICE_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 
 export const RELAY_IDENTITY = `
@@ -25,9 +25,63 @@ When asked about agents, confirm they exist and describe what they do.
 
 type ConvRow = { question: string; answer: string }
 
-export async function relayAnswer(question: string, mode?: 'voice' | 'text'): Promise<string> {
+// ── Local Mac agent (optional — degrades gracefully if offline) ────────
+
+async function callLocalAgent(question: string): Promise<string | null> {
+  const localUrl = process.env.LOCAL_AGENT_URL
+  const secret = process.env.AGENT_WEBHOOK_SECRET
+  if (!localUrl) return null
+
+  try {
+    const res = await fetch(`${localUrl}/ask`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(secret ? { 'x-agent-secret': secret } : {}),
+      },
+      body: JSON.stringify({ question }),
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as { answer?: string }
+    return data.answer ?? null
+  } catch {
+    return null
+  }
+}
+
+// Topics that warrant a live web search before answering
+const WEB_SEARCH_TRIGGERS = [
+  'visa', 'immigration', '485', '500', 'subclass', 'pr pathway', 'migration',
+  'uni', 'university', 'course', 'assignment', 'exam', 'semester',
+  'ato', 'tax', 'payg', 'super', 'bas', 'deadline',
+  'news', 'update', 'latest', 'current', 'today', 'this year',
+]
+
+function needsWebSearch(question: string): boolean {
+  const q = question.toLowerCase()
+  return WEB_SEARCH_TRIGGERS.some(t => q.includes(t))
+}
+
+export async function relayAnswer(question: string, mode?: 'voice' | 'text' | 'local'): Promise<string> {
   const start = Date.now()
   const supabase = createServiceClient()
+
+  // Try local Mac agent first if mode is 'local' or LOCAL_AGENT_URL is set
+  if (mode === 'local' || (mode !== 'voice' && process.env.LOCAL_AGENT_URL)) {
+    const localAnswer = await callLocalAgent(question)
+    if (localAnswer) {
+      await supabase.from('agent_conversations').insert({
+        agent_name: 'relay',
+        question,
+        answer: localAnswer,
+        context_used: { mode: 'local', source: 'mac-agent' },
+      })
+      await logSubAgent('relay', 'answer_local', question.slice(0, 100), localAnswer.slice(0, 200), Date.now() - start, true)
+      return localAnswer
+    }
+    // Fall through to cloud answer if local is offline
+  }
 
   const [master, recentR] = await Promise.allSettled([
     readMasterContext(),
@@ -39,9 +93,21 @@ export async function relayAnswer(question: string, mode?: 'voice' | 'text'): Pr
   const recentConvs = recentR.status === 'fulfilled' ? (recentR.value.data ?? []) as ConvRow[] : []
   const conversationContext = recentConvs.map(c => `Q: ${c.question}\nA: ${c.answer}`).join('\n\n')
 
+  // Web search for questions that need current information
+  let webContext = ''
+  if (mode !== 'voice' && needsWebSearch(question)) {
+    const searchQuery = `${question} Australia 2026`
+    const results = await tavilySearch(searchQuery, { maxResults: 3, includeAnswer: true })
+    if (results.answer) {
+      webContext = `\n\nLive web search results for "${searchQuery}":\n${results.answer}`
+    } else if (results.results.length > 0) {
+      webContext = `\n\nLive web search results:\n${results.results.slice(0, 2).map(r => `- ${r.title}: ${r.content.slice(0, 200)}`).join('\n')}`
+    }
+  }
+
   const systemPrompt = mode === 'voice'
     ? `${VOICE_PERSONALITY}\n\nFull context:\n${masterCtx}`
-    : `${RELAY_IDENTITY}\n\nFull context:\n${masterCtx}`
+    : `${RELAY_IDENTITY}\n\nFull context:\n${masterCtx}${webContext}`
 
   const userMessage = [
     conversationContext ? `Recent conversations:\n${conversationContext}` : '',
@@ -55,7 +121,7 @@ export async function relayAnswer(question: string, mode?: 'voice' | 'text'): Pr
     agent_name: 'relay',
     question,
     answer,
-    context_used: { mode: mode ?? 'text' },
+    context_used: { mode: mode ?? 'text', webSearchUsed: webContext.length > 0 },
   })
 
   await logSubAgent('relay', 'answer', question.slice(0, 100), answer.slice(0, 200), Date.now() - start, true)

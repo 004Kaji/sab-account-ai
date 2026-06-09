@@ -1,6 +1,11 @@
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
-import { callClaude, logSubAgent, readMasterContext } from '@/lib/agents/utils'
+import {
+  callClaude, logSubAgent, readMasterContext, sendAlert,
+  tavilySearch, saveApprovalDraft, updateApprovalStatus,
+  twitterPost, linkedinPost, instagramPost,
+  type SocialPlatform,
+} from '@/lib/agents/toolkits/sab-marketing-toolkit'
 import { BASNET_PERSONALITY } from '@/lib/agents/personality'
 
 export const SPARK_IDENTITY = `
@@ -191,5 +196,150 @@ export async function sparkTurnMetricIntoPost(metric: string, value: string): Pr
     })
   } catch {
     return `${value} ${metric} this week on SAB Account AI.`
+  }
+}
+
+// ── Draft social posts → save to approval queue ────────────────────────
+
+type DraftPost = {
+  platform: SocialPlatform
+  content: string
+  approvalId: string
+}
+
+export async function sparkDraftSocialPosts(context?: string): Promise<{
+  drafts: DraftPost[]
+  searchTopic?: string
+}> {
+  const start = Date.now()
+  const supabase = createServiceClient()
+
+  const weekStart = new Date()
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1)
+  const weekStartStr = weekStart.toISOString().split('T')[0]
+
+  const [masterCtx, briefR] = await Promise.allSettled([
+    readMasterContext(),
+    supabase.from('content_briefs').select('focus_this_week, blog_post_title, tiktok_hooks')
+      .eq('week_start', weekStartStr).maybeSingle(),
+  ])
+
+  const master = masterCtx.status === 'fulfilled' ? masterCtx.value.slice(0, 1500) : ''
+  const brief = briefR.status === 'fulfilled' ? briefR.value.data : null
+
+  // Web search for trending topics
+  let trendContext = ''
+  let searchTopic: string | undefined
+  if (brief?.focus_this_week) {
+    searchTopic = `${brief.focus_this_week} Australia 2026`
+    const search = await tavilySearch(searchTopic, { maxResults: 3, includeAnswer: true })
+    if (search.answer) trendContext = `\nTrending context: ${search.answer}`
+  }
+
+  const extraCtx = context ? `\nAdditional context: ${context}` : ''
+
+  const raw = await callClaude({
+    systemPrompt: `${SPARK_IDENTITY}\n\nMaster context: ${master}${trendContext}${extraCtx}`,
+    userMessage: `Draft social posts for this week.
+Week focus: ${brief?.focus_this_week ?? 'grow SAB Account AI'}
+Blog title: ${brief?.blog_post_title ?? ''}
+TikTok hooks: ${(brief?.tiktok_hooks as string[] | null)?.join(', ') ?? ''}
+
+Return ONLY valid JSON array:
+[
+  { "platform": "twitter",   "content": "tweet max 280 chars" },
+  { "platform": "linkedin",  "content": "linkedin post 3-4 sentences" },
+  { "platform": "instagram", "content": "instagram caption with hashtags" },
+  { "platform": "tiktok",    "content": "tiktok script hook + 3 talking points" }
+]`,
+    maxTokens: 800,
+    expectJson: true,
+  })
+
+  type RawPost = { platform: string; content: string }
+  let posts: RawPost[]
+  try {
+    posts = JSON.parse(raw) as RawPost[]
+  } catch {
+    posts = []
+  }
+
+  const drafts: DraftPost[] = []
+  for (const post of posts) {
+    if (!post.platform || !post.content) continue
+    const approvalId = await saveApprovalDraft({
+      platform: post.platform as SocialPlatform,
+      content: post.content,
+      weekStart: weekStartStr,
+    })
+    drafts.push({ platform: post.platform as SocialPlatform, content: post.content, approvalId })
+  }
+
+  if (drafts.length > 0) {
+    await sendAlert(
+      `${drafts.length} social posts ready for approval`,
+      `Platforms: ${drafts.map(d => d.platform).join(', ')}\nReview and approve at /dashboard/agent`,
+      'info', 'spark',
+    )
+  }
+
+  await logSubAgent('spark', 'draft_social_posts', '', `${drafts.length} drafts created`, Date.now() - start, drafts.length > 0)
+  return { drafts, searchTopic }
+}
+
+// ── Post an approved draft to its platform ─────────────────────────────
+
+export async function sparkPostApproved(approvalId: string): Promise<{
+  success: boolean
+  postUrl?: string
+  error?: string
+}> {
+  const start = Date.now()
+  const supabase = createServiceClient()
+
+  const { data: approval } = await supabase
+    .from('marketing_approvals')
+    .select('*')
+    .eq('id', approvalId)
+    .single()
+
+  if (!approval) return { success: false, error: 'Approval not found' }
+  if (approval.status !== 'approved') return { success: false, error: `Status is ${approval.status}, must be approved` }
+
+  type Row = { platform: string; content: string; media_urls: string[] | null }
+  const row = approval as Row
+
+  let postUrl = ''
+  try {
+    if (row.platform === 'twitter') {
+      const r = await twitterPost(row.content)
+      postUrl = r.url
+    } else if (row.platform === 'linkedin') {
+      const r = await linkedinPost(row.content)
+      postUrl = r.url
+    } else if (row.platform === 'instagram') {
+      const mediaUrls = row.media_urls ?? []
+      const r = await instagramPost(row.content, mediaUrls[0])
+      postUrl = r.url
+    } else if (row.platform === 'tiktok') {
+      // TikTok public API doesn't support auto-posting — mark as reminder instead
+      await sendAlert(
+        'TikTok post ready — post manually',
+        `Script:\n${row.content}`,
+        'info', 'spark',
+      )
+      await updateApprovalStatus(approvalId, 'posted', 'manual')
+      await logSubAgent('spark', 'post_approved', approvalId, 'tiktok: manual reminder sent', Date.now() - start, true)
+      return { success: true, postUrl: 'manual' }
+    }
+
+    await updateApprovalStatus(approvalId, 'posted', postUrl)
+    await logSubAgent('spark', 'post_approved', approvalId, `posted to ${row.platform}: ${postUrl}`, Date.now() - start, true)
+    return { success: true, postUrl }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    await updateApprovalStatus(approvalId, 'failed')
+    await logSubAgent('spark', 'post_approved', approvalId, `failed: ${msg}`, Date.now() - start, false)
+    return { success: false, error: msg }
   }
 }

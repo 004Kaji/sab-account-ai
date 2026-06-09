@@ -24,7 +24,8 @@
     "react": "^18",
     "react-dom": "^18",
     "resend": "^6.12.3",
-    "stripe": "^16.0.0"
+    "stripe": "^16.0.0",
+    "twitter-api-v2": "^1.29.0"
   },
   "devDependencies": {
     "@types/node": "^20",

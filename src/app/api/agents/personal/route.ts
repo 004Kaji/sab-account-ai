@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
-import { sendAlert, logAgentAction } from '@/lib/agents/utils'
+import { sendAlert, logAgentAction } from '@/lib/agents/toolkits/personal-toolkit'
 import { relayAnswer, relayVisaCheck, relayGoalCheck } from '@/lib/agents/sub/relay'
 
 export async function POST(req: NextRequest) {
