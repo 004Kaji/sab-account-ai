@@ -19,26 +19,12 @@ import {
   proactiveInsight, getLastProactiveInsightTime,
 } from '@/lib/agents/watcher'
 
-// ── Classify question ──────────────────────────────────────────────────
+import { classifyQuestion } from '@/lib/agents/classification'
 
-type QuestionClass = 'QUALITY' | 'RETENTION' | 'MARKET' | 'SAB_PRODUCT' | 'SAB_MARKETING' | 'PERSONAL' | 'GENERAL'
+// ── Classify question (shared with voice route) ────────────────────────
 
-const KEYWORDS: Record<QuestionClass, string[]> = {
-  QUALITY:       ['working', 'broken', 'passing', 'test endpoint', 'auth protection', 'security check', 'invoice generation', '401', '500'],
-  RETENTION:     ['churn', 'at risk', 'inactive', 'retention', 'not using', 'upgrade', 'conversion', 'lost user'],
-  MARKET:        ['competitor', 'xero', 'myob', 'market', 'news', 'ato update', 'law change', 'payday super news', 'pricing', 'what are competitors'],
-  SAB_PRODUCT:   ['error', 'bug', 'build', 'stripe webhook', 'supabase', 'sentry', 'deploy', 'code', 'payg', 'test', 'rls', 'ssl', 'security'],
-  SAB_MARKETING: ['tiktok', 'blog', 'post', 'content', 'what to write', 'topic', 'hook', 'linkedin', 'facebook', 'accountant', 'email', 'signup'],
-  PERSONAL:      ['visa', 'pr', 'university', 'goals', 'dream', 'north star', 'tired', 'overwhelmed', 'should i', 'what do i do', 'how am i', 'sub-agent', 'who are you', 'what can you do', 'tell me about you', 'your agents', 'your name', 'job', 'jobs', 'work', 'employment', 'career', 'apply', 'resume', 'darwin', 'sydney', 'melbourne', 'brisbane', 'perth', 'find me', 'search for', 'look up', 'web search', 'study', 'assignment', 'course', 'semester', 'fee', 'money', 'finance', 'budget', 'income', 'expense'],
-  GENERAL:       [],
-}
-
-function classify(question: string): QuestionClass {
-  const q = question.toLowerCase()
-  for (const cls of ['QUALITY', 'RETENTION', 'MARKET', 'SAB_PRODUCT', 'SAB_MARKETING', 'PERSONAL'] as const) {
-    if (KEYWORDS[cls].some(k => q.includes(k))) return cls
-  }
-  return 'GENERAL'
+function classify(question: string) {
+  return classifyQuestion(question)
 }
 
 function isMonday(): boolean {
@@ -202,6 +188,9 @@ Direct. Specific numbers. Basnet voice.`,
           maxTokens: 400,
         })
         agentUsed = 'spark'
+      } else if (cls === 'MAC') {
+        answer = (await relayAnswer(question, 'local')).answer
+        agentUsed = 'relay'
       } else if (cls === 'PERSONAL') {
         answer = (await relayAnswer(question)).answer
         agentUsed = 'relay'

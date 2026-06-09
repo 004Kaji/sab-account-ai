@@ -50,6 +50,18 @@ async function callLocalAgent(question: string): Promise<string | null> {
   }
 }
 
+// Topics that should use the local Mac agent
+const MAC_QUERY_TRIGGERS = [
+  'memory', 'ram', 'disk', 'storage', 'space', 'cpu', 'battery',
+  'process', 'running app', 'system', 'computer', 'my mac', 'mac memory',
+  'slow', 'performance', 'uptime', 'hard drive', 'ssd',
+]
+
+function isMacQuery(question: string): boolean {
+  const q = question.toLowerCase()
+  return MAC_QUERY_TRIGGERS.some(t => q.includes(t))
+}
+
 // Topics that warrant a live web search before answering
 const WEB_SEARCH_TRIGGERS = [
   'visa', 'immigration', '485', '500', 'subclass', 'pr pathway', 'migration',
@@ -77,15 +89,23 @@ export async function relayAnswer(question: string, mode?: 'voice' | 'text' | 'l
   const start = Date.now()
   const supabase = createServiceClient()
 
-  // Try local Mac agent first if mode is 'local' or LOCAL_AGENT_URL is set
-  if (mode === 'local' || (mode !== 'voice' && process.env.LOCAL_AGENT_URL)) {
+  // Try local Mac agent for:
+  // - explicit local mode
+  // - text mode (any question)
+  // - voice mode if it's a Mac/system query (these MUST use real system data)
+  const shouldUseLocal = process.env.LOCAL_AGENT_URL && (
+    mode === 'local' ||
+    mode !== 'voice' ||
+    isMacQuery(question)
+  )
+  if (shouldUseLocal) {
     const localAnswer = await callLocalAgent(question)
     if (localAnswer) {
       await supabase.from('agent_conversations').insert({
         agent_name: 'relay',
         question,
         answer: localAnswer,
-        context_used: { mode: 'local', source: 'mac-agent' },
+        context_used: { mode: mode ?? 'local', source: 'mac-agent' },
       })
       await logSubAgent('relay', 'answer_local', question.slice(0, 100), localAnswer.slice(0, 200), Date.now() - start, true)
       return { answer: localAnswer }

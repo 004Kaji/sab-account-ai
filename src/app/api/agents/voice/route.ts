@@ -10,24 +10,19 @@ import { relayAnswer } from '@/lib/agents/sub/relay'
 import { liftScanForChurnRisk } from '@/lib/agents/sub/lift'
 import { atlasResearch } from '@/lib/agents/sub/atlas'
 
+import { classifyQuestion } from '@/lib/agents/classification'
+
 type ConversationRow = { question: string; answer: string; created_at: string }
 type HistoryEntry = { q: string; a: string }
 
-type QuestionClass = 'ENGINEERING' | 'USER_HEALTH' | 'MARKET_INTEL' | 'PERSONAL' | 'GENERAL'
-
-const KEYWORDS: Record<QuestionClass, string[]> = {
-  ENGINEERING:  ['error', 'bug', 'build', 'stripe webhook', 'supabase', 'sentry', 'deploy', 'code', 'payg', 'test', 'rls'],
-  USER_HEALTH:  ['user', 'churn', 'signup', 'retention', 'mrr', 'revenue', 'paid users'],
-  MARKET_INTEL: ['competitor', 'xero', 'myob', 'market', 'ato update', 'payday super'],
-  PERSONAL:     ['visa', 'pr', 'university', 'goals', 'dream', 'north star', 'tired', 'overwhelmed', 'sub-agent', 'agent', 'what can you do', 'who are you', 'tell me about you', 'your name', 'job', 'jobs', 'work', 'employment', 'career', 'apply', 'resume', 'darwin', 'sydney', 'melbourne', 'brisbane', 'perth', 'find me', 'search for', 'look up', 'part time', 'full time', 'casual', 'study', 'assignment', 'weather', 'how much', 'price', 'cost', 'where'],
-  GENERAL:      [],
-}
-
-function classify(question: string): QuestionClass {
-  const q = question.toLowerCase()
-  for (const cls of ['ENGINEERING', 'USER_HEALTH', 'MARKET_INTEL', 'PERSONAL'] as const) {
-    if (KEYWORDS[cls].some(k => q.includes(k))) return cls
-  }
+// Map shared classes to voice route handling groups
+function classify(question: string): 'PERSONAL' | 'MAC' | 'ENGINEERING' | 'USER_HEALTH' | 'MARKET_INTEL' | 'GENERAL' {
+  const cls = classifyQuestion(question)
+  if (cls === 'MAC')                                   return 'MAC'
+  if (cls === 'PERSONAL')                              return 'PERSONAL'
+  if (cls === 'SAB_PRODUCT' || cls === 'QUALITY')      return 'ENGINEERING'
+  if (cls === 'RETENTION')                             return 'USER_HEALTH'
+  if (cls === 'MARKET')                                return 'MARKET_INTEL'
   return 'GENERAL'
 }
 
@@ -148,8 +143,8 @@ export async function POST(req: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
     const githubRepo = process.env.GITHUB_REPO ?? ''
 
-    if (classification === 'PERSONAL') {
-      const result = await relayAnswer(question, 'voice')
+    if (classification === 'MAC' || classification === 'PERSONAL') {
+      const result = await relayAnswer(question, classification === 'MAC' ? 'local' : 'voice')
       const clean = stripMarkdown(applyPersonality(result.answer))
 
       // Risk + topic analysis for personal answers

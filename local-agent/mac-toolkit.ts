@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { execSync } from 'child_process'
 
 // ── Allowed paths (security allowlist) ────────────────────────────────
 // Only these directories can be read or written. Prevents arbitrary filesystem access.
@@ -43,6 +44,63 @@ export function fileExists(filePath: string): boolean {
     assertAllowed(filePath)
     return fs.existsSync(filePath)
   } catch { return false }
+}
+
+// ── System monitoring ─────────────────────────────────────────────────
+
+function runCmd(cmd: string): string {
+  try { return execSync(cmd, { timeout: 5000 }).toString().trim() } catch { return '' }
+}
+
+export interface SystemInfo {
+  disk: { total: string; used: string; free: string; percent: string }
+  memory: { total: string; used: string; free: string }
+  battery: string
+  topProcesses: string[]
+  uptime: string
+  hostname: string
+}
+
+export function getSystemInfo(): SystemInfo {
+  // Disk — use / volume
+  const dfLine = runCmd("df -h / | tail -1")
+  const dfParts = dfLine.split(/\s+/)
+  const disk = {
+    total:   dfParts[1] ?? 'unknown',
+    used:    dfParts[2] ?? 'unknown',
+    free:    dfParts[3] ?? 'unknown',
+    percent: dfParts[4] ?? 'unknown',
+  }
+
+  // Memory — vm_stat gives pages; 1 page = 16384 bytes
+  const pageSize = 16384
+  const vmstat = runCmd('vm_stat')
+  const getPages = (label: string) => {
+    const m = vmstat.match(new RegExp(`${label}[^:]*:\\s+(\\d+)`))
+    return m ? parseInt(m[1]) * pageSize : 0
+  }
+  const memFreeBytes  = getPages('Pages free') + getPages('Pages inactive')
+  const memActiveBytes = getPages('Pages active') + getPages('Pages wired down')
+  const memTotalBytes = memFreeBytes + memActiveBytes + getPages('Pages speculative')
+  const toGB = (b: number) => `${(b / 1073741824).toFixed(1)}GB`
+  const memory = {
+    total: toGB(memTotalBytes),
+    used:  toGB(memActiveBytes),
+    free:  toGB(memFreeBytes),
+  }
+
+  // Battery
+  const batteryRaw = runCmd('pmset -g batt | grep -o "[0-9]*%; [a-z]*"')
+  const battery = batteryRaw || 'unknown'
+
+  // Top 5 processes by CPU
+  const psRaw = runCmd("ps -Arceo pid,pcpu,comm | head -6 | tail -5")
+  const topProcesses = psRaw.split('\n').map(l => l.trim()).filter(Boolean)
+
+  // Uptime
+  const uptime = runCmd('uptime | sed "s/.*up /up /" | sed "s/,  [0-9]* user.*//"')
+
+  return { disk, memory, battery, topProcesses, uptime, hostname: os.hostname() }
 }
 
 // ── Tavily web search ──────────────────────────────────────────────────

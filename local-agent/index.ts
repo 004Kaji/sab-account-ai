@@ -3,7 +3,7 @@ import os from 'os'
 import fs from 'fs'
 import path from 'path'
 import Anthropic from '@anthropic-ai/sdk'
-import { listDirectory, readFile, writeFile, fileExists, tavilySearch } from './mac-toolkit'
+import { listDirectory, readFile, writeFile, fileExists, tavilySearch, getSystemInfo } from './mac-toolkit'
 
 // Load env vars from parent project's .env.local
 const envPath = path.join(__dirname, '..', '.env.local')
@@ -55,6 +55,14 @@ function json(res: http.ServerResponse, statusCode: number, data: unknown) {
 
 // ── Routes ────────────────────────────────────────────────────────────
 
+const MAC_SYSTEM_TRIGGERS = ['memory', 'ram', 'disk', 'storage', 'space', 'cpu', 'battery',
+  'process', 'running', 'app', 'system', 'computer', 'mac', 'slow', 'performance', 'uptime']
+
+function needsSystemInfo(question: string): boolean {
+  const q = question.toLowerCase()
+  return MAC_SYSTEM_TRIGGERS.some(t => q.includes(t))
+}
+
 async function handleAsk(body: unknown): Promise<{ answer: string; webSearchUsed: boolean }> {
   const req = body as { question?: string; filePaths?: string[] }
   if (!req.question) throw new Error('question required')
@@ -69,6 +77,18 @@ async function handleAsk(body: unknown): Promise<{ answer: string; webSearchUsed
     }
   }
 
+  // Add real system info for Mac/system queries
+  let systemContext = ''
+  if (needsSystemInfo(req.question)) {
+    const info = getSystemInfo()
+    systemContext = `\n\nLive Mac system info (${info.hostname}):
+- Disk: ${info.disk.used} used of ${info.disk.total} total, ${info.disk.free} free (${info.disk.percent} full)
+- Memory: ${info.memory.used} active, ${info.memory.free} free of ~${info.memory.total} total
+- Battery: ${info.battery}
+- Uptime: ${info.uptime}
+- Top processes: ${info.topProcesses.join(', ')}`
+  }
+
   const search = await tavilySearch(req.question, 3)
   const webContext = search.answer ? `\n\nWeb search: ${search.answer}` : ''
 
@@ -76,8 +96,8 @@ async function handleAsk(body: unknown): Promise<{ answer: string; webSearchUsed
     model: 'claude-sonnet-4-6',
     max_tokens: 600,
     system: `You are Relay, Basnet's personal agent running locally on Sanjog's Mac.
-You have access to his files and web search.
-Answer concisely. Flag visa risks. Respect 14hr/week work limit.${fileContext}${webContext}`,
+You have access to his files, system info, and web search.
+Answer concisely. Flag visa risks. Respect 14hr/week work limit.${fileContext}${systemContext}${webContext}`,
     messages: [{ role: 'user', content: req.question }],
   })
 
@@ -86,6 +106,10 @@ Answer concisely. Flag visa risks. Respect 14hr/week work limit.${fileContext}${
     answer: block?.type === 'text' ? block.text : 'No response',
     webSearchUsed: search.results.length > 0,
   }
+}
+
+function handleSystem(): { info: ReturnType<typeof getSystemInfo> } {
+  return { info: getSystemInfo() }
 }
 
 function handleFiles(body: unknown): { entries: string[] } {
@@ -139,6 +163,9 @@ const server = http.createServer(async (req, res) => {
     if (req.url === '/ask') {
       const result = await handleAsk(body)
       json(res, 200, { success: true, answer: result.answer, webSearchUsed: result.webSearchUsed })
+    } else if (req.url === '/system') {
+      const result = handleSystem()
+      json(res, 200, { success: true, ...result })
     } else if (req.url === '/files') {
       const result = handleFiles(body)
       json(res, 200, { success: true, entries: result.entries })
@@ -159,7 +186,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Basnet local agent running on http://127.0.0.1:${PORT}`)
   console.log(`Auth: ${SECRET ? 'enabled (AGENT_WEBHOOK_SECRET)' : 'disabled (dev mode)'}`)
-  console.log('Endpoints: /health  /ask  /files  /read  /write')
+  console.log('Endpoints: /health  /ask  /system  /files  /read  /write')
 })
 
 process.on('SIGTERM', () => server.close())
