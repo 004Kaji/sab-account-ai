@@ -110,8 +110,16 @@ export async function relayAnswer(question: string, mode?: 'voice' | 'text' | 'l
     }
   }
 
+  const hasWebResults = webContext.length > 0
+
   const systemPrompt = mode === 'voice'
-    ? `${VOICE_PERSONALITY}\n\nFull context:\n${masterCtx}${webContext}`
+    ? hasWebResults
+      ? `${VOICE_PERSONALITY}
+
+IMPORTANT — you have live web search results below. Report what you actually found. Name real job titles, companies, or sites. Do NOT say "check your email" or "I am searching". Give the actual findings in 2-3 sentences.
+
+Full context:\n${masterCtx}${webContext}`
+      : `${VOICE_PERSONALITY}\n\nFull context:\n${masterCtx}`
     : `${RELAY_IDENTITY}\n\nFull context:\n${masterCtx}${webContext}`
 
   const userMessage = [
@@ -119,7 +127,7 @@ export async function relayAnswer(question: string, mode?: 'voice' | 'text' | 'l
     `Question: ${question}`,
   ].filter(Boolean).join('\n\n')
 
-  const raw = await callClaude({ systemPrompt, userMessage, maxTokens: mode === 'voice' ? 100 : 500 })
+  const raw = await callClaude({ systemPrompt, userMessage, maxTokens: mode === 'voice' && hasWebResults ? 200 : mode === 'voice' ? 100 : 500 })
   const answer = applyPersonality(raw)
 
   await supabase.from('agent_conversations').insert({
