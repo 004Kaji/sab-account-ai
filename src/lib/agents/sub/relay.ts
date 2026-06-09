@@ -98,9 +98,9 @@ export async function relayAnswer(question: string, mode?: 'voice' | 'text' | 'l
   const recentConvs = recentR.status === 'fulfilled' ? (recentR.value.data ?? []) as ConvRow[] : []
   const conversationContext = recentConvs.map(c => `Q: ${c.question}\nA: ${c.answer}`).join('\n\n')
 
-  // Web search for questions that need current information
+  // Web search for questions that need current information (voice uses shorter results)
   let webContext = ''
-  if (mode !== 'voice' && needsWebSearch(question)) {
+  if (needsWebSearch(question)) {
     const searchQuery = `${question} Australia 2026`
     const results = await tavilySearch(searchQuery, { maxResults: 3, includeAnswer: true })
     if (results.answer) {
