@@ -56,6 +56,11 @@ const WEB_SEARCH_TRIGGERS = [
   'uni', 'university', 'course', 'assignment', 'exam', 'semester',
   'ato', 'tax', 'payg', 'super', 'bas', 'deadline',
   'news', 'update', 'latest', 'current', 'today', 'this year',
+  'job', 'jobs', 'work', 'employment', 'career', 'apply', 'resume', 'hire', 'hiring',
+  'salary', 'wage', 'part time', 'full time', 'casual', 'internship',
+  'darwin', 'sydney', 'melbourne', 'brisbane', 'perth', 'adelaide',
+  'find', 'search for', 'look up', 'what is', 'how much', 'where',
+  'weather', 'price', 'cost', 'rate', 'how to',
 ]
 
 function needsWebSearch(question: string): boolean {
