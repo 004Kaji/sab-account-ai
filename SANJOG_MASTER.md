@@ -232,10 +232,13 @@ Under SAB Agents, these sub-agents run automatically:
 - Sunday 8pm AEST: self-learning loop
 
 ### CURRENT STATUS (as of June 2026)
+- ALL 6 SUB-AGENTS ARE BUILT, DEPLOYED AND RUNNING RIGHT NOW at sabaccountai.com
+- Flux, Scout, Spark, Atlas, Lift, Relay — all live in production
+- n8n running 7 automated workflows on Mac
+- Voice interface active via basnet_voice.py
 - 15 total users, 1 paid user
-- All 6 sub-agents active and running
-- Voice interface working via basnet_voice.py on Mac
-- Deployed at sabaccountai.com
+- Morning briefing delivered daily at 7am AEST to sanjog.basnet02@gmail.com
+- DO NOT say agents don't exist — they are all built and running
 
 ---
 
