@@ -11,6 +11,7 @@ import { liftScanForChurnRisk } from '@/lib/agents/sub/lift'
 import { atlasResearch } from '@/lib/agents/sub/atlas'
 
 type ConversationRow = { question: string; answer: string; created_at: string }
+type HistoryEntry = { q: string; a: string }
 
 type QuestionClass = 'ENGINEERING' | 'USER_HEALTH' | 'MARKET_INTEL' | 'PERSONAL' | 'GENERAL'
 
@@ -40,24 +41,88 @@ function stripMarkdown(text: string): string {
     .trim()
 }
 
+// ── Stateful response analyser ─────────────────────────────────────────
+
+type ResponseMeta = {
+  warning:        string | null
+  topic:          string
+  isComplete:     boolean
+  nextSuggestion: string | null
+}
+
+async function analyseResponse(params: {
+  question:     string
+  answer:       string
+  currentTopic: string | null
+  masterContext: string
+  history:      HistoryEntry[]
+}): Promise<ResponseMeta> {
+  const { question, answer, currentTopic, masterContext, history } = params
+
+  const historyText = history.slice(-3).map(h => `Q: ${h.q}\nA: ${h.a}`).join('\n')
+
+  try {
+    const raw = await callClaude({
+      systemPrompt: `You analyse voice conversations between Sanjog and his AI agent Basnet.
+Sanjog is a Nepali international student in Australia on a student visa (subclass 500).
+He can work max 48 hours per fortnight during semester. Any work over this risks his visa.
+He works 14 hours/week on his SaaS SAB Account AI.
+His north star: Permanent Residency → million dollar SaaS → financial independence.
+
+Analyse the Q&A and return ONLY valid JSON with these fields:
+- "warning": one sentence if the answer suggests something risky (visa breach, PR risk, financial risk, time overcommitment) — null if safe
+- "topic": 3-4 words describing the current topic (e.g. "Darwin part-time jobs", "visa renewal", "SAB marketing")
+- "is_complete": true if this topic feels resolved (answer was final, action was given, question answered fully)
+- "next_suggestion": if is_complete is true, one sentence suggesting what to discuss next — null otherwise`,
+      userMessage: `Current topic: ${currentTopic ?? 'none'}
+Recent history:
+${historyText}
+
+Latest Q: ${question}
+Latest A: ${answer}
+
+Master context (abbreviated): ${masterContext.slice(0, 500)}
+
+Return JSON only.`,
+      maxTokens: 200,
+      expectJson: true,
+    })
+
+    type MetaJSON = { warning?: string | null; topic?: string; is_complete?: boolean; next_suggestion?: string | null }
+    const parsed = JSON.parse(raw) as MetaJSON
+    return {
+      warning:        parsed.warning ?? null,
+      topic:          parsed.topic ?? currentTopic ?? 'general',
+      isComplete:     parsed.is_complete ?? false,
+      nextSuggestion: parsed.next_suggestion ?? null,
+    }
+  } catch {
+    return { warning: null, topic: currentTopic ?? 'general', isComplete: false, nextSuggestion: null }
+  }
+}
+
 export async function POST(req: NextRequest) {
   const start = Date.now()
 
   try {
     const body = (await req.json().catch(() => ({}))) as {
-      secret?: string
-      input?:  string
-      mode?:   'voice' | 'text'
+      secret?:        string
+      input?:         string
+      mode?:          'voice' | 'text'
+      history?:       HistoryEntry[]
+      current_topic?: string | null
     }
 
     if (body.secret !== process.env.AGENT_WEBHOOK_SECRET) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
     }
 
-    const question = (body.input ?? '').trim()
+    const question     = (body.input ?? '').trim()
     if (!question) return NextResponse.json({ error: 'input is required' }, { status: 400 })
 
-    const mode           = body.mode ?? 'voice'
+    const mode         = body.mode ?? 'voice'
+    const history      = (body.history ?? []).slice(-5)
+    const currentTopic = body.current_topic ?? null
     const classification = classify(question)
 
     const [masterContext, recentR, stripeMetrics] = await Promise.all([
@@ -71,7 +136,10 @@ export async function POST(req: NextRequest) {
       getStripeMetrics(),
     ])
 
-    const conversationContext = recentR.map(c => `Q: ${c.question}\nA: ${c.answer}`).join('\n\n')
+    // Merge session history (from client) with DB history
+    const sessionCtx = history.map(h => `Q: ${h.q}\nA: ${h.a}`).join('\n\n')
+    const dbCtx = recentR.map(c => `Q: ${c.question}\nA: ${c.answer}`).join('\n\n')
+    const conversationContext = sessionCtx || dbCtx
 
     // Route to specialist sub-agent for richer context
     let subAgentContext = ''
@@ -84,13 +152,25 @@ export async function POST(req: NextRequest) {
       const result = await relayAnswer(question, 'voice')
       const clean = stripMarkdown(applyPersonality(result.answer))
 
+      // Risk + topic analysis for personal answers
+      const meta = await analyseResponse({
+        question, answer: clean, currentTopic, masterContext, history,
+      })
+
       await logAgentAction({
         agentName: 'voice', triggerType: mode,
         inputContext: { question, classification },
         decision: 'relay', outcome: 'answered', durationMs: Date.now() - start,
       })
 
-      return NextResponse.json({ response: clean, agentUsed: 'relay', classification, url: result.url })
+      return NextResponse.json({
+        response: clean, agentUsed: 'relay', classification,
+        url: result.url,
+        warning:     meta.warning,
+        topic:       meta.topic,
+        is_complete: meta.isComplete,
+        next_suggestion: meta.nextSuggestion,
+      })
     }
 
     let actionUrl: string | undefined
@@ -125,16 +205,22 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = `${VOICE_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1500)}`
     const userMessage = [
-      subAgentContext ? `Live data: ${subAgentContext}` : '',
-      conversationContext ? `Recent: ${conversationContext}` : '',
+      subAgentContext   ? `Live data: ${subAgentContext}` : '',
+      conversationContext ? `Recent conversation:\n${conversationContext}` : '',
+      currentTopic      ? `Current topic: ${currentTopic}` : '',
       `Question: ${question}`,
     ].filter(Boolean).join('\n\n')
 
-    const raw = await callClaude({ systemPrompt, userMessage, maxTokens: 120 })
+    const raw = await callClaude({ systemPrompt, userMessage, maxTokens: 150 })
 
     const clean = stripMarkdown(applyPersonality(raw))
     const sentences = clean.split(/[.!?]+/).filter(s => s.trim().length > 0)
     const response = sentences.slice(0, 2).join('. ').trim() + (sentences.length > 0 ? '.' : '')
+
+    // Risk + topic analysis
+    const meta = await analyseResponse({
+      question, answer: response, currentTopic, masterContext, history,
+    })
 
     const supabase = createServiceClient()
     await supabase.from('agent_conversations').insert({
@@ -150,7 +236,14 @@ export async function POST(req: NextRequest) {
       decision: agentUsed, outcome: 'answered', durationMs: Date.now() - start,
     })
 
-    return NextResponse.json({ response, agentUsed, classification, url: actionUrl })
+    return NextResponse.json({
+      response, agentUsed, classification,
+      url: actionUrl,
+      warning:         meta.warning,
+      topic:           meta.topic,
+      is_complete:     meta.isComplete,
+      next_suggestion: meta.nextSuggestion,
+    })
 
   } catch (err) {
     Sentry.captureException(err, { tags: { agent: 'voice' } })

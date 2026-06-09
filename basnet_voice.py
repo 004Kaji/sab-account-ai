@@ -55,20 +55,27 @@ async def record(seconds: int = 8) -> str:
     return tmp
 
 
-async def ask_basnet(text: str) -> tuple[str, str | None]:
+async def ask_basnet(
+    text: str,
+    history: list[dict],
+    current_topic: str | None,
+) -> dict:
     if not WEBHOOK_SECRET:
-        return "AGENT_WEBHOOK_SECRET not set.", None
-    async with httpx.AsyncClient(timeout=20) as c:
+        return {"response": "AGENT_WEBHOOK_SECRET not set.", "url": None, "warning": None,
+                "topic": None, "is_complete": False, "next_suggestion": None}
+    async with httpx.AsyncClient(timeout=25) as c:
         try:
             r = await c.post(AGENT_URL, json={
-                "secret": WEBHOOK_SECRET,
-                "input":  text,
-                "mode":   "voice",
+                "secret":        WEBHOOK_SECRET,
+                "input":         text,
+                "mode":          "voice",
+                "history":       history,
+                "current_topic": current_topic,
             })
-            data = r.json()
-            return data.get("response", "Could not reach Basnet."), data.get("url")
+            return r.json()
         except Exception as e:
-            return f"Connection error: {e}", None
+            return {"response": f"Connection error: {e}", "url": None, "warning": None,
+                    "topic": None, "is_complete": False, "next_suggestion": None}
 
 
 YES_WORDS = {"yes", "yeah", "yep", "sure", "open", "show", "go", "do it", "ok", "okay", "please"}
@@ -157,11 +164,14 @@ async def main():
 
     await speak("Basnet online. Press Enter to speak.")
 
-    last_url: str | None = None  # track last opened URL for follow-up navigation
+    last_url:      str | None = None   # last opened URL for follow-up navigation
+    history:       list[dict] = []     # session conversation history
+    current_topic: str | None = None   # active topic being discussed
 
     while True:
         try:
-            input("\nPress Enter to speak...")
+            topic_label = f" [{current_topic}]" if current_topic else ""
+            input(f"\nPress Enter to speak{topic_label}...")
             subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"])
             print("[Recording for 8 seconds — speak now...]")
 
@@ -177,29 +187,64 @@ async def main():
 
             print(f"You:    {question}")
 
-            # Handle follow-up filter/navigation on the last opened URL
+            # Handle follow-up filter/navigation on the last opened URL (local, no API call)
             if last_url and is_filter_request(question):
                 filtered = build_filtered_url(last_url, question)
                 print(f"[Navigating to: {filtered}]")
                 open_in_chrome(filtered)
                 last_url = filtered
-                await speak("Done. Filtered by most recent.")
+                await speak("Done. Filtered.")
                 continue
 
             print("[Thinking...]")
-            answer, url = await ask_basnet(question)
-            print(f"Basnet: {answer}\n")
-            await speak(answer)
+            data = await ask_basnet(question, history, current_topic)
 
-            # Offer to open browser if a URL was returned
+            response       = data.get("response", "No response.")
+            url            = data.get("url")
+            warning        = data.get("warning")
+            topic          = data.get("topic") or current_topic
+            is_complete    = data.get("is_complete", False)
+            next_suggestion = data.get("next_suggestion")
+
+            # ── Speak warning first if risk detected ──
+            if warning:
+                print(f"⚠️  Warning: {warning}")
+                await speak(f"Warning. {warning}")
+
+            print(f"Basnet: {response}\n")
+            await speak(response)
+
+            # ── Update session state ──
+            current_topic = topic
+            history.append({"q": question, "a": response})
+            if len(history) > 5:
+                history = history[-5:]
+
+            # ── Offer browser if URL returned ──
             if url:
-                print(f"[URL available: {url}]")
+                print(f"[URL: {url}]")
                 should_open = await ask_to_open_browser(url)
                 if should_open:
-                    print(f"[Opening {url}]")
                     open_in_chrome(url)
                     last_url = url
-                    await speak("Opening now. Press Enter to ask a follow-up.")
+                    await speak("Opening now.")
+
+            # ── Topic completion gate ──
+            if is_complete:
+                gate_msg = next_suggestion or "Ready to move on?"
+                print(f"\n[Topic complete: {current_topic}]")
+                await speak(f"We have covered that. {gate_msg} Say yes to continue or press Enter to stay here.")
+                subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"])
+                print("[Listening for 3 seconds...]")
+                gate_audio = await record(seconds=3)
+                gate_reply = await transcribe(gate_audio)
+                Path(gate_audio).unlink(missing_ok=True)
+                print(f"[You said: {gate_reply}]")
+                if is_yes(gate_reply):
+                    current_topic = None
+                    last_url = None
+                    history = []
+                    await speak("Starting fresh. What's next?")
 
         except KeyboardInterrupt:
             print("\nBasnet signing off.")
