@@ -4,6 +4,7 @@
 
 export {
   readMasterContext,
+  readAgentLearnings,
   sendAlert,
   sendTelegram,
   sendDailyDigest,
@@ -16,6 +17,9 @@ export {
   briefingAlreadySentToday,
   isRateLimited,
   getBaseUrl,
+  checkAgentSchedules,
+  getLatestAtlasIntel,
+  getLatestLiftSignal,
   type SABMetrics,
   type StripeMetrics,
   type LogAgentActionParams,

@@ -50,7 +50,96 @@ export async function readMasterContext(): Promise<string> {
   }
 }
 
-// ── 2. Send alert email (replaces sendTelegram) ────────────────────────
+// ── 2. Agent schedule enforcement ────────────────────────────────────
+// Returns agents that missed their expected run window.
+
+const AGENT_SCHEDULES: { name: string; windowHours: number }[] = [
+  { name: 'flux',  windowHours: 26 },
+  { name: 'scout', windowHours: 26 },
+  { name: 'lift',  windowHours: 26 },
+  { name: 'spark', windowHours: 8 * 24 },
+  { name: 'atlas', windowHours: 8 * 24 },
+]
+
+export async function checkAgentSchedules(): Promise<{ missed: string[] }> {
+  try {
+    const supabase = createServiceClient()
+    const missed: string[] = []
+
+    const checks = await Promise.allSettled(
+      AGENT_SCHEDULES.map(({ name, windowHours }) => {
+        const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString()
+        return supabase
+          .from('sub_agent_logs')
+          .select('agent_name', { count: 'exact', head: true })
+          .eq('agent_name', name)
+          .eq('success', true)
+          .gte('created_at', since)
+      })
+    )
+
+    checks.forEach((result, i) => {
+      const { name } = AGENT_SCHEDULES[i]
+      const count = result.status === 'fulfilled' ? (result.value.count ?? 0) : 0
+      if (count === 0) missed.push(name)
+    })
+
+    return { missed }
+  } catch {
+    return { missed: [] }
+  }
+}
+
+// ── 2b. Cross-agent signal reads ──────────────────────────────────────
+
+export async function getLatestAtlasIntel(): Promise<string> {
+  try {
+    const supabase = createServiceClient()
+    const { data } = await supabase
+      .from('agent_conversations')
+      .select('answer')
+      .eq('agent_name', 'atlas')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    return (data?.answer as string | null)?.slice(0, 400) ?? ''
+  } catch { return '' }
+}
+
+export async function getLatestLiftSignal(): Promise<{ atRiskCount: number; upgradeSignals: number }> {
+  try {
+    const supabase = createServiceClient()
+    const { data } = await supabase
+      .from('agent_logs')
+      .select('actions_taken')
+      .eq('agent_name', 'lift')
+      .eq('trigger_type', 'daily_scan')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const a = (data?.actions_taken ?? {}) as { atRiskCount?: number; upgradeSignals?: number }
+    return { atRiskCount: a.atRiskCount ?? 0, upgradeSignals: a.upgradeSignals ?? 0 }
+  } catch { return { atRiskCount: 0, upgradeSignals: 0 } }
+}
+
+// ── 2c. Read agent learnings (last N weeks) ───────────────────────────
+
+export async function readAgentLearnings(limit = 3): Promise<string> {
+  try {
+    const supabase = createServiceClient()
+    const { data } = await supabase
+      .from('agent_learnings')
+      .select('week_start, what_worked, what_failed, decision_rules_updated')
+      .order('week_start', { ascending: false })
+      .limit(limit)
+    if (!data || data.length === 0) return ''
+    return (data as { week_start: string; what_worked: string; what_failed: string; decision_rules_updated: string }[])
+      .map(l => `Week ${l.week_start}:\n- Worked: ${l.what_worked}\n- Failed: ${l.what_failed}\n- Rules: ${l.decision_rules_updated}`)
+      .join('\n\n')
+  } catch { return '' }
+}
+
+// ── 2b. Send alert email (replaces sendTelegram) ───────────────────────
 
 function aestTimestamp(): string {
   return new Date().toLocaleString('en-AU', {
@@ -96,6 +185,7 @@ export async function sendAlert(
   body: string,
   urgency: 'info' | 'warning' | 'urgent' = 'info',
   agentName?: string,
+  dedupMinutes = 30,
 ): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     console.warn('sendAlert: RESEND_API_KEY missing')
@@ -103,7 +193,7 @@ export async function sendAlert(
   }
 
   const key = alertKey(subject, urgency)
-  if (await wasAlertSentRecently(key)) {
+  if (await wasAlertSentRecently(key, dedupMinutes)) {
     console.log(`sendAlert: skipping duplicate — ${subject}`)
     return
   }

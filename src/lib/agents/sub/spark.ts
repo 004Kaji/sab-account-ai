@@ -1,7 +1,7 @@
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
 import {
-  callClaude, logSubAgent, readMasterContext, sendAlert,
+  callClaude, logSubAgent, readMasterContext, readAgentLearnings, sendAlert,
   tavilySearch, saveApprovalDraft, updateApprovalStatus,
   twitterPost, linkedinPost, instagramPost,
   type SocialPlatform,
@@ -30,11 +30,13 @@ export interface SparkBrief {
 }
 
 export async function sparkWeeklyBrief(metrics: {
-  newSignups:    number
-  mrr:           number
-  mrrChange:     number
-  topBlogPost?:  string
-  churnThisWeek: number
+  newSignups:      number
+  mrr:             number
+  mrrChange:       number
+  topBlogPost?:    string
+  churnThisWeek:   number
+  liftAtRiskCount?: number
+  atlasIntel?:     string
 }): Promise<SparkBrief> {
   const start = Date.now()
   const supabase = createServiceClient()
@@ -61,6 +63,8 @@ export async function sparkWeeklyBrief(metrics: {
 Metrics: MRR $${metrics.mrr.toFixed(0)}, MRR change $${metrics.mrrChange.toFixed(0)}, new signups ${metrics.newSignups}, churn ${metrics.churnThisWeek}
 ${metrics.topBlogPost ? `Top blog: ${metrics.topBlogPost}` : ''}
 Last 3 weeks focus: ${lastBriefs.map((b: Record<string, unknown>) => b.focus_this_week).filter(Boolean).join(' | ') || 'none yet'}
+${(metrics.liftAtRiskCount ?? 0) > 0 ? `⚠️ Lift signal: ${metrics.liftAtRiskCount} users at risk of churning this week — content tone should address retention, not just acquisition` : ''}
+${metrics.atlasIntel ? `Market intel from Atlas this week:\n${metrics.atlasIntel}` : ''}
 ${paydaySuperUrgent ? `⚠️ Payday Super deadline in ${daysToPaydaySuper} days — content opportunity` : ''}
 
 Return ONLY valid JSON:
@@ -139,20 +143,43 @@ export async function sparkSendAccountantEmails(): Promise<{ sent: number; names
 
   if (!targets || targets.length === 0) return { sent: 0, names: [] }
 
-  const [masterCtx] = await Promise.allSettled([readMasterContext()])
-  const master = masterCtx.status === 'fulfilled' ? masterCtx.value.slice(0, 1000) : ''
+  const [masterCtx, learningsCtx, winnersR] = await Promise.allSettled([
+    readMasterContext(),
+    readAgentLearnings(3),
+    supabase.from('accountant_outreach')
+      .select('email_subject')
+      .eq('replied', true)
+      .not('email_subject', 'is', null)
+      .order('emailed_at', { ascending: false })
+      .limit(5),
+  ])
+
+  const master   = masterCtx.status   === 'fulfilled' ? masterCtx.value.slice(0, 1000)   : ''
+  const learnings = learningsCtx.status === 'fulfilled' ? learningsCtx.value              : ''
+  type WinnerRow = { email_subject: string | null }
+  const winningSubjects = winnersR.status === 'fulfilled'
+    ? (winnersR.value.data ?? []).map((r: WinnerRow) => r.email_subject).filter(Boolean)
+    : []
+
   const resend = new Resend(process.env.RESEND_API_KEY)
   const names: string[] = []
 
   for (const accountant of targets as AccountantRow[]) {
     try {
+      const winnerContext = winningSubjects.length > 0
+        ? `\nSubject lines that got replies in the past:\n${winningSubjects.map(s => `- "${s}"`).join('\n')}\nUse these as inspiration, not copies.`
+        : ''
+      const learningsContext = learnings
+        ? `\nWhat worked / failed in past outreach:\n${learnings}`
+        : ''
+
       const emailRaw = await callClaude({
-        systemPrompt: `${SPARK_IDENTITY}\n\nContext: ${master}`,
+        systemPrompt: `${SPARK_IDENTITY}\n\nContext: ${master}${learningsContext}`,
         userMessage: `Write a personalised cold email from Sanjog Basnet, founder of SAB Account AI.
 Name: ${accountant.name}
 Practice: ${accountant.practice_type ?? 'accounting'}
 Location: ${accountant.location ?? 'Australia'}
-
+${winnerContext}
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`,
         maxTokens: 500,
         expectJson: true,
@@ -175,6 +202,8 @@ Return ONLY valid JSON: { "subject": "string", "body": "string" }`,
         emailed_at: new Date().toISOString(),
         status: 'emailed',
         follow_up_due: followUpDate.toISOString().split('T')[0],
+        email_subject: emailJSON.subject,
+        email_body: emailJSON.body,
       }).eq('id', accountant.id)
 
       names.push(accountant.name)
@@ -185,6 +214,52 @@ Return ONLY valid JSON: { "subject": "string", "body": "string" }`,
 
   await logSubAgent('spark', 'accountant_emails', '', `Sent to: ${names.join(', ')}`, Date.now() - start, names.length > 0)
   return { sent: names.length, names }
+}
+
+// ── Upgrade prompt: fires when a user hits their 8th invoice ──────────
+
+export async function sparkUpgradePrompt(email: string, name: string, invoiceCount: number): Promise<{ sent: boolean }> {
+  if (!process.env.RESEND_API_KEY || !email) return { sent: false }
+  const start = Date.now()
+  try {
+    const masterCtx = await readMasterContext().catch(() => '')
+    const emailRaw = await callClaude({
+      systemPrompt: `${SPARK_IDENTITY}\n\nContext: ${masterCtx.slice(0, 800)}`,
+      userMessage: `Write an upgrade prompt for an active SAB Account AI user who just created their ${invoiceCount}th invoice.
+Name: ${name || 'there'}
+They're clearly getting value. Acknowledge their activity, make upgrading feel natural (not pushy).
+Mention unlimited invoices, payslips, and any key pro features.
+Short — 3-4 sentences. Conversational. Founder voice.
+Return ONLY valid JSON: { "subject": "string", "body": "string" }`,
+      maxTokens: 350,
+      expectJson: true,
+    })
+
+    type EmailJSON = { subject: string; body: string }
+    const emailJSON = JSON.parse(emailRaw) as EmailJSON
+
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    await resend.emails.send({
+      from: 'Sanjog from SAB Account AI <basnet@sabaccountai.com>',
+      to: email,
+      subject: emailJSON.subject,
+      text: emailJSON.body,
+    })
+
+    const supabase = createServiceClient()
+    await supabase.from('agent_conversations').insert({
+      agent_name: 'spark',
+      question: `upgrade_prompt: ${email} (${invoiceCount} invoices)`,
+      answer: emailJSON.body,
+      context_used: { trigger: 'invoice_milestone', invoiceCount },
+    })
+
+    await logSubAgent('spark', 'upgrade_prompt', email, emailJSON.subject, Date.now() - start, true)
+    return { sent: true }
+  } catch (err) {
+    await logSubAgent('spark', 'upgrade_prompt', email, String(err), Date.now() - start, false)
+    return { sent: false }
+  }
 }
 
 export async function sparkTurnMetricIntoPost(metric: string, value: string): Promise<string> {

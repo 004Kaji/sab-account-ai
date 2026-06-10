@@ -156,7 +156,7 @@ export function paygAllPassing(): boolean {
 
 const KEY_FILES = [
   'src/lib/ato.ts',
-  'src/app/api/stripe/webhooks/route.ts',
+  'src/app/api/stripe/webhook/route.ts',
   'src/lib/supabase.ts',
   'src/app/api/agents/basnet/route.ts',
 ]

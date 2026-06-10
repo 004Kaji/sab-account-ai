@@ -4,8 +4,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 import {
-  readMasterContext, callClaude, sendAlert, logAgentAction,
+  readMasterContext, readAgentLearnings, callClaude, sendAlert, logAgentAction,
   isRateLimited, briefingAlreadySentToday, getStripeMetrics,
+  checkAgentSchedules, getLatestAtlasIntel, getLatestLiftSignal,
 } from '@/lib/agents/toolkits/basnet-toolkit'
 import { BASNET_PERSONALITY, EMAIL_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 import { runFlux, fluxDiagnose } from '@/lib/agents/sub/flux'
@@ -16,7 +17,7 @@ import { runLift } from '@/lib/agents/sub/lift'
 import { atlasResearch, atlasWeeklyIntel, atlasMonitorBrand } from '@/lib/agents/sub/atlas'
 import {
   runWatcherCycle, evaluateAndAlert, saveWatcherReport,
-  proactiveInsight, getLastProactiveInsightTime,
+  proactiveInsight, getLastProactiveInsightTime, getLastWatcherReport,
 } from '@/lib/agents/watcher'
 
 import { classifyQuestion } from '@/lib/agents/classification'
@@ -59,21 +60,37 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true, message: 'Briefing already sent today' })
       }
 
-      const masterContext = await readMasterContext()
       const monday = isMonday()
 
-      const [personalR, sabR, scoutR, liftR] = await Promise.allSettled([
+      const [masterContextR, learningsR, personalR, sabR, scoutR, liftR, scheduleR, atlasR] = await Promise.allSettled([
+        readMasterContext(),
+        readAgentLearnings(4),
         Promise.all([relayVisaCheck(), relayGoalCheck()]),
         runFlux(),
         runScout(),
         runLift(),
+        checkAgentSchedules(),
+        getLatestAtlasIntel(),
       ])
 
-      const visa   = personalR.status === 'fulfilled' ? personalR.value[0] : null
-      const goals  = personalR.status === 'fulfilled' ? personalR.value[1] : null
-      const flux   = sabR.status    === 'fulfilled' ? sabR.value    : null
-      const scout  = scoutR.status  === 'fulfilled' ? scoutR.value  : null
-      const lift   = liftR.status   === 'fulfilled' ? liftR.value   : null
+      const masterContext = masterContextR.status === 'fulfilled' ? masterContextR.value : ''
+      const learnings     = learningsR.status     === 'fulfilled' ? learningsR.value     : ''
+      const visa      = personalR.status  === 'fulfilled' ? personalR.value[0]  : null
+      const goals     = personalR.status  === 'fulfilled' ? personalR.value[1]  : null
+      const flux      = sabR.status       === 'fulfilled' ? sabR.value          : null
+      const scout     = scoutR.status     === 'fulfilled' ? scoutR.value        : null
+      const lift      = liftR.status      === 'fulfilled' ? liftR.value         : null
+      const missed    = scheduleR.status  === 'fulfilled' ? scheduleR.value.missed : []
+      const atlasIntel = atlasR.status    === 'fulfilled' ? atlasR.value        : ''
+
+      // Alert immediately if any agent missed its schedule
+      if (missed.length > 0) {
+        await sendAlert(
+          `Agent schedule missed: ${missed.join(', ')}`,
+          `These agents did not run in their expected window: ${missed.join(', ')}.\nCheck n8n workflows and Vercel logs.`,
+          'warning', 'basnet',
+        )
+      }
 
       const stripe = await getStripeMetrics()
 
@@ -85,22 +102,28 @@ export async function POST(req: NextRequest) {
         churn: stripe.churnThisWeek,
         goals: goals ? goals.slice(0, 200) : null,
         monday,
-        // Only include Scout/Lift if they have something bad to report
         scoutAlert: scout?.criticalFail ? `Critical product failure: ${scout.tests.filter(t => !t.pass).map(t => t.name).join(', ')}` : null,
         liftAlert: (lift?.atRiskUsers.length ?? 0) > 0 ? `${lift!.atRiskUsers.length} users at risk` : null,
+        missedAgents: missed.length > 0 ? missed : null,
+        marketIntel: atlasIntel || null,
       })
 
       const today = new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney', weekday: 'long', day: 'numeric', month: 'long' })
 
+      const learningsSection = learnings
+        ? `\n\nWhat worked and failed in recent weeks:\n${learnings}`
+        : ''
+
       const briefing = await callClaude({
-        systemPrompt: `${EMAIL_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1000)}`,
+        systemPrompt: `${EMAIL_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1000)}${learningsSection}`,
         userMessage: `Morning briefing — ${today}
 
 Data: ${briefingData}
 
 Write morning briefing. Max 5 sentences.
 Format: URGENT (if any) · SAB TODAY · FOCUS · NORTH STAR CHECK
-Direct. Specific numbers. Basnet voice.`,
+Direct. Specific numbers. Basnet voice.
+If past learnings are relevant to today's data, reference them.`,
         maxTokens: 300,
       })
 
@@ -121,8 +144,24 @@ Direct. Specific numbers. Basnet voice.`,
     // ── TRIGGER: weekly ────────────────────────────────────────────────
     if (trigger === 'weekly') {
       const stripe = await getStripeMetrics()
+
+      // Read cross-agent signals before running Spark — so the brief reflects real state
+      const [liftSignalR, atlasLastR] = await Promise.allSettled([
+        getLatestLiftSignal(),
+        getLatestAtlasIntel(),
+      ])
+      const liftSignal  = liftSignalR.status  === 'fulfilled' ? liftSignalR.value  : { atRiskCount: 0, upgradeSignals: 0 }
+      const atlasLast   = atlasLastR.status   === 'fulfilled' ? atlasLastR.value   : ''
+
       const [briefR, goalsR, atlasR] = await Promise.allSettled([
-        sparkWeeklyBrief({ newSignups: 0, mrr: stripe.mrr, mrrChange: stripe.mrrChange, churnThisWeek: stripe.churnThisWeek }),
+        sparkWeeklyBrief({
+          newSignups:    0,
+          mrr:           stripe.mrr,
+          mrrChange:     stripe.mrrChange,
+          churnThisWeek: stripe.churnThisWeek,
+          liftAtRiskCount: liftSignal.atRiskCount,
+          atlasIntel:    atlasLast,
+        }),
         relayGoalCheck(),
         atlasWeeklyIntel(),
       ])
@@ -158,7 +197,17 @@ Direct. Specific numbers. Basnet voice.`,
       if (!question) return NextResponse.json({ success: false, error: 'question required' })
 
       const cls = classify(question)
-      const masterContext = await readMasterContext()
+
+      // Read master context + learnings in parallel — both needed before any Claude call
+      const [masterContext, askLearnings] = await Promise.all([
+        readMasterContext(),
+        readAgentLearnings(3),
+      ])
+
+      const learningsCtx = askLearnings
+        ? `\n\nWhat worked and failed in recent weeks:\n${askLearnings}`
+        : ''
+
       let answer = ''
       let agentUsed = 'basnet'
 
@@ -183,7 +232,7 @@ Direct. Specific numbers. Basnet voice.`,
         agentUsed = 'flux'
       } else if (cls === 'SAB_MARKETING') {
         answer = await callClaude({
-          systemPrompt: `${BASNET_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1500)}`,
+          systemPrompt: `${BASNET_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1500)}${learningsCtx}`,
           userMessage: question,
           maxTokens: 400,
         })
@@ -196,7 +245,7 @@ Direct. Specific numbers. Basnet voice.`,
         agentUsed = 'relay'
       } else {
         answer = await callClaude({
-          systemPrompt: `${BASNET_PERSONALITY}\n\nContext: ${masterContext.slice(0, 2000)}`,
+          systemPrompt: `${BASNET_PERSONALITY}\n\nContext: ${masterContext.slice(0, 2000)}${learningsCtx}`,
           userMessage: question,
           maxTokens: 500,
         })
@@ -212,8 +261,9 @@ Direct. Specific numbers. Basnet voice.`,
 
     // ── TRIGGER: watch ─────────────────────────────────────────────────
     if (trigger === 'watch') {
+      const previous = await getLastWatcherReport()
       const report = await runWatcherCycle()
-      const alertsSent = await evaluateAndAlert(report, null)
+      const alertsSent = await evaluateAndAlert(report, previous)
       const lastInsight = await getLastProactiveInsightTime()
       if (!lastInsight || lastInsight < new Date(Date.now() - 3600000)) {
         await proactiveInsight(report).catch(() => null)

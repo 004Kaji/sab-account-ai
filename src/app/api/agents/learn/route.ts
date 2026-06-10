@@ -21,6 +21,7 @@ type BriefingRow      = { briefing_date: string; content: string }
 type ContentBriefRow  = { week_start: string; focus_this_week: string | null }
 type OutreachRow      = { name: string; status: string; replied: boolean; emailed_at: string | null }
 type ErrorRow         = { error_type: string | null; severity: string | null; resolved: boolean; frequency: number }
+type RetentionOutcomeRow = { outcome: string | null }
 
 export async function POST() {
   const start = Date.now()
@@ -30,12 +31,13 @@ export async function POST() {
     const supabase = createServiceClient()
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-    const [conversationsR, briefingsR, contentR, outreachR, errorsR] = await Promise.all([
+    const [conversationsR, briefingsR, contentR, outreachR, errorsR, retentionR] = await Promise.all([
       supabase.from('agent_conversations').select('question, answer, created_at').gte('created_at', weekAgo).order('created_at', { ascending: true }),
       supabase.from('agent_briefings').select('briefing_date, content').gte('created_at', weekAgo).order('briefing_date', { ascending: true }),
       supabase.from('content_briefs').select('week_start, focus_this_week').gte('created_at', weekAgo),
       supabase.from('accountant_outreach').select('name, status, replied, emailed_at').gte('created_at', weekAgo),
       supabase.from('agent_error_log').select('error_type, severity, resolved, frequency').gte('created_at', weekAgo),
+      supabase.from('agent_logs').select('outcome').eq('agent_name', 'lift').eq('trigger_type', 'retention_outcome').gte('created_at', weekAgo).limit(10),
     ])
 
     const conversations = (conversationsR.data ?? []) as ConversationRow[]
@@ -43,16 +45,21 @@ export async function POST() {
     const content       = (contentR.data ?? [])       as ContentBriefRow[]
     const outreach      = (outreachR.data ?? [])      as OutreachRow[]
     const errors        = (errorsR.data ?? [])        as ErrorRow[]
+    const retentionLogs = (retentionR.data ?? [])     as RetentionOutcomeRow[]
+
+    // Parse latest retention outcome (e.g. "3/7 users came back (42%)")
+    const latestRetention = retentionLogs[0]?.outcome ?? null
 
     const weekData = {
-      conversations:       conversations.map(c => ({ q: c.question.slice(0, 100), a: c.answer.slice(0, 200) })),
-      briefingCount:       briefings.length,
-      contentBriefs:       content.map(b => b.focus_this_week),
-      accountantsEmailed:  outreach.filter(o => o.emailed_at).length,
-      accountantsReplied:  outreach.filter(o => o.replied).length,
-      errorsFound:         errors.length,
-      errorsResolved:      errors.filter(e => e.resolved).length,
-      criticalErrors:      errors.filter(e => e.severity === 'critical').length,
+      conversations:           conversations.map(c => ({ q: c.question.slice(0, 100), a: c.answer.slice(0, 200) })),
+      briefingCount:           briefings.length,
+      contentBriefs:           content.map(b => b.focus_this_week),
+      accountantsEmailed:      outreach.filter(o => o.emailed_at).length,
+      accountantsReplied:      outreach.filter(o => o.replied).length,
+      errorsFound:             errors.length,
+      errorsResolved:          errors.filter(e => e.resolved).length,
+      criticalErrors:          errors.filter(e => e.severity === 'critical').length,
+      retentionEmailOutcome:   latestRetention,
     }
 
     const raw = await callClaude({

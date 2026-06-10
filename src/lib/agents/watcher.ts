@@ -5,8 +5,6 @@ import { calculatePAYG } from '@/lib/ato'
 import { createServiceClient } from '@/lib/supabase'
 import { callClaude, sendAlert, logAgentAction } from '@/lib/agents/utils'
 import { BASNET_PERSONALITY } from '@/lib/agents/personality'
-import { runScout } from '@/lib/agents/sub/scout'
-import { runLift } from '@/lib/agents/sub/lift'
 
 // ── WatcherReport ──────────────────────────────────────────────────────
 
@@ -34,15 +32,6 @@ export interface WatcherReport {
   growth: {
     upgradeSignals:  number
     onboardingGaps:  number
-  }
-  scout?: {
-    allPassing:   boolean
-    criticalFail: boolean
-    failedTests:  string[]
-  }
-  lift?: {
-    atRiskCount:    number
-    upgradeSignals: number
   }
 }
 
@@ -174,35 +163,62 @@ async function checkGrowth(): Promise<WatcherReport['growth']> {
 // ── Main watcher cycle ─────────────────────────────────────────────────
 
 export async function runWatcherCycle(): Promise<WatcherReport> {
-  const [revenueR, productR, codeR, visaR, growthR, scoutR, liftR] = await Promise.allSettled([
+  const [revenueR, productR, codeR, visaR, growthR] = await Promise.allSettled([
     checkRevenue(),
     checkProduct(),
     checkCodeHealth(),
     checkVisa(),
     checkGrowth(),
-    runScout(),
-    runLift(),
   ])
-
-  const scoutReport = scoutR.status === 'fulfilled' ? scoutR.value : null
-  const liftReport  = liftR.status  === 'fulfilled' ? liftR.value  : null
 
   return {
     timestamp:  new Date(),
-    revenue:    revenueR.status === 'fulfilled' ? revenueR.value   : { mrr: 0, newPaidThisCheck: 0, failedPayments: 0, churn: 0 },
-    product:    productR.status === 'fulfilled' ? productR.value   : { newSignups: 0, signupSources: [], usersAtLimit: 0 },
-    codeHealth: codeR.status === 'fulfilled'   ? codeR.value      : { newErrors: [], allPaygPassing: true },
-    visa:       visaR.status === 'fulfilled'   ? visaR.value      : { daysUntilExpiry: 999, warnings: [] },
-    growth:     growthR.status === 'fulfilled' ? growthR.value    : { upgradeSignals: 0, onboardingGaps: 0 },
-    scout: scoutReport ? {
-      allPassing:   scoutReport.allPassing,
-      criticalFail: scoutReport.criticalFail,
-      failedTests:  scoutReport.tests.filter(t => !t.pass).map(t => t.name),
-    } : undefined,
-    lift: liftReport ? {
-      atRiskCount:    liftReport.atRiskUsers.length,
-      upgradeSignals: liftReport.upgradeSignals,
-    } : undefined,
+    revenue:    revenueR.status === 'fulfilled' ? revenueR.value : { mrr: 0, newPaidThisCheck: 0, failedPayments: 0, churn: 0 },
+    product:    productR.status === 'fulfilled' ? productR.value : { newSignups: 0, signupSources: [], usersAtLimit: 0 },
+    codeHealth: codeR.status    === 'fulfilled' ? codeR.value   : { newErrors: [], allPaygPassing: true },
+    visa:       visaR.status    === 'fulfilled' ? visaR.value   : { daysUntilExpiry: 999, warnings: [] },
+    growth:     growthR.status  === 'fulfilled' ? growthR.value : { upgradeSignals: 0, onboardingGaps: 0 },
+  }
+}
+
+// ── Rolling baseline for anomaly detection ────────────────────────────
+
+interface WatcherBaseline {
+  avgMrr:          number
+  avgDailySignups: number
+  hasEnoughData:   boolean
+}
+
+async function getWatcherBaseline(): Promise<WatcherBaseline> {
+  try {
+    const supabase = createServiceClient()
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+    const [reportsR, signupsR] = await Promise.allSettled([
+      supabase.from('watcher_reports').select('report').gte('created_at', sevenDaysAgo).limit(500),
+      supabase.from('profiles').select('created_at').gte('created_at', sevenDaysAgo),
+    ])
+
+    const reports = reportsR.status === 'fulfilled' ? (reportsR.value.data ?? []) : []
+    const mrrs = reports
+      .map(r => (r.report as WatcherReport)?.revenue?.mrr ?? 0)
+      .filter(m => m > 0)
+    const avgMrr = mrrs.length > 0 ? mrrs.reduce((a, b) => a + b, 0) / mrrs.length : 0
+
+    const signups = signupsR.status === 'fulfilled' ? (signupsR.value.data ?? []) : []
+    const dailyCounts: Record<string, number> = {}
+    for (const s of signups) {
+      const day = (s.created_at as string).split('T')[0]
+      dailyCounts[day] = (dailyCounts[day] ?? 0) + 1
+    }
+    const dailyVals = Object.values(dailyCounts)
+    const avgDailySignups = dailyVals.length > 0
+      ? dailyVals.reduce((a, b) => a + b, 0) / dailyVals.length
+      : 0
+
+    return { avgMrr, avgDailySignups, hasEnoughData: reports.length >= 10 }
+  } catch {
+    return { avgMrr: 0, avgDailySignups: 0, hasEnoughData: false }
   }
 }
 
@@ -260,44 +276,45 @@ export async function evaluateAndAlert(
     alertsSent++
   }
 
-  // Scout: critical product failure (new)
-  if (current.scout?.criticalFail && !previous?.scout?.criticalFail) {
-    const failedList = current.scout.failedTests.join(', ')
-    await sendAlert('Scout: critical product failure', `Critical tests failing: ${failedList}`, 'urgent', 'scout')
-    alertsSent++
-  } else if (
-    (current.scout?.failedTests.length ?? 0) > 0 &&
-    (previous?.scout?.failedTests.length ?? 0) === 0
-  ) {
-    const failedList = current.scout!.failedTests.join(', ')
-    await sendAlert('Scout: product issue found', `Tests failing: ${failedList}`, 'warning', 'scout')
-    alertsSent++
+  // ── Anomaly detection: compare against 7-day rolling baseline ─────────
+  const baseline = await getWatcherBaseline()
+
+  if (baseline.hasEnoughData && baseline.avgMrr > 0 && current.revenue.mrr > 0) {
+    const mrrDrop = (baseline.avgMrr - current.revenue.mrr) / baseline.avgMrr
+    if (mrrDrop >= 0.40) {
+      await sendAlert(
+        `MRR anomaly: down ${Math.round(mrrDrop * 100)}% vs baseline`,
+        `Current MRR: $${current.revenue.mrr.toFixed(0)}\n7-day average: $${baseline.avgMrr.toFixed(0)}\nDrop: ${Math.round(mrrDrop * 100)}%\n\nCheck Stripe for cancellations or failed renewals immediately.`,
+        'urgent', 'watcher', 360,
+      )
+      alertsSent++
+    } else if (mrrDrop >= 0.20) {
+      await sendAlert(
+        `MRR softening: down ${Math.round(mrrDrop * 100)}% vs baseline`,
+        `Current MRR: $${current.revenue.mrr.toFixed(0)}\n7-day average: $${baseline.avgMrr.toFixed(0)}\nDown ${Math.round(mrrDrop * 100)}%.`,
+        'warning', 'watcher', 360,
+      )
+      alertsSent++
+    }
   }
 
-  // Lift: new at-risk users
-  const prevAtRisk = previous?.lift?.atRiskCount ?? 0
-  const currAtRisk = current.lift?.atRiskCount ?? 0
-  if (currAtRisk > prevAtRisk) {
-    await sendAlert(
-      `Lift: ${currAtRisk - prevAtRisk} new at-risk users`,
-      `Total at-risk: ${currAtRisk}. Check email for breakdown and recommended actions.`,
-      'warning',
-      'lift',
-    )
-    alertsSent++
-  }
-
-  // Lift: upgrade signals (new)
-  const prevUpgrade = previous?.lift?.upgradeSignals ?? 0
-  const currUpgrade = current.lift?.upgradeSignals ?? 0
-  if (currUpgrade > prevUpgrade) {
-    await sendAlert(
-      `Lift: ${currUpgrade} users ready to upgrade`,
-      'Free users at invoice limit — upgrade prompt opportunity.',
-      'info',
-      'lift',
-    )
-    alertsSent++
+  // Signup drought: zero signups today when baseline expects activity
+  if (baseline.hasEnoughData && baseline.avgDailySignups >= 2) {
+    const supabase = createServiceClient()
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const { count: todaySignups } = await supabase
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', todayStart.toISOString())
+    if ((todaySignups ?? 0) === 0) {
+      await sendAlert(
+        'No signups today — possible acquisition issue',
+        `0 signups so far today.\n7-day daily average: ${baseline.avgDailySignups.toFixed(1)}/day.\n\nCheck: signup page working? Paid ads paused?`,
+        'warning', 'watcher', 360,
+      )
+      alertsSent++
+    }
   }
 
   return alertsSent

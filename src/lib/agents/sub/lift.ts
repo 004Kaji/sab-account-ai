@@ -1,6 +1,6 @@
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
-import { callClaude, sendAlert, logAgentAction, logSubAgent } from '@/lib/agents/utils'
+import { callClaude, sendAlert, logAgentAction, logSubAgent, readAgentLearnings } from '@/lib/agents/utils'
 import { BASNET_PERSONALITY } from '@/lib/agents/personality'
 
 export const LIFT_IDENTITY = `
@@ -39,12 +39,75 @@ type ProfileRow = {
   updated_at:         string
 }
 
+// ── Retention outcome check ────────────────────────────────────────────
+// For users emailed 3–14 days ago, check if they've been active since.
+
+type ConvRow = {
+  created_at: string
+  context_used: { userId?: string; riskReason?: string } | null
+}
+
+export async function checkRetentionOutcomes(): Promise<{
+  totalEmailed: number
+  cameBack: number
+  conversionRate: number
+}> {
+  try {
+    const supabase = createServiceClient()
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+    const threeDaysAgo    = new Date(Date.now() -  3 * 24 * 60 * 60 * 1000).toISOString()
+
+    const { data: emailedConvs } = await supabase
+      .from('agent_conversations')
+      .select('created_at, context_used')
+      .eq('agent_name', 'lift')
+      .eq('question', 'retention_email')
+      .gte('created_at', fourteenDaysAgo)
+      .lte('created_at', threeDaysAgo)
+
+    if (!emailedConvs || emailedConvs.length === 0) {
+      return { totalEmailed: 0, cameBack: 0, conversionRate: 0 }
+    }
+
+    const rows = emailedConvs as ConvRow[]
+    let cameBack = 0
+
+    for (const row of rows) {
+      const userId = row.context_used?.userId
+      if (!userId) continue
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('updated_at')
+        .eq('id', userId)
+        .maybeSingle()
+      if (profile && new Date(profile.updated_at as string) > new Date(row.created_at)) {
+        cameBack++
+      }
+    }
+
+    const conversionRate = rows.length > 0 ? Math.round((cameBack / rows.length) * 100) : 0
+    return { totalEmailed: rows.length, cameBack, conversionRate }
+  } catch {
+    return { totalEmailed: 0, cameBack: 0, conversionRate: 0 }
+  }
+}
+
 // ── Main lift scan ─────────────────────────────────────────────────────
 
 export async function runLift(): Promise<LiftReport> {
   const start = Date.now()
   const supabase = createServiceClient()
   const now = Date.now()
+
+  // Check how last week's retention emails performed (non-blocking)
+  const outcomes = await checkRetentionOutcomes()
+  if (outcomes.totalEmailed > 0) {
+    await logAgentAction({
+      agentName: 'lift',
+      triggerType: 'retention_outcome',
+      outcome: `${outcomes.cameBack}/${outcomes.totalEmailed} users came back after retention email (${outcomes.conversionRate}%)`,
+    })
+  }
   const tenDaysAgo  = new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString()
   const threeDaysAgo = new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString()
   const twoDaysAgo  = new Date(now - 48 * 60 * 60 * 1000).toISOString()
@@ -215,8 +278,13 @@ export async function liftRetentionEmail(
   user: AtRiskUser
 ): Promise<{ subject: string; body: string }> {
   try {
+    const learnings = await readAgentLearnings(3)
+    const learningsContext = learnings
+      ? `\nPast learnings — what worked and failed in previous retention emails:\n${learnings}`
+      : ''
+
     const raw = await callClaude({
-      systemPrompt: LIFT_IDENTITY,
+      systemPrompt: `${LIFT_IDENTITY}${learningsContext}`,
       userMessage:  `Write a retention email for this user.
 Plan: ${user.plan} · Risk: ${user.riskReason} · Days inactive: ${user.daysSince}
 Rules:
@@ -274,4 +342,94 @@ export async function liftSendRetentionEmail(user: AtRiskUser): Promise<boolean>
 export async function liftScanForChurnRisk(): Promise<{ totalAtRisk: number; atRiskUsers: AtRiskUser[] }> {
   const report = await runLift()
   return { totalAtRisk: report.atRiskUsers.length, atRiskUsers: report.atRiskUsers }
+}
+
+// ── Onboarding email: fires immediately when a new user signs up ───────
+
+export async function liftOnboardingEmail(email: string, name: string): Promise<{ sent: boolean }> {
+  if (!process.env.RESEND_API_KEY || !email) return { sent: false }
+  const start = Date.now()
+  try {
+    const learnings = await readAgentLearnings(2).catch(() => '')
+    const emailRaw = await callClaude({
+      systemPrompt: `${LIFT_IDENTITY}${learnings ? `\n\nPast learnings:\n${learnings}` : ''}`,
+      userMessage: `Write a warm welcome email for a brand-new SAB Account AI user.
+Name: ${name || 'there'}
+Goal: get them to their first win in the next 5 minutes — create an invoice or generate a payslip.
+Keep it short. Founder voice (Sanjog). One clear CTA.
+Return ONLY valid JSON: { "subject": "string", "body": "string" }`,
+      maxTokens: 350,
+      expectJson: true,
+    })
+
+    type EmailJSON = { subject: string; body: string }
+    const emailJSON = JSON.parse(emailRaw) as EmailJSON
+
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    await resend.emails.send({
+      from: 'Sanjog from SAB Account AI <basnet@sabaccountai.com>',
+      to: email,
+      subject: emailJSON.subject,
+      text: emailJSON.body,
+    })
+
+    const supabase = createServiceClient()
+    await supabase.from('agent_conversations').insert({
+      agent_name: 'lift',
+      question: `onboarding: ${email}`,
+      answer: emailJSON.body,
+      context_used: { trigger: 'new_user_event' },
+    })
+
+    await logSubAgent('lift', 'onboarding_email', email, emailJSON.subject, Date.now() - start, true)
+    return { sent: true }
+  } catch (err) {
+    await logSubAgent('lift', 'onboarding_email', email, String(err), Date.now() - start, false)
+    return { sent: false }
+  }
+}
+
+// ── Re-engagement email: fires for users inactive ~30 days ────────────
+
+export async function liftReEngagementEmail(email: string, name: string): Promise<{ sent: boolean }> {
+  if (!process.env.RESEND_API_KEY || !email) return { sent: false }
+  const start = Date.now()
+  try {
+    const learnings = await readAgentLearnings(2).catch(() => '')
+    const emailRaw = await callClaude({
+      systemPrompt: `${LIFT_IDENTITY}${learnings ? `\n\nPast learnings:\n${learnings}` : ''}`,
+      userMessage: `Write a re-engagement email for a user who hasn't used SAB Account AI in 30 days.
+Name: ${name || 'there'}
+They've used the product before. Remind them of something timely they can do right now — end of financial year invoices, payslip reconciliation, etc.
+Genuine. One hook, one value reminder, one soft CTA. Not pushy.
+Return ONLY valid JSON: { "subject": "string", "body": "string" }`,
+      maxTokens: 350,
+      expectJson: true,
+    })
+
+    type EmailJSON = { subject: string; body: string }
+    const emailJSON = JSON.parse(emailRaw) as EmailJSON
+
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    await resend.emails.send({
+      from: 'Sanjog from SAB Account AI <basnet@sabaccountai.com>',
+      to: email,
+      subject: emailJSON.subject,
+      text: emailJSON.body,
+    })
+
+    const supabase = createServiceClient()
+    await supabase.from('agent_conversations').insert({
+      agent_name: 'lift',
+      question: `re_engagement: ${email}`,
+      answer: emailJSON.body,
+      context_used: { trigger: 'inactive_30d' },
+    })
+
+    await logSubAgent('lift', 're_engagement_email', email, emailJSON.subject, Date.now() - start, true)
+    return { sent: true }
+  } catch (err) {
+    await logSubAgent('lift', 're_engagement_email', email, String(err), Date.now() - start, false)
+    return { sent: false }
+  }
 }
