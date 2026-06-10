@@ -487,3 +487,76 @@ export async function isRateLimited(agentName: string, maxPerDay: number): Promi
 export function getBaseUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 }
+
+// ── 12. Agentic tool-use loop ──────────────────────────────────────────
+// Claude calls tools, sees results, decides next step — up to maxIterations.
+
+export type AgentTool = {
+  name: string
+  description: string
+  input_schema: {
+    type: 'object'
+    properties?: Record<string, { type: string; description?: string }>
+    required?: string[]
+  }
+}
+
+export async function callClaudeWithTools(params: {
+  systemPrompt: string
+  userMessage: string
+  tools: AgentTool[]
+  toolHandlers: Record<string, (input: Record<string, unknown>) => Promise<unknown>>
+  maxTokens?: number
+  maxIterations?: number
+}): Promise<string> {
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const { systemPrompt, userMessage, tools, toolHandlers, maxTokens = 2000, maxIterations = 6 } = params
+
+  // Use unknown content so we can mix text, tool_use, and tool_result shapes
+  const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [
+    { role: 'user', content: userMessage },
+  ]
+
+  for (let i = 0; i < maxIterations; i++) {
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      tools: tools as Anthropic.Tool[],
+      messages: messages as Anthropic.MessageParam[],
+    })
+
+    if (response.stop_reason !== 'tool_use') {
+      const textBlock = response.content.find(b => b.type === 'text')
+      return (textBlock && textBlock.type === 'text') ? textBlock.text : ''
+    }
+
+    const toolUseBlocks = response.content.filter(
+      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
+    )
+
+    const toolResults = await Promise.all(
+      toolUseBlocks.map(async block => {
+        const handler = toolHandlers[block.name]
+        let result: unknown
+        try {
+          result = handler
+            ? await handler(block.input as Record<string, unknown>)
+            : `Tool '${block.name}' not configured`
+        } catch (err) {
+          result = `Error running ${block.name}: ${err instanceof Error ? err.message : String(err)}`
+        }
+        return {
+          type: 'tool_result' as const,
+          tool_use_id: block.id,
+          content: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+        }
+      })
+    )
+
+    messages.push({ role: 'assistant', content: response.content })
+    messages.push({ role: 'user', content: toolResults })
+  }
+
+  return 'Analysis complete.'
+}

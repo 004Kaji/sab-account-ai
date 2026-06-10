@@ -7,6 +7,36 @@ import {
   type SocialPlatform,
 } from '@/lib/agents/toolkits/sab-marketing-toolkit'
 import { BASNET_PERSONALITY } from '@/lib/agents/personality'
+import { getWorldState, getRecentSignals, updateWorldState, publishSignal } from '@/lib/agents/world-state'
+
+// ── Spark mode detection (Tab 3) ──────────────────────────────────────
+type SparkMode = 'ACQUISITION' | 'RETENTION' | 'COUNTER_POSITIONING' | 'URGENCY'
+
+async function detectSparkMode(): Promise<{ mode: SparkMode; reason: string }> {
+  const [ws, signals] = await Promise.all([getWorldState(), getRecentSignals(168)])
+  const july1 = ws.july1_countdown
+
+  if (july1 > 0 && july1 <= 14) {
+    return { mode: 'URGENCY', reason: `July 1 Payday Super deadline in ${july1} days — shift all content` }
+  }
+  const competitorSignal = signals.find(
+    s => s.from_agent === 'atlas' && (s.data?.high_urgency as number) > 0
+  )
+  if (competitorSignal) {
+    return { mode: 'COUNTER_POSITIONING', reason: `Atlas flagged competitor threat: ${competitorSignal.summary}` }
+  }
+  if (ws.churn_risk_score >= 6) {
+    return { mode: 'RETENTION', reason: `Churn risk score is ${ws.churn_risk_score}/10 — retention over acquisition` }
+  }
+  const urgentLiftSignal = signals.find(
+    s => s.from_agent === 'lift' && s.severity === 'urgent' &&
+    (Date.now() - new Date(s.created_at!).getTime()) < 24 * 3600 * 1000
+  )
+  if (urgentLiftSignal) {
+    return { mode: 'RETENTION', reason: `Lift urgent signal: ${urgentLiftSignal.summary}` }
+  }
+  return { mode: 'ACQUISITION', reason: 'No retention or competitor signals — default acquisition mode' }
+}
 
 export const SPARK_IDENTITY = `
 ${BASNET_PERSONALITY}
@@ -41,6 +71,9 @@ export async function sparkWeeklyBrief(metrics: {
   const start = Date.now()
   const supabase = createServiceClient()
 
+  // ── Mode detection (Tab 3) ─────────────────────────────────────────────
+  const { mode, reason: modeReason } = await detectSparkMode()
+
   // Read master context and last 3 weeks of content briefs in parallel
   const [masterCtx, lastBriefsR] = await Promise.allSettled([
     readMasterContext(),
@@ -56,16 +89,26 @@ export async function sparkWeeklyBrief(metrics: {
   const daysToPaydaySuper = Math.ceil((paydaySuperDeadline.getTime() - Date.now()) / 86400000)
   const paydaySuperUrgent = daysToPaydaySuper > 0 && daysToPaydaySuper <= 30
 
+  const modeInstruction =
+    mode === 'URGENCY'
+      ? `\n\nMODE: URGENCY — July 1 Payday Super deadline is imminent. ALL content must focus on Payday Super. Every channel. Every angle. This is a product launch moment.`
+      : mode === 'RETENTION'
+      ? `\n\nMODE: RETENTION — Churn risk is elevated. Shift all content toward value reinforcement: why SAB Account AI saves time, success stories, feature reminders. Do NOT push new acquisition campaigns.`
+      : mode === 'COUNTER_POSITIONING'
+      ? `\n\nMODE: COUNTER-POSITIONING — A competitor threat has been detected. Generate one counter-narrative piece immediately. Use the competitor's move as the hook and position SAB Account AI as the better alternative.`
+      : `\n\nMODE: ACQUISITION — Default mode. Focus on new user acquisition: Payday Super angle, Xero alternative, international student Medicare exempt.`
+
   const raw = await callClaude({
-    systemPrompt: `${SPARK_IDENTITY}\n\nMaster context: ${master}`,
+    systemPrompt: `${SPARK_IDENTITY}\n\nMaster context: ${master}${modeInstruction}`,
     userMessage: `Weekly content brief.
 
+Current mode: ${mode} — ${modeReason}
 Metrics: MRR $${metrics.mrr.toFixed(0)}, MRR change $${metrics.mrrChange.toFixed(0)}, new signups ${metrics.newSignups}, churn ${metrics.churnThisWeek}
 ${metrics.topBlogPost ? `Top blog: ${metrics.topBlogPost}` : ''}
 Last 3 weeks focus: ${lastBriefs.map((b: Record<string, unknown>) => b.focus_this_week).filter(Boolean).join(' | ') || 'none yet'}
-${(metrics.liftAtRiskCount ?? 0) > 0 ? `⚠️ Lift signal: ${metrics.liftAtRiskCount} users at risk of churning this week — content tone should address retention, not just acquisition` : ''}
+${(metrics.liftAtRiskCount ?? 0) > 0 ? `⚠️ Lift signal: ${metrics.liftAtRiskCount} users at risk of churning this week` : ''}
 ${metrics.atlasIntel ? `Market intel from Atlas this week:\n${metrics.atlasIntel}` : ''}
-${paydaySuperUrgent ? `⚠️ Payday Super deadline in ${daysToPaydaySuper} days — content opportunity` : ''}
+${paydaySuperUrgent ? `⚠️ Payday Super deadline in ${daysToPaydaySuper} days` : ''}
 
 Return ONLY valid JSON:
 {
@@ -119,6 +162,30 @@ Return ONLY valid JSON:
   } catch { /* non-fatal */ }
 
   await logSubAgent('spark', 'weekly_brief', '', parsed.weekFocus, Date.now() - start, true)
+
+  // ── Write world state + publish signal ─────────────────────────────────
+  await updateWorldState({
+    spark_last_topic: parsed.weekFocus.slice(0, 200),
+    last_updated_by: 'spark',
+  })
+
+  await publishSignal({
+    from_agent: 'spark',
+    signal_type: 'action_taken',
+    severity: parsed.urgentFlag ? 'warning' : 'info',
+    summary: `Spark weekly brief complete — mode: ${mode}. Focus: ${parsed.weekFocus.slice(0, 120)}`,
+    data: {
+      mode,
+      mode_reason: modeReason,
+      week_focus: parsed.weekFocus,
+      blog_title: parsed.blogTitle,
+      urgent_flag: parsed.urgentFlag,
+      approval_required: parsed.urgentFlag,
+    },
+    suggested_reactions: 'Basnet should note content mode in morning briefing.',
+    expires_after_hours: 168,
+  })
+
   return parsed
 }
 

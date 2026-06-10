@@ -7,6 +7,7 @@ import {
   saveGithubPR,
 } from '@/lib/agents/toolkits/sab-tech-toolkit'
 import { BASNET_PERSONALITY } from '@/lib/agents/personality'
+import { getWorldState, getRecentSignals, updateWorldState, publishSignal } from '@/lib/agents/world-state'
 
 export const FLUX_IDENTITY = `
 ${BASNET_PERSONALITY}
@@ -61,6 +62,28 @@ function runPAYGTests(): FluxReport['payg'] {
 
 export async function runFlux(): Promise<FluxReport> {
   const start = Date.now()
+
+  // ── Activation check (Tab 3 logic) ────────────────────────────────────
+  const [ws, recentSignals] = await Promise.all([getWorldState(), getRecentSignals(6)])
+
+  // Stand down: last audit < 12h ago, code score healthy, no open errors, PAYG passing
+  const lastFluxSignal = recentSignals.find(s => s.from_agent === 'flux')
+  const hoursAgo = lastFluxSignal
+    ? (Date.now() - new Date(lastFluxSignal.created_at!).getTime()) / 3600000
+    : 999
+  if (hoursAgo < 12 && ws.flux_code_score >= 8 && ws.payg_test_status === 'pass' && ws.sentry_open_count === 0) {
+    const payg = runPAYGTests()
+    const standDownReport: FluxReport = {
+      timestamp: new Date(),
+      payg,
+      sentry: { newErrors: [], hasUrgent: false },
+      stripe: { webhookHealthy: true, lastWebhookHours: 0 },
+      supabase: { rlsEnabled: true, tablesOk: ['invoices'], tablesFail: [] },
+      overall: 'healthy',
+    }
+    return standDownReport
+  }
+
   const supabase = createServiceClient()
   const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
@@ -130,6 +153,40 @@ export async function runFlux(): Promise<FluxReport> {
   }
 
   await logSubAgent('flux', 'scan', '', JSON.stringify({ overall, paygPassing: payg.allPassing }).slice(0, 200), Date.now() - start, overall !== 'critical')
+
+  // ── Write world state + publish signal ─────────────────────────────────
+  const codeScore = overall === 'healthy' ? 9 : overall === 'warning' ? 6 : 3
+  const scoutStatus = ws.scout_last_status // preserve Scout's last value
+  await updateWorldState({
+    flux_code_score: codeScore,
+    payg_test_status: payg.allPassing ? 'pass' : 'fail',
+    sentry_open_count: newErrors.length,
+    sentry_last_error: newErrors[0]?.type ?? ws.sentry_last_error,
+    scout_last_status: scoutStatus,
+    last_updated_by: 'flux',
+  })
+
+  const signalSeverity = overall === 'critical' ? 'urgent' : overall === 'warning' ? 'warning' : 'info'
+  await publishSignal({
+    from_agent: 'flux',
+    signal_type: 'action_taken',
+    severity: signalSeverity,
+    summary: `Flux audit complete — ${overall}. PAYG: ${payg.allPassing ? 'pass' : 'FAIL'}. Code score: ${codeScore}/10.`,
+    data: {
+      overall,
+      code_health_score: codeScore,
+      payg_passing: payg.allPassing,
+      sentry_errors: newErrors.length,
+      failing_tests: payg.results.filter(r => !r.pass).map(r => r.tc),
+    },
+    suggested_reactions: overall === 'critical'
+      ? 'Basnet should escalate to Sanjog immediately. Scout should recheck product health.'
+      : overall === 'warning'
+      ? 'Basnet should mention in morning briefing. Scout should verify user-facing features.'
+      : 'No immediate action needed.',
+    expires_after_hours: 12,
+  })
+
   return report
 }
 

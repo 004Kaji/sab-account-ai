@@ -2,6 +2,7 @@ import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
 import { callClaude, sendAlert, logAgentAction, logSubAgent, readAgentLearnings } from '@/lib/agents/utils'
 import { BASNET_PERSONALITY } from '@/lib/agents/personality'
+import { getWorldState, getRecentSignals, updateWorldState, publishSignal } from '@/lib/agents/world-state'
 
 export const LIFT_IDENTITY = `
 ${BASNET_PERSONALITY}
@@ -96,6 +97,26 @@ export async function checkRetentionOutcomes(): Promise<{
 
 export async function runLift(): Promise<LiftReport> {
   const start = Date.now()
+
+  // ── Activation check (Tab 3 logic) ────────────────────────────────────
+  const [ws, recentSignals] = await Promise.all([getWorldState(), getRecentSignals(6)])
+
+  // Stand down: last scan < 6h ago, churn risk low, no failed payments
+  const lastLiftSignal = recentSignals.find(s => s.from_agent === 'lift')
+  const hoursAgo = lastLiftSignal
+    ? (Date.now() - new Date(lastLiftSignal.created_at!).getTime()) / 3600000
+    : 999
+  const standDown = hoursAgo < 6 && ws.churn_risk_score < 4 && ws.failed_payments_count === 0
+  if (standDown) {
+    return {
+      timestamp: new Date(),
+      atRiskUsers: [],
+      upgradeSignals: ws.upgrade_candidates,
+      onboardingGaps: ws.onboarding_gap_count,
+      summary: `Stand down — last scan ${hoursAgo.toFixed(1)}h ago, churn risk ${ws.churn_risk_score}/10.`,
+    }
+  }
+
   const supabase = createServiceClient()
   const now = Date.now()
 
@@ -269,6 +290,42 @@ export async function runLift(): Promise<LiftReport> {
   })
 
   await logSubAgent('lift', 'daily_scan', '', summary, Date.now() - start, true)
+
+  // ── Write world state + publish signal ─────────────────────────────────
+  // Churn risk score: (at-risk users) / max(1, total paid proxy) * 10, capped at 10
+  const paidAtRisk = atRiskUsers.filter(u => u.plan !== 'free').length
+  const totalPaidProxy = Math.max(1, atRiskUsers.length + upgradeSignals + 5)
+  const churnScore = Math.min(10, Math.round((paidAtRisk * 2 + (atRiskUsers.length - paidAtRisk)) / totalPaidProxy * 10))
+
+  await updateWorldState({
+    churn_risk_score: churnScore,
+    upgrade_candidates: upgradeSignals,
+    onboarding_gap_count: onboardingGaps,
+    lift_outcome_summary: summary.slice(0, 200),
+    last_updated_by: 'lift',
+  })
+
+  const severity = churnScore >= 7 ? 'urgent' : churnScore >= 4 ? 'warning' : 'info'
+  await publishSignal({
+    from_agent: 'lift',
+    signal_type: atRiskUsers.length > 0 ? 'risk_detected' : 'action_taken',
+    severity,
+    summary: `${summary} Churn risk score: ${churnScore}/10.`,
+    data: {
+      churn_risk_score: churnScore,
+      at_risk_count: atRiskUsers.length,
+      upgrade_candidates: upgradeSignals,
+      onboarding_gaps: onboardingGaps,
+      top_risk_reasons: [...new Set(atRiskUsers.map(u => u.riskReason))],
+    },
+    suggested_reactions: churnScore >= 7
+      ? 'Basnet should elevate churn_risk_score in world state. Spark should shift to RETENTION mode.'
+      : upgradeSignals > 0
+      ? `Spark should run upgrade prompts for ${upgradeSignals} users at threshold.`
+      : 'No immediate action required.',
+    expires_after_hours: 24,
+  })
+
   return report
 }
 

@@ -21,6 +21,11 @@ import {
 } from '@/lib/agents/watcher'
 
 import { classifyQuestion } from '@/lib/agents/classification'
+import {
+  getWorldState, updateWorldState, getRecentSignals,
+  formatSignalsForPrompt, parseSignalBlocks, publishSignal,
+  injectVars, BASNET_HEAD_PROMPT_TEMPLATE,
+} from '@/lib/agents/world-state'
 
 // ── Classify question (shared with voice route) ────────────────────────
 
@@ -94,44 +99,106 @@ export async function POST(req: NextRequest) {
 
       const stripe = await getStripeMetrics()
 
-      const briefingData = JSON.stringify({
-        urgent: visa?.urgency === 'urgent' ? `Visa expires in ${visa.daysUntilExpiry} days` : null,
-        payg: flux ? (flux.payg.allPassing ? '5/5 passing' : `FAILING: ${flux.payg.results.filter(r => !r.pass).map(r => r.tc).join(', ')}`) : 'unknown',
-        mrr: stripe.mrr,
-        newPaid: stripe.newPaidThisWeek,
-        churn: stripe.churnThisWeek,
-        goals: goals ? goals.slice(0, 200) : null,
-        monday,
-        scoutAlert: scout?.criticalFail ? `Critical product failure: ${scout.tests.filter(t => !t.pass).map(t => t.name).join(', ')}` : null,
-        liftAlert: (lift?.atRiskUsers.length ?? 0) > 0 ? `${lift!.atRiskUsers.length} users at risk` : null,
-        missedAgents: missed.length > 0 ? missed : null,
-        marketIntel: atlasIntel || null,
+      // ── Populate world state with fresh data from all agents ──────────
+      const fluxCodeScore = flux
+        ? (flux.overall === 'healthy' ? 9 : flux.overall === 'warning' ? 6 : 3)
+        : 8
+      const paygStatus = flux ? (flux.payg.allPassing ? 'pass' : 'fail') : 'unknown'
+      const scoutStatus = scout ? (scout.criticalFail ? 'fail' : 'pass') : 'unknown'
+      const churnRisk = lift ? Math.min(10, lift.atRiskUsers.length * 2) : 0
+      const july1Countdown = Math.max(0, Math.ceil((new Date('2026-07-01').getTime() - Date.now()) / 86400000))
+
+      // Signups today: count from Supabase
+      const supabase = createServiceClient()
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+      const signupsTodayResult = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', todayStart.toISOString())
+      const signupsToday = signupsTodayResult.count
+
+      await updateWorldState({
+        mrr_current: Math.round(stripe.mrr),
+        mrr_trend: stripe.mrrChange !== 0 ? Math.round((stripe.mrrChange / Math.max(1, stripe.mrr - stripe.mrrChange)) * 100) : 0,
+        signups_today: signupsToday ?? 0,
+        failed_payments_count: stripe.failedPaymentsThisWeek,
+        flux_code_score: fluxCodeScore,
+        payg_test_status: paygStatus,
+        scout_last_status: scoutStatus,
+        sentry_open_count: flux?.sentry.newErrors.length ?? 0,
+        sentry_last_error: flux?.sentry.newErrors[0]?.type ?? '',
+        churn_risk_score: churnRisk,
+        upgrade_candidates: lift?.upgradeSignals ?? 0,
+        onboarding_gap_count: lift?.onboardingGaps ?? 0,
+        lift_outcome_summary: lift?.summary ?? '',
+        visa_days_remaining: visa?.daysUntilExpiry ?? 0,
+        relay_current_goal: goals ? goals.slice(0, 150) : '',
+        july1_countdown: july1Countdown,
+        last_updated_by: 'basnet_morning',
       })
 
-      const today = new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney', weekday: 'long', day: 'numeric', month: 'long' })
+      // ── Read world state + recent signals for Tab 1 prompt ────────────
+      const [ws, recentSignals] = await Promise.all([getWorldState(), getRecentSignals(6)])
+      const signalsText = formatSignalsForPrompt(recentSignals)
 
-      const learningsSection = learnings
-        ? `\n\nWhat worked and failed in recent weeks:\n${learnings}`
-        : ''
+      const today = new Date().toLocaleString('en-AU', {
+        timeZone: 'Australia/Sydney', weekday: 'long', day: 'numeric', month: 'long',
+      })
+
+      // ── Inject all variables into the Tab 1 prompt template ───────────
+      const injectedPrompt = injectVars(BASNET_HEAD_PROMPT_TEMPLATE, {
+        mrr_current: ws.mrr_current,
+        mrr_trend: ws.mrr_trend,
+        signups_today: ws.signups_today,
+        signups_baseline: ws.signups_baseline,
+        churn_risk_score: ws.churn_risk_score,
+        failed_payments_count: ws.failed_payments_count,
+        inactive_paid_count: ws.inactive_paid_count,
+        flux_code_score: ws.flux_code_score,
+        scout_last_status: ws.scout_last_status,
+        sentry_open_count: ws.sentry_open_count,
+        payg_test_status: ws.payg_test_status,
+        sentry_last_error: ws.sentry_last_error || 'none',
+        atlas_last_finding: ws.atlas_last_finding || 'not yet collected',
+        atlas_last_run: ws.atlas_last_run ? new Date(ws.atlas_last_run).toLocaleDateString('en-AU') : 'never',
+        brand_mentions_count: ws.brand_mentions_count,
+        upgrade_candidates: ws.upgrade_candidates,
+        reengagement_candidates: ws.reengagement_candidates,
+        onboarding_gap_count: ws.onboarding_gap_count,
+        lift_outcome_summary: ws.lift_outcome_summary || 'no data yet',
+        spark_last_topic: ws.spark_last_topic || 'not set',
+        approval_queue_depth: ws.approval_queue_depth,
+        accountant_emails_sent: ws.accountant_emails_sent,
+        spark_winning_subject: ws.spark_winning_subject || 'not tracked yet',
+        visa_days_remaining: ws.visa_days_remaining,
+        relay_current_goal: ws.relay_current_goal || 'not set',
+        july1_countdown: ws.july1_countdown,
+        learnings_last_4_weeks: learnings || 'No learnings recorded yet.',
+        agent_signals_recent: signalsText,
+      })
 
       const briefing = await callClaude({
-        systemPrompt: `${EMAIL_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1000)}${learningsSection}`,
-        userMessage: `Morning briefing — ${today}
-
-Data: ${briefingData}
-
-Write morning briefing. Max 5 sentences.
-Format: URGENT (if any) · SAB TODAY · FOCUS · NORTH STAR CHECK
-Direct. Specific numbers. Basnet voice.
-If past learnings are relevant to today's data, reference them.`,
-        maxTokens: 300,
+        systemPrompt: EMAIL_PERSONALITY,
+        userMessage: `${injectedPrompt}\n\n---\nToday: ${today}. Missed agents: ${missed.length > 0 ? missed.join(', ') : 'none'}. Monday cadence: ${monday}.`,
+        maxTokens: 600,
       })
 
-      const supabase = createServiceClient()
+      // ── Parse any AGENT_SIGNAL blocks from Basnet's response ──────────
+      const signals = parseSignalBlocks(briefing)
+      await Promise.all(signals.map(s => publishSignal(s)))
+
+      // ── Write Basnet's reasoning back to world state ───────────────────
+      const worldStateUpdateMatch = briefing.match(/WORLD STATE UPDATE\s*([\s\S]*?)(?=BASNET REASONING|$)/)
+      const reasoning = briefing.match(/BASNET REASONING\s*([\s\S]*)/)
+      await updateWorldState({
+        basnet_last_reasoning: (worldStateUpdateMatch?.[1] ?? reasoning?.[1] ?? briefing).trim().slice(0, 500),
+        last_updated_by: 'basnet',
+      })
+
       const todayStr = new Date().toISOString().split('T')[0]
       await supabase.from('agent_briefings').upsert({
         briefing_date: todayStr,
-        metrics: JSON.parse(briefingData) as Record<string, unknown>,
+        metrics: { mrr: stripe.mrr, churn: stripe.churnThisWeek, payg: paygStatus, churnRisk } as Record<string, unknown>,
         content: briefing,
         sent_to_telegram: true,
       }, { onConflict: 'briefing_date' })

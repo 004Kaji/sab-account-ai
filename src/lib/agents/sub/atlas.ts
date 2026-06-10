@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase'
 import { callClaude, sendAlert, logAgentAction, logSubAgent } from '@/lib/agents/utils'
 import { BASNET_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
+import { getWorldState, getRecentSignals, updateWorldState, publishSignal } from '@/lib/agents/world-state'
 
 export const ATLAS_IDENTITY = `
 ${BASNET_PERSONALITY}
@@ -59,6 +60,24 @@ async function callClaudeWithWebSearch(
 
 export async function atlasWeeklyIntel(): Promise<AtlasReport> {
   const start = Date.now()
+
+  // ── Activation check (Tab 3 logic) ────────────────────────────────────
+  const [ws, recentSignals] = await Promise.all([getWorldState(), getRecentSignals(24)])
+  const lastAtlasSignal = recentSignals.find(s => s.from_agent === 'atlas')
+  const hoursAgo = lastAtlasSignal
+    ? (Date.now() - new Date(lastAtlasSignal.created_at!).getTime()) / 3600000
+    : 999
+  // Stand down: ran < 24h ago and no signup anomaly and no special conditions
+  const july1Urgent = ws.july1_countdown > 0 && ws.july1_countdown <= 30
+  const signupAnomaly = ws.signups_today < ws.signups_baseline * 0.5
+  if (hoursAgo < 24 && !july1Urgent && !signupAnomaly) {
+    return {
+      timestamp: new Date(),
+      intel: [],
+      summary: `Stand down — last Atlas scan ${hoursAgo.toFixed(1)}h ago, no anomalies.`,
+      actionItem: null,
+    }
+  }
 
   const raw = await callClaudeWithWebSearch(
     ATLAS_IDENTITY,
@@ -142,6 +161,37 @@ Return JSON: { "intel": [], "summary": "No live search available this week — u
   })
 
   await logSubAgent('atlas', 'weekly_intel', '', report.summary.slice(0, 200), Date.now() - start, true)
+
+  // ── Write world state + publish signal ─────────────────────────────────
+  const topFinding = report.intel.find(i => i.urgency === 'high') ?? report.intel[0]
+  await updateWorldState({
+    atlas_last_finding: topFinding?.finding.slice(0, 200) ?? report.summary.slice(0, 200),
+    atlas_last_run: new Date().toISOString(),
+    last_updated_by: 'atlas',
+  })
+
+  if (report.intel.length > 0) {
+    const severity = highUrgency.length > 0 ? 'warning' : 'info'
+    await publishSignal({
+      from_agent: 'atlas',
+      signal_type: 'finding',
+      severity,
+      summary: report.summary.slice(0, 200),
+      data: {
+        intel_count: report.intel.length,
+        high_urgency: highUrgency.length,
+        top_finding: topFinding?.finding ?? '',
+        action_item: report.actionItem ?? '',
+      },
+      suggested_reactions: highUrgency.length > 0
+        ? 'Spark should generate counter-positioning content. Basnet should elevate acquisition priority.'
+        : report.actionItem
+        ? `Spark: ${report.actionItem}`
+        : 'No immediate action needed.',
+      expires_after_hours: 168,
+    })
+  }
+
   return report
 }
 
