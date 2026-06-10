@@ -82,24 +82,32 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
   if (q.includes('auth') || q.includes('middleware')) fileContext += `\n\nmiddleware:\n${readProjectFile('src/middleware.ts')}`
   if (q.includes('agent'))      fileContext += `\n\nclassification:\n${readProjectFile('src/lib/agents/classification.ts')}`
 
-  if (isCommit(question)) {
-    const result = doCommit(progress)
-    return { answer: result, webSearchUsed: false }
-  }
+  const shouldCommit = isCommit(question)
+  const shouldDeploy = isDeploy(question)
 
-  if (isDeploy(question)) {
-    progress('FLUX', 'Building project...')
-    const buildResult = runSafe('npm run build 2>&1 | tail -5')
-    if (buildResult.includes('error')) {
-      return { answer: `Build failed before deploy:\n${buildResult}`, webSearchUsed: false }
+  if (shouldCommit || shouldDeploy) {
+    let summary = ''
+
+    if (shouldCommit) {
+      const commitResult = doCommit(progress)
+      summary = commitResult
     }
-    progress('FLUX', 'Deploying to Vercel...')
-    const deployResult = runSafe('npx vercel --prod --yes 2>&1 | tail -10')
-    progress('FLUX', 'Deploy complete. Sending result...')
-    return {
-      answer: `Deployed to Vercel. ${deployResult.slice(0, 200)}`,
-      webSearchUsed: false,
+
+    if (shouldDeploy) {
+      progress('FLUX', 'Building project...')
+      const buildResult = runSafe('npm run build 2>&1 | tail -5')
+      if (buildResult.toLowerCase().includes('error')) {
+        return { answer: `Build failed — fix errors before deploying. ${buildResult.slice(0, 150)}`, webSearchUsed: false }
+      }
+      progress('FLUX', 'Deploying to Vercel...')
+      const deployResult = runSafe('npx vercel --prod --yes 2>&1 | tail -5')
+      progress('FLUX', 'Deployed.')
+      summary = summary
+        ? `${summary}. Then deployed to Vercel — ${deployResult.slice(0, 100)}`
+        : `Deployed to Vercel. ${deployResult.slice(0, 150)}`
     }
+
+    return { answer: summary, webSearchUsed: false }
   }
 
   progress('FLUX', 'Analysing code and diagnosing...')
