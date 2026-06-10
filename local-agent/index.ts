@@ -1,38 +1,22 @@
+import './env' // must be first — loads .env.local before any agent module initializes
 import http from 'http'
 import os from 'os'
-import fs from 'fs'
-import path from 'path'
-import Anthropic from '@anthropic-ai/sdk'
-import { listDirectory, readFile, writeFile, fileExists, tavilySearch, getSystemInfo } from './mac-toolkit'
+import { listDirectory, readFile, writeFile, fileExists, getSystemInfo } from './mac-toolkit'
+import { handlePersonal } from './agents/personal'
+import { handleMarketing } from './agents/marketing'
+import { handleIntel } from './agents/intel'
+import { handleHealth } from './agents/health'
+import { handleTechnical } from './agents/technical'
+import { loadRecentHistory, loadFacts, extractAndSaveFacts, formatMemoryContext } from './memory'
+import type { MemoryEntry } from './memory'
 
-// Load env vars from parent project's .env.local
-const envPath = path.join(__dirname, '..', '.env.local')
-if (fs.existsSync(envPath)) {
-  const lines = fs.readFileSync(envPath, 'utf-8').split('\n')
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('#')) continue
-    const eq = trimmed.indexOf('=')
-    if (eq === -1) continue
-    const key = trimmed.slice(0, eq).trim()
-    const val = trimmed.slice(eq + 1).trim().replace(/^"|"$/g, '')
-    if (key && val && !process.env[key]) process.env[key] = val
-  }
-}
-
-const PORT = parseInt(process.env.LOCAL_AGENT_PORT ?? '3099', 10)
+const PORT   = parseInt(process.env.LOCAL_AGENT_PORT ?? '3099', 10)
 const SECRET = process.env.AGENT_WEBHOOK_SECRET
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
-// ── Auth check ────────────────────────────────────────────────────────
-
 function isAuthorized(req: http.IncomingMessage): boolean {
-  if (!SECRET) return true // dev mode: no secret set = open
+  if (!SECRET) return true
   return req.headers['x-agent-secret'] === SECRET
 }
-
-// ── Request body parser ────────────────────────────────────────────────
 
 function parseBody(req: http.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -45,86 +29,30 @@ function parseBody(req: http.IncomingMessage): Promise<unknown> {
   })
 }
 
-// ── JSON response helper ───────────────────────────────────────────────
-
 function json(res: http.ServerResponse, statusCode: number, data: unknown) {
   const body = JSON.stringify(data)
   res.writeHead(statusCode, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) })
   res.end(body)
 }
 
-// ── Routes ────────────────────────────────────────────────────────────
+// ── Legacy file/system handlers ────────────────────────────────────────
 
-const MAC_SYSTEM_TRIGGERS = ['memory', 'ram', 'disk', 'storage', 'space', 'cpu', 'battery',
-  'process', 'running', 'app', 'system', 'computer', 'mac', 'slow', 'performance', 'uptime']
-
-function needsSystemInfo(question: string): boolean {
-  const q = question.toLowerCase()
-  return MAC_SYSTEM_TRIGGERS.some(t => q.includes(t))
-}
-
-async function handleAsk(body: unknown): Promise<{ answer: string; webSearchUsed: boolean }> {
-  const req = body as { question?: string; filePaths?: string[] }
-  if (!req.question) throw new Error('question required')
-
-  let fileContext = ''
-  if (req.filePaths?.length) {
-    for (const p of req.filePaths.slice(0, 3)) {
-      if (fileExists(p)) {
-        const content = readFile(p)
-        fileContext += `\n\nFile: ${p}\n${content.slice(0, 2000)}`
-      }
-    }
-  }
-
-  // Add real system info for Mac/system queries
-  let systemContext = ''
-  if (needsSystemInfo(req.question)) {
-    const info = getSystemInfo()
-    systemContext = `\n\nLive Mac system info (${info.hostname}):
-- Disk: ${info.disk.used} used of ${info.disk.total} total, ${info.disk.free} free (${info.disk.percent} full)
-- Memory: ${info.memory.used} active, ${info.memory.free} free of ~${info.memory.total} total
-- Battery: ${info.battery}
-- Uptime: ${info.uptime}
-- Top processes: ${info.topProcesses.join(', ')}`
-  }
-
-  const search = await tavilySearch(req.question, 3)
-  const webContext = search.answer ? `\n\nWeb search: ${search.answer}` : ''
-
-  const msg = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 600,
-    system: `You are Relay, Basnet's personal agent running locally on Sanjog's Mac.
-You have access to his files, system info, and web search.
-Answer concisely. Flag visa risks. Respect 14hr/week work limit.${fileContext}${systemContext}${webContext}`,
-    messages: [{ role: 'user', content: req.question }],
-  })
-
-  const block = msg.content.find(b => b.type === 'text')
-  return {
-    answer: block?.type === 'text' ? block.text : 'No response',
-    webSearchUsed: search.results.length > 0,
-  }
-}
-
-function handleSystem(): { info: ReturnType<typeof getSystemInfo> } {
+function handleSystem() {
   return { info: getSystemInfo() }
 }
 
-function handleFiles(body: unknown): { entries: string[] } {
+function handleFiles(body: unknown) {
   const req = body as { path?: string }
-  const dirPath = req.path ?? os.homedir() + '/Documents'
-  return { entries: listDirectory(dirPath) }
+  return { entries: listDirectory(req.path ?? os.homedir() + '/Documents') }
 }
 
-function handleRead(body: unknown): { content: string } {
+function handleRead(body: unknown) {
   const req = body as { path?: string }
   if (!req.path) throw new Error('path required')
   return { content: readFile(req.path) }
 }
 
-function handleWrite(body: unknown): { success: boolean } {
+function handleWrite(body: unknown) {
   const req = body as { path?: string; content?: string }
   if (!req.path || req.content === undefined) throw new Error('path and content required')
   writeFile(req.path, req.content)
@@ -160,24 +88,97 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    if (req.url === '/ask') {
-      const result = await handleAsk(body)
+    const { question, filePaths } = body as { question?: string; filePaths?: string[] }
+
+    // ── Memory: load history ──────────────────────────────────────────
+    if (req.url === '/history') {
+      const history = await loadRecentHistory(15)
+      const facts   = loadFacts()
+      json(res, 200, { success: true, history, facts, count: history.length })
+
+    // ── Streaming route — NDJSON, live progress ───────────────────────
+    } else if (req.url === '/stream') {
+      const { question: q, route, mem_context, history: sessionHistory } = body as {
+        question?: string; route?: string; history?: {q:string;a:string}[]; mem_context?: string
+      }
+      if (!q) throw new Error('question required')
+
+      res.writeHead(200, {
+        'Content-Type': 'application/x-ndjson',
+        'Transfer-Encoding': 'chunked',
+        'Cache-Control': 'no-cache',
+      })
+
+      const progress = (agent: string, message: string) => {
+        res.write(JSON.stringify({ type: 'progress', agent, message }) + '\n')
+      }
+
+      const memoryContext = mem_context ?? ''
+      const historyText  = (sessionHistory ?? [])
+        .map(h => `Q: ${h.q}\nA: ${h.a}`)
+        .join('\n\n')
+      const fullContext  = [memoryContext, historyText ? `Recent conversation:\n${historyText}` : '']
+        .filter(Boolean).join('\n\n')
+
+      let result
+      const r = route ?? 'ask'
+      if      (r === 'marketing')    result = await handleMarketing(q, progress, fullContext)
+      else if (r === 'intel')        result = await handleIntel(q, progress)
+      else if (r === 'health-check') result = await handleHealth(q, progress)
+      else if (r === 'technical')    result = await handleTechnical(q, progress)
+      else                           result = await handlePersonal(q, progress, undefined, fullContext)
+
+      res.write(JSON.stringify({ type: 'result', success: true, answer: result.answer, url: result.url }) + '\n')
+      res.end()
+
+    // ── Agent routes (non-streaming fallback) ─────────────────────────
+    } else if (req.url === '/ask') {
+      if (!question) throw new Error('question required')
+      const noop = () => {}
+      const result = await handlePersonal(question, noop, filePaths)
+      json(res, 200, { success: true, answer: result.answer, url: result.url, webSearchUsed: result.webSearchUsed })
+
+    } else if (req.url === '/marketing') {
+      if (!question) throw new Error('question required')
+      const result = await handleMarketing(question, () => {})
+      json(res, 200, { success: true, answer: result.answer, url: result.url, webSearchUsed: result.webSearchUsed })
+
+    } else if (req.url === '/intel') {
+      if (!question) throw new Error('question required')
+      const result = await handleIntel(question, () => {})
+      json(res, 200, { success: true, answer: result.answer, url: result.url, webSearchUsed: result.webSearchUsed })
+
+    } else if (req.url === '/health-check') {
+      if (!question) throw new Error('question required')
+      const result = await handleHealth(question, () => {})
       json(res, 200, { success: true, answer: result.answer, webSearchUsed: result.webSearchUsed })
+
+    } else if (req.url === '/technical') {
+      if (!question) throw new Error('question required')
+      const result = await handleTechnical(question, () => {})
+      json(res, 200, { success: true, answer: result.answer, webSearchUsed: result.webSearchUsed })
+
+    // ── Legacy utility routes ──────────────────────────────────────────
     } else if (req.url === '/system') {
       const result = handleSystem()
       json(res, 200, { success: true, ...result })
+
     } else if (req.url === '/files') {
       const result = handleFiles(body)
       json(res, 200, { success: true, entries: result.entries })
+
     } else if (req.url === '/read') {
       const result = handleRead(body)
       json(res, 200, { success: true, content: result.content })
+
     } else if (req.url === '/write') {
       handleWrite(body)
       json(res, 200, { success: true })
+
     } else {
       json(res, 404, { error: `Unknown route: ${req.url ?? '/'}` })
     }
+
   } catch (err) {
     json(res, 500, { success: false, error: err instanceof Error ? err.message : String(err) })
   }
@@ -185,8 +186,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Basnet local agent running on http://127.0.0.1:${PORT}`)
-  console.log(`Auth: ${SECRET ? 'enabled (AGENT_WEBHOOK_SECRET)' : 'disabled (dev mode)'}`)
-  console.log('Endpoints: /health  /ask  /system  /files  /read  /write')
+  console.log(`Auth: ${SECRET ? 'enabled' : 'disabled (dev mode)'}`)
+  console.log('Agents: /ask (personal+mac)  /marketing  /intel  /health-check  /technical')
+  console.log('Utils:  /system  /files  /read  /write  /health')
 })
 
 process.on('SIGTERM', () => server.close())

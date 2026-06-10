@@ -9,7 +9,9 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.95.1"
+    "@anthropic-ai/sdk": "^0.95.1",
+    "@supabase/supabase-js": "^2.108.1",
+    "twitter-api-v2": "^1.29.0"
   },
   "devDependencies": {
     "@types/node": "^20",

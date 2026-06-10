@@ -1,10 +1,11 @@
 """
 Basnet Voice — runs on MacBook only. NOT deployed to Vercel.
 Press Enter to speak, Basnet listens for 8 seconds and responds.
-Calls /api/agents/voice and speaks the response.
+All queries routed to local agent on port 3099. Vercel not contacted.
 
 Requirements: pip3 install -r basnet_requirements.txt
               brew install sox ffmpeg
+              cd local-agent && npm run dev   (must be running)
 """
 
 import asyncio
@@ -20,7 +21,19 @@ from typing import Optional
 ssl._create_default_https_context = ssl._create_unverified_context
 os.environ['PYTHONHTTPSVERIFY'] = '0'
 
-AGENT_URL        = "https://sabaccountai.com/api/agents/voice"
+# Load .env.local automatically so no manual export needed
+_env_file = Path(__file__).parent / ".env.local"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if not _line or _line.startswith("#") or "=" not in _line:
+            continue
+        _k, _v = _line.split("=", 1)
+        _k, _v = _k.strip(), _v.strip().strip('"')
+        if _k and not os.environ.get(_k):
+            os.environ[_k] = _v
+
+LOCAL_AGENT_URL  = "http://127.0.0.1:3099"
 WEBHOOK_SECRET   = os.environ.get("AGENT_WEBHOOK_SECRET", "")
 ELEVENLABS_KEY   = os.environ.get("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE = os.environ.get("ELEVENLABS_VOICE_ID", "")
@@ -56,28 +69,179 @@ async def record(seconds: int = 8) -> str:
     return tmp
 
 
-async def ask_basnet(
-    text: str,
-    history: list,
-    current_topic: Optional[str],
-) -> dict:
-    if not WEBHOOK_SECRET:
-        return {"response": "AGENT_WEBHOOK_SECRET not set.", "url": None, "warning": None,
-                "topic": None, "is_complete": False, "next_suggestion": None}
-    async with httpx.AsyncClient(timeout=25) as c:
-        try:
-            r = await c.post(AGENT_URL, json={
-                "secret":        WEBHOOK_SECRET,
-                "input":         text,
-                "mode":          "voice",
-                "history":       history,
-                "current_topic": current_topic,
-            })
-            return r.json()
-        except Exception as e:
-            return {"response": f"Connection error: {e}", "url": None, "warning": None,
-                    "topic": None, "is_complete": False, "next_suggestion": None}
+VERCEL_URL = "https://sabaccountai.com"
 
+# Voice commands that trigger Vercel agent endpoints directly
+# Format: phrase → (url, body)
+_VOICE_TRIGGERS: list[tuple[list[str], str, dict]] = [
+    (
+        ["send accountant emails", "send the emails", "run spark"],
+        f"{VERCEL_URL}/api/agents/sab",
+        {"trigger": "marketing_run", "data": {"marketingTrigger": "accountant_emails"}},
+    ),
+    (
+        ["run scout", "scan the product", "test the site"],
+        f"{VERCEL_URL}/api/agents/sab",
+        {"trigger": "scout_scan"},
+    ),
+    (
+        ["run lift", "check for churn", "scan users"],
+        f"{VERCEL_URL}/api/agents/sab",
+        {"trigger": "lift_scan"},
+    ),
+    (
+        ["morning briefing", "give me my briefing", "daily briefing"],
+        f"{VERCEL_URL}/api/agents/basnet",
+        {"trigger": "morning"},
+    ),
+    (
+        ["weekly brief", "weekly summary"],
+        f"{VERCEL_URL}/api/agents/basnet",
+        {"trigger": "weekly"},
+    ),
+    (
+        ["run learn", "learning loop", "basnet learn"],
+        f"{VERCEL_URL}/api/agents/learn",
+        {},
+    ),
+]
+
+async def fire_agent(url: str, body: dict) -> dict:
+    """Fire a Vercel agent endpoint and return its response."""
+    body["secret"] = WEBHOOK_SECRET
+    try:
+        async with httpx.AsyncClient(timeout=45) as c:
+            r = await c.post(url, json=body)
+            d = r.json()
+            answer = (d.get("response") or d.get("answer") or
+                      d.get("message") or d.get("result") or "Done.")
+            return {"response": str(answer)[:300], "url": None, "warning": None,
+                    "topic": None, "is_complete": False, "next_suggestion": None}
+    except Exception as e:
+        return {"response": f"Agent unreachable: {e}", "url": None, "warning": None,
+                "topic": None, "is_complete": False, "next_suggestion": None}
+
+def match_voice_trigger(question: str) -> tuple[str, dict] | None:
+    q = question.lower()
+    for phrases, url, body in _VOICE_TRIGGERS:
+        if any(p in q for p in phrases):
+            return url, body
+    return None
+
+# ── Local classification — mirrors classification.ts ───────────────────
+
+_KEYWORDS: dict[str, list[str]] = {
+    "mac":       ['ram', 'disk', 'cpu', 'battery', 'uptime', 'hard drive', 'ssd',
+                  'my mac', 'how much space', 'free space'],
+    "technical": ['error', 'bug', 'build', 'stripe webhook', 'supabase', 'sentry',
+                  'deploy', 'code', 'payg', 'test', 'rls', 'ssl', 'security',
+                  'working', 'broken', 'passing', 'endpoint', 'api', 'route',
+                  'check my system', 'run flux', 'health check', 'site working',
+                  'is the site', 'is sab', 'any errors', 'any bugs', 'status'],
+    "health":    ['churn', 'at risk', 'inactive', 'retention', 'not using',
+                  'upgrade', 'conversion', 'lost user', 'user', 'signup', 'mrr',
+                  'revenue', 'paid users'],
+    "intel":     ['competitor', 'xero', 'myob', 'market', 'ato update',
+                  'law change', 'payday super', 'pricing', 'what are competitors', 'news'],
+    "marketing": ['tiktok', 'blog', 'post', 'content', 'what to write', 'topic',
+                  'hook', 'linkedin', 'facebook', 'accountant', 'instagram', 'twitter'],
+    "personal":  ['visa', 'pr', 'university', 'goals', 'dream', 'north star',
+                  'tired', 'overwhelmed', 'should i', 'what do i do', 'job', 'jobs',
+                  'work', 'employment', 'career', 'apply', 'resume', 'darwin', 'sydney',
+                  'melbourne', 'brisbane', 'perth', 'adelaide', 'find me', 'search for',
+                  'look up', 'study', 'assignment', 'course', 'semester', 'fee',
+                  'money', 'finance', 'budget', 'income', 'expense', 'part time',
+                  'full time', 'casual', 'internship', 'salary', 'wage', 'weather',
+                  'how much does', 'price of', 'cost of', 'where is', 'what is the',
+                  'hire', 'hiring', 'find me', 'how do i', 'how to get'],
+}
+
+# mac checked before personal so "mac memory" doesn't hit web search
+_PRIORITY = ["mac", "technical", "health", "intel", "marketing", "personal"]
+
+# Phrase triggers for ambiguous words (require Mac-specific context)
+_MAC_PHRASE: list[tuple[str, list[str]]] = [
+    ('memory',  ['mac', 'ram', 'computer', 'macbook']),
+    ('storage', ['mac', 'computer', 'macbook', 'disk']),
+    ('process', ['mac', 'cpu', 'computer', 'macbook']),
+    ('system',  ['mac', 'macbook', 'computer']),
+    ('slow',    ['mac', 'macbook', 'computer']),
+    ('running', ['mac', 'macbook', 'slow']),
+]
+
+# Classification → local agent route
+_ROUTE: dict[str, str] = {
+    "mac":       "ask",
+    "personal":  "ask",
+    "technical": "technical",
+    "health":    "health-check",
+    "intel":     "intel",
+    "marketing": "marketing",
+    "general":   "ask",
+}
+
+def classify_local(question: str) -> str:
+    q = question.lower()
+    # Mac phrase triggers (ambiguous keywords need context)
+    for trigger, ctx in _MAC_PHRASE:
+        if trigger in q and any(c in q for c in ctx):
+            return "mac"
+    # Standard keyword matching in priority order
+    for cls in _PRIORITY:
+        if any(k in q for k in _KEYWORDS[cls]):
+            return cls
+    return "general"
+
+
+AGENT_COLORS = {
+    "RELAY":    "\033[96m",   # cyan
+    "SPARK":    "\033[95m",   # magenta
+    "ATLAS":    "\033[93m",   # yellow
+    "FLUX":     "\033[92m",   # green
+    "LIFT":     "\033[94m",   # blue
+}
+RESET = "\033[0m"
+DIM   = "\033[2m"
+
+async def ask_local(question: str, route: str, mem_context: str = "", history: list = []) -> dict:
+    """Call /stream on the local agent, print live progress, return final result."""
+    import json as _json
+    try:
+        async with httpx.AsyncClient(timeout=60) as c:
+            async with c.stream(
+                "POST",
+                f"{LOCAL_AGENT_URL}/stream",
+                headers={"x-agent-secret": WEBHOOK_SECRET, "Content-Type": "application/json"},
+                json={"question": question, "route": route, "mem_context": mem_context,
+                      "history": [{"q": h["q"], "a": h["a"]} for h in history[-6:]]},
+            ) as r:
+                async for raw_line in r.aiter_lines():
+                    if not raw_line.strip():
+                        continue
+                    try:
+                        line = _json.loads(raw_line)
+                    except Exception:
+                        continue
+
+                    if line.get("type") == "progress":
+                        agent = line.get("agent", "BASNET")
+                        msg   = line.get("message", "")
+                        color = AGENT_COLORS.get(agent, "\033[97m")
+                        print(f"  {color}[{agent}]{RESET} {DIM}{msg}{RESET}")
+
+                    elif line.get("type") == "result":
+                        return {
+                            "response":       line.get("answer", "No response."),
+                            "url":            line.get("url"),
+                            "warning":        None,
+                            "topic":          None,
+                            "is_complete":    False,
+                            "next_suggestion": None,
+                        }
+    except Exception as e:
+        print(f"  \033[91m[ERROR]{RESET} {e}")
+    return {"response": "Local agent unreachable. Is `npm run dev` running in local-agent/?",
+            "url": None, "warning": None, "topic": None, "is_complete": False, "next_suggestion": None}
 
 YES_WORDS = {"yes", "yeah", "yep", "sure", "open", "show", "go", "do it", "ok", "okay", "please"}
 FILTER_WORDS = {"filter", "sort", "recent", "latest", "new", "today", "date", "newest"}
@@ -154,20 +318,25 @@ async def speak(text: str):
 
 async def main():
     print("=" * 50)
-    print("Basnet Voice — Ready")
+    print("Basnet Voice — Fully Local")
     print("Press ENTER to speak, then talk for 8 seconds")
+    print("Agents: mac · personal · marketing · intel · technical · health")
     print("Ctrl+C to stop")
     if not ELEVENLABS_KEY:
-        print("Using Mac say (no ElevenLabs key)")
+        print("TTS: Mac say (no ElevenLabs key)")
     if not WEBHOOK_SECRET:
         print("WARNING: AGENT_WEBHOOK_SECRET not set")
     print("=" * 50)
 
     await speak("Basnet online. Press Enter to speak.")
 
-    last_url = None       # last opened URL for follow-up navigation
-    history = []          # session conversation history
-    current_topic = None  # active topic being discussed
+    print("[Initialising memory...]")
+    from basnet_memory import search_memory, save_memory
+    print("[Memory ready — Basnet remembers everything.]")
+
+    last_url      = None
+    history       = []     # in-session only; long-term memory handled by mem0
+    current_topic = None
 
     while True:
         try:
@@ -186,6 +355,24 @@ async def main():
                 await speak("Did not catch that. Try again.")
                 continue
 
+            # Fix Whisper mis-spellings of agent names (case-insensitive word match)
+            _NAME_FIXES = {
+                'smith': 'Basnet', 'basenet': 'Basnet', 'bassnet': 'Basnet', 'basnit': 'Basnet',
+                'fox': 'Flux', 'flocks': 'Flux', 'flex': 'Flux',
+                'sparks': 'Spark', 'park': 'Spark',
+                'atlas atlas': 'Atlas',
+                'lift lift': 'Lift',
+                'relay relay': 'Relay',
+                'scout scout': 'Scout',
+            }
+            import re as _re
+            _q = question
+            for wrong, right in _NAME_FIXES.items():
+                _q = _re.sub(rf'\b{wrong}\b', right, _q, flags=_re.IGNORECASE)
+            if _q != question:
+                print(f"[Corrected: {question} → {_q}]")
+                question = _q
+
             print(f"You:    {question}")
 
             # Handle follow-up filter/navigation on the last opened URL (local, no API call)
@@ -197,8 +384,27 @@ async def main():
                 await speak("Done. Filtered.")
                 continue
 
-            print("[Thinking...]")
-            data = await ask_basnet(question, history, current_topic)
+            # Check voice-triggered agent commands first
+            trigger = match_voice_trigger(question)
+            if trigger:
+                t_url, t_body = trigger
+                label = t_body.get("trigger", "agent").upper()
+                print(f"[TRIGGER → {label}]")
+                await speak("On it.")
+                data = await fire_agent(t_url, t_body)
+            else:
+                cls   = classify_local(question)
+                route = _ROUTE[cls]
+                print(f"[{cls.upper()} → /{route}]")
+
+                # Retrieve relevant memories before asking
+                mem_context = await asyncio.get_event_loop().run_in_executor(
+                    None, search_memory, question
+                )
+                if mem_context:
+                    print(f"  \033[2m[Memory: found relevant context]\033[0m")
+
+                data = await ask_local(question, route, mem_context, history)
 
             response       = data.get("response", "No response.")
             url            = data.get("url")
@@ -215,14 +421,22 @@ async def main():
             print(f"Basnet: {response}\n")
             await speak(response)
 
+            # ── Save to long-term memory (background) ──
+            asyncio.get_event_loop().run_in_executor(
+                None, save_memory, question, response
+            )
+
             # ── Update session state ──
             current_topic = topic
             history.append({"q": question, "a": response})
             if len(history) > 5:
                 history = history[-5:]
 
-            # ── Offer browser if URL returned ──
-            if url:
+            # ── Offer browser only for genuinely useful URLs ──
+            _SKIP_DOMAINS = ['facebook.com', 'twitter.com', 'instagram.com', 'reddit.com',
+                             'youtube.com', 'tiktok.com', 'pinterest.com']
+            useful_url = url and not any(d in url for d in _SKIP_DOMAINS)
+            if useful_url:
                 print(f"[URL: {url}]")
                 should_open = await ask_to_open_browser(url)
                 if should_open:
