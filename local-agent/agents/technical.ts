@@ -34,6 +34,13 @@ async function sendFluxReport(subject: string, body: string): Promise<void> {
   } catch { /* non-fatal */ }
 }
 
+// ── Result type with suggestion ────────────────────────────────────────
+
+export interface TechnicalResult extends AgentResult {
+  suggestion?: string   // what Flux recommends doing next
+  nextAction?: string   // machine-readable next action keyword
+}
+
 // ── Shell helpers ──────────────────────────────────────────────────────
 
 function run(cmd: string, cwd = PROJECT_ROOT, timeoutMs = 60000): string {
@@ -339,6 +346,57 @@ function doCommit(progress: ProgressFn): string {
   return `Committed ${count} files. ${run('git log --oneline -1')}`
 }
 
+// ── Sentry check ──────────────────────────────────────────────────────
+
+async function checkSentry(): Promise<string> {
+  const sentryToken = process.env.SENTRY_AUTH_TOKEN ?? ''
+  const sentryOrg   = 'basnet-s-projects'
+  const sentryProj  = 'sab-account-ai'
+  if (!sentryToken) return 'Sentry not configured.'
+  try {
+    const r = await fetch(
+      `https://sentry.io/api/0/projects/${sentryOrg}/${sentryProj}/issues/?query=is:unresolved&limit=5`,
+      { headers: { Authorization: `Bearer ${sentryToken}` } }
+    )
+    if (!r.ok) return `Sentry returned ${r.status}.`
+    type Issue = { title: string; count: string }
+    const issues = (await r.json()) as Issue[]
+    if (!issues.length) return 'No unresolved Sentry errors.'
+    return `${issues.length} unresolved Sentry issue(s): ${issues.slice(0, 3).map(i => i.title).join('; ')}.`
+  } catch {
+    return 'Could not reach Sentry.'
+  }
+}
+
+// ── Suggest next action ────────────────────────────────────────────────
+
+function getSuggestion(scan: ScanResult, didFix: boolean, didDeploy: boolean): { suggestion: string; nextAction: string } {
+  const pendingFiles = scan.gitStatus.split('\n').filter(Boolean).length
+
+  if (!didFix && !didDeploy) {
+    if (pendingFiles > 0) return {
+      suggestion: `There are ${pendingFiles} uncommitted file(s). Want me to commit and deploy?`,
+      nextAction: 'commit_deploy',
+    }
+    return {
+      suggestion: 'Code is clean. Want me to run a full audit and check Sentry for runtime errors?',
+      nextAction: 'audit',
+    }
+  }
+
+  if (didFix && !didDeploy) return {
+    suggestion: 'Fixes applied and PR is open. Want me to deploy to Vercel now?',
+    nextAction: 'deploy',
+  }
+
+  if (didDeploy) return {
+    suggestion: 'Deployed. Want me to check Sentry for any new runtime errors?',
+    nextAction: 'sentry',
+  }
+
+  return { suggestion: '', nextAction: '' }
+}
+
 // ── Intent detection ───────────────────────────────────────────────────
 
 const SCAN_TRIGGERS   = ['check', 'error', 'bug', 'condition', 'status', 'broken', 'any issues', 'health', 'audit']
@@ -353,16 +411,51 @@ function wants(question: string, triggers: string[]): boolean {
 
 // ── Main handler ───────────────────────────────────────────────────────
 
-export async function handleTechnical(question: string, progress: ProgressFn): Promise<AgentResult> {
+export async function handleTechnical(question: string, progress: ProgressFn): Promise<TechnicalResult> {
   const shouldScan   = wants(question, SCAN_TRIGGERS)
   const shouldFix    = wants(question, FIX_TRIGGERS)
   const shouldCommit = wants(question, COMMIT_TRIGGERS)
   const shouldDeploy = wants(question, DEPLOY_TRIGGERS)
 
+  // ── Sentry check ────────────────────────────────────────────────────
+  if (wants(question, ['sentry', 'runtime errors', 'check sentry', 'any runtime'])) {
+    progress('FLUX', 'Checking Sentry for runtime errors...')
+    const sentryResult = await checkSentry()
+    return {
+      answer: sentryResult,
+      webSearchUsed: false,
+      suggestion: sentryResult.includes('No unresolved') ? 'Everything looks healthy. Want me to run a full code audit?' : 'Want me to create GitHub issues for these errors?',
+      nextAction: sentryResult.includes('No unresolved') ? 'audit' : 'create_issues',
+    }
+  }
+
+  // ── Full audit ───────────────────────────────────────────────────────
+  if (wants(question, ['full audit', 'run audit', 'audit the code'])) {
+    progress('FLUX', 'Running full code audit...')
+    const scan = scanProject(progress)
+    progress('FLUX', 'Checking Sentry...')
+    const sentryResult = await checkSentry()
+    const gitLog = run('git log --oneline -3')
+    const answer = [
+      scan.tsErrors.length === 0 && scan.buildErrors.length === 0 ? 'Code: clean.' : `Code: ${scan.tsErrors.length} TS errors, ${scan.buildErrors.length} build errors.`,
+      sentryResult,
+      `Recent commits: ${gitLog.split('\n')[0]}`,
+    ].join(' ')
+    await sendFluxReport('Flux — Full Audit Report', `${answer}\n\nGit log:\n${gitLog}`)
+    return {
+      answer,
+      webSearchUsed: false,
+      suggestion: 'Audit report sent to your email. Want me to fix any issues found?',
+      nextAction: scan.tsErrors.length > 0 || scan.buildErrors.length > 0 ? 'fix' : 'done',
+    }
+  }
+
   // ── Commit only ──────────────────────────────────────────────────────
   if (shouldCommit && !shouldScan && !shouldFix) {
     const result = doCommit(progress)
-    return { answer: result, webSearchUsed: false }
+    const scan = { gitStatus: run('git status --short'), gitLog: run('git log --oneline -3'), tsErrors: [], buildErrors: [], buildRaw: '' }
+    const { suggestion, nextAction } = getSuggestion(scan, false, false)
+    return { answer: result, webSearchUsed: false, suggestion, nextAction }
   }
 
   // ── Full autonomous flow: scan → fix → PR (→ deploy) ─────────────────
@@ -373,24 +466,27 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
 
     if (!hasErrors) {
       let answer = 'No TypeScript errors, build is clean, codebase is healthy.'
+      let didCommit = false
+      let didDeploy = false
 
-      // Commit if requested
       if (shouldCommit) {
         const commitResult = doCommit(progress)
         answer += ` ${commitResult}`
+        didCommit = true
       }
 
-      // Deploy if requested
       if (shouldDeploy) {
         progress('FLUX', 'Deploying to Vercel (2-5 minutes)...')
         const deployResult = run('npx vercel --prod --yes 2>&1 | tail -5', PROJECT_ROOT, 300000)
         answer += ` Deployed to Vercel.`
+        didDeploy = true
         progress('FLUX', 'Sending email report...')
         await sendFluxReport('Flux — Deploy complete ✓',
           `No errors found. Codebase healthy.\n\nDeploy:\n${deployResult}\n\nCommit: ${run('git log --oneline -1')}`)
       }
 
-      return { answer, webSearchUsed: false }
+      const { suggestion, nextAction } = getSuggestion(scan, false, didDeploy)
+      return { answer, webSearchUsed: false, suggestion, nextAction }
     }
 
     // Errors found — report if not fixing
@@ -398,9 +494,13 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
       const summary = [
         scan.tsErrors.length ? `${scan.tsErrors.length} TypeScript error(s) in: ${[...new Set(scan.tsErrors.map(e => e.file))].join(', ')}.` : '',
         scan.buildErrors.length ? `Build failing.` : '',
-        'Say "fix the errors" to have Flux repair and open a PR.',
       ].filter(Boolean).join(' ')
-      return { answer: summary, webSearchUsed: false }
+      return {
+        answer: summary,
+        webSearchUsed: false,
+        suggestion: 'Want me to fix these errors, open a PR and deploy?',
+        nextAction: 'fix_commit_deploy',
+      }
     }
 
     // Generate fixes for each unique file with errors
@@ -468,13 +568,14 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
 
     const fixSummaries = fixes.map(f => f.summary).join('; ')
     const answer = [
-      `Fixed ${fixes.length} of ${scan.tsErrors.length} error(s): ${fixSummaries}.`,
+      `Fixed ${fixes.length} of ${scan.tsErrors.length + scan.buildErrors.length} error(s): ${fixSummaries}.`,
       remaining === 0 ? 'Build is now clean.' : `${remaining} error(s) still need attention.`,
-      prUrl ? `PR open for review: ${prUrl}` : '',
+      prUrl ? `PR open for your review.` : '',
       deployNote,
     ].filter(Boolean).join(' ')
 
-    return { answer, url: prUrl || undefined, webSearchUsed: false }
+    const { suggestion, nextAction } = getSuggestion(scan, true, shouldDeploy && remaining === 0)
+    return { answer, url: prUrl || undefined, webSearchUsed: false, suggestion, nextAction }
   }
 
   // ── Commit + deploy without scan ─────────────────────────────────────

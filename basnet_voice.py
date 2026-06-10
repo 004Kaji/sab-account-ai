@@ -137,7 +137,9 @@ _KEYWORDS: dict[str, list[str]] = {
                   'deploy', 'code', 'payg', 'test', 'rls', 'ssl', 'security',
                   'working', 'broken', 'passing', 'endpoint', 'api', 'route',
                   'check my system', 'run flux', 'health check', 'site working',
-                  'is the site', 'is sab', 'any errors', 'any bugs', 'status'],
+                  'is the site', 'is sab', 'any errors', 'any bugs', 'status',
+                  'commit', 'push', 'git', 'pr ', 'pull request', 'audit',
+                  'fix the', 'fix errors', 'run flux', 'flux check'],
     "health":    ['churn', 'at risk', 'inactive', 'retention', 'not using',
                   'upgrade', 'conversion', 'lost user', 'user', 'signup', 'mrr',
                   'revenue', 'paid users'],
@@ -233,12 +235,14 @@ async def ask_local(question: str, route: str, mem_context: str = "", history: l
 
                     elif line.get("type") == "result":
                         return {
-                            "response":       line.get("answer", "No response."),
-                            "url":            line.get("url"),
-                            "warning":        None,
-                            "topic":          None,
-                            "is_complete":    False,
+                            "response":        line.get("answer", "No response."),
+                            "url":             line.get("url"),
+                            "warning":         None,
+                            "topic":           None,
+                            "is_complete":     False,
                             "next_suggestion": None,
+                            "suggestion":      line.get("suggestion"),
+                            "next_action":     line.get("nextAction"),
                         }
     except Exception as e:
         import traceback
@@ -247,7 +251,8 @@ async def ask_local(question: str, route: str, mem_context: str = "", history: l
     return {"response": "Local agent unreachable. Is `npm run dev` running in local-agent/?",
             "url": None, "warning": None, "topic": None, "is_complete": False, "next_suggestion": None}
 
-YES_WORDS = {"yes", "yeah", "yep", "sure", "open", "show", "go", "do it", "ok", "okay", "please"}
+YES_WORDS = {"yes", "yeah", "yep", "sure", "open", "show", "go", "do it", "ok", "okay", "please",
+             "submit", "commit", "deploy", "send", "do that", "go ahead", "proceed", "correct", "right"}
 FILTER_WORDS = {"filter", "sort", "recent", "latest", "new", "today", "date", "newest"}
 
 def is_yes(text: str) -> bool:
@@ -361,13 +366,16 @@ async def main():
 
             # Fix Whisper mis-spellings of agent names (case-insensitive word match)
             _NAME_FIXES = {
+                # Agent names
                 'smith': 'Basnet', 'basenet': 'Basnet', 'bassnet': 'Basnet', 'basnit': 'Basnet',
                 'fox': 'Flux', 'flocks': 'Flux', 'flex': 'Flux',
                 'sparks': 'Spark', 'park': 'Spark',
-                'atlas atlas': 'Atlas',
-                'lift lift': 'Lift',
-                'relay relay': 'Relay',
-                'scout scout': 'Scout',
+                # Common Whisper mishearings
+                'chord': 'code', 'cord': 'code', 'cords': 'code',
+                'core': 'code', 'chord': 'code',
+                'the chord': 'the code', 'check chord': 'check code',
+                'fixed the chord': 'fix the code',
+                'versa': 'Vercel', 'versaille': 'Vercel', 'vessel': 'Vercel',
             }
             import re as _re
             _q = question
@@ -429,6 +437,42 @@ async def main():
             asyncio.get_event_loop().run_in_executor(
                 None, save_memory, question, response
             )
+
+            # ── Flux conversation loop ─────────────────────────────────
+            suggestion  = data.get("suggestion")
+            next_action = data.get("next_action")
+
+            while suggestion and next_action and next_action != "done":
+                await speak(suggestion)
+                subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"])
+                print("[Listening for 5 seconds...]")
+                follow_audio = await record(seconds=5)
+                follow_reply = await transcribe(follow_audio)
+                Path(follow_audio).unlink(missing_ok=True)
+                print(f"[You said: {follow_reply}]")
+
+                if not follow_reply or not is_yes(follow_reply):
+                    break
+
+                # Map next_action to a question Flux understands
+                _action_map = {
+                    "commit_deploy":    "commit and deploy",
+                    "deploy":           "deploy to vercel",
+                    "sentry":           "check sentry",
+                    "audit":            "run full audit",
+                    "fix":              "fix errors",
+                    "fix_commit_deploy":"fix errors commit and deploy",
+                    "create_issues":    "check sentry",
+                }
+                follow_q = _action_map.get(next_action, next_action)
+                print(f"[FLUX follow-up → {follow_q}]")
+                follow_data = await ask_local(follow_q, "technical", "", history)
+                follow_resp = follow_data.get("response", "Done.")
+                print(f"Basnet: {follow_resp}\n")
+                await speak(follow_resp)
+                asyncio.get_event_loop().run_in_executor(None, save_memory, follow_q, follow_resp)
+                suggestion  = follow_data.get("suggestion")
+                next_action = follow_data.get("next_action")
 
             # ── Update session state ──
             current_topic = topic

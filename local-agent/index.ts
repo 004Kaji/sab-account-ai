@@ -128,7 +128,13 @@ const server = http.createServer(async (req, res) => {
       else if (r === 'technical')    result = await handleTechnical(q, progress)
       else                           result = await handlePersonal(q, progress, undefined, fullContext)
 
-      res.write(JSON.stringify({ type: 'result', success: true, answer: result.answer, url: result.url }) + '\n')
+      const out = result as { answer: string; url?: string; suggestion?: string; nextAction?: string }
+      res.write(JSON.stringify({
+        type: 'result', success: true,
+        answer: out.answer, url: out.url,
+        suggestion: out.suggestion,
+        nextAction: out.nextAction,
+      }) + '\n')
       res.end()
 
     // ── Agent routes (non-streaming fallback) ─────────────────────────
@@ -180,7 +186,16 @@ const server = http.createServer(async (req, res) => {
     }
 
   } catch (err) {
-    json(res, 500, { success: false, error: err instanceof Error ? err.message : String(err) })
+    const msg = err instanceof Error ? err.message : String(err)
+    if (!res.headersSent) {
+      json(res, 500, { success: false, error: msg })
+    } else {
+      // Stream already started — write error as NDJSON line then close
+      try {
+        res.write(JSON.stringify({ type: 'error', error: msg }) + '\n')
+        res.end()
+      } catch { /* ignore — connection already dead */ }
+    }
   }
 })
 
