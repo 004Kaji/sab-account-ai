@@ -16,9 +16,9 @@ const GITHUB_REPO  = process.env.GITHUB_REPO  ?? ''
 
 // ── Shell helpers ──────────────────────────────────────────────────────
 
-function run(cmd: string, cwd = PROJECT_ROOT): string {
+function run(cmd: string, cwd = PROJECT_ROOT, timeoutMs = 60000): string {
   try {
-    return execSync(cmd, { cwd, timeout: 60000, stdio: ['pipe','pipe','pipe'] }).toString().trim()
+    return execSync(cmd, { cwd, timeout: timeoutMs, stdio: ['pipe','pipe','pipe'] }).toString().trim()
   } catch (e: unknown) {
     const err = e as { stdout?: Buffer; stderr?: Buffer; message?: string }
     return ((err.stdout?.toString() ?? '') + (err.stderr?.toString() ?? '') || err.message || String(e)).trim()
@@ -115,28 +115,35 @@ interface ScanResult {
 }
 
 function scanProject(progress: ProgressFn): ScanResult {
-  progress('FLUX', 'Running TypeScript check...')
-  const tsRaw = run('npx tsc --noEmit 2>&1 | head -60')
+  // TypeScript check (fast — just type-checks, no emit)
+  progress('FLUX', 'Running TypeScript check (may take 20-30s)...')
+  const tsRaw = run('npx tsc --noEmit --skipLibCheck 2>&1 | head -40')
 
   const tsErrors: ScanResult['tsErrors'] = []
   for (const line of tsRaw.split('\n')) {
     const m = line.match(/^(.+?)\((\d+),\d+\):\s+error\s+TS\d+:\s+(.+)$/)
     if (m) {
       tsErrors.push({
-        file:    m[1].replace(PROJECT_ROOT + '/', ''),
+        file:    m[1].replace(PROJECT_ROOT + path.sep, ''),
         line:    parseInt(m[2]),
         message: m[3],
       })
     }
   }
+  progress('FLUX', `TypeScript: ${tsErrors.length} error(s) found.`)
 
-  progress('FLUX', `TypeScript: ${tsErrors.length} error(s). Checking build...`)
-  const buildRaw   = run('npm run build 2>&1 | tail -20')
-  const buildErrors = buildRaw.includes('error') || buildRaw.includes('Error')
-    ? buildRaw.split('\n').filter(l => l.toLowerCase().includes('error')).slice(0, 5)
-    : []
+  // Skip full build if tsc already found errors — saves 2 minutes
+  let buildErrors: string[] = []
+  if (tsErrors.length === 0) {
+    progress('FLUX', 'No TS errors — running build check...')
+    const buildRaw = run('npm run build 2>&1 | tail -10')
+    buildErrors = buildRaw.includes('error') || buildRaw.includes('Error')
+      ? buildRaw.split('\n').filter(l => l.toLowerCase().includes('error')).slice(0, 3)
+      : []
+    progress('FLUX', `Build: ${buildErrors.length === 0 ? 'clean ✓' : `${buildErrors.length} error(s)`}`)
+  }
 
-  progress('FLUX', `Build: ${buildErrors.length === 0 ? 'clean' : `${buildErrors.length} error(s)`}. Reading git state...`)
+  progress('FLUX', 'Reading git state...')
   const gitStatus = run('git status --short')
   const gitLog    = run('git log --oneline -5')
 
@@ -301,7 +308,7 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
       // Deploy if requested
       if (shouldDeploy) {
         progress('FLUX', 'Deploying to Vercel...')
-        const deployResult = run('npx vercel --prod --yes 2>&1 | tail -5')
+        const deployResult = run('npx vercel --prod --yes 2>&1 | tail -5', PROJECT_ROOT, 300000)
         answer += ` Deployed to Vercel — ${deployResult.slice(0, 100)}`
       }
 
@@ -359,7 +366,7 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
     if (shouldDeploy) {
       if (remaining === 0) {
         progress('FLUX', 'Deploying to Vercel...')
-        const deployResult = run('npx vercel --prod --yes 2>&1 | tail -3')
+        const deployResult = run('npx vercel --prod --yes 2>&1 | tail -3', PROJECT_ROOT, 300000)
         deployNote = ` Deployed to Vercel.`
       } else {
         deployNote = ` Skipped deploy — ${remaining} error(s) still remaining.`
@@ -388,7 +395,7 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
         return { answer: `Build failed — commit done but deploy skipped. ${build.slice(0, 120)}`, webSearchUsed: false }
       }
       progress('FLUX', 'Deploying to Vercel...')
-      const deploy = run('npx vercel --prod --yes 2>&1 | tail -3')
+      const deploy = run('npx vercel --prod --yes 2>&1 | tail -3', PROJECT_ROOT, 300000)
       summary = summary ? `${summary}. Deployed to Vercel.` : `Deployed to Vercel. ${deploy.slice(0, 100)}`
     }
     return { answer: summary, webSearchUsed: false }

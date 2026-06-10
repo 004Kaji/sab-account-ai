@@ -206,8 +206,8 @@ DIM   = "\033[2m"
 async def ask_local(question: str, route: str, mem_context: str = "", history: list = []) -> dict:
     """Call /stream on the local agent, print live progress, return final result."""
     import json as _json
-    # Technical route needs longer timeout — tsc + build can take 2-3 minutes
-    timeout = 180 if route == "technical" else 60
+    # Technical route needs longer timeout — tsc + build + deploy can take 5+ minutes
+    timeout = 360 if route == "technical" else 60
     try:
         async with httpx.AsyncClient(timeout=timeout) as c:
             async with c.stream(
