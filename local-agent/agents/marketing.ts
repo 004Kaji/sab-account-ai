@@ -104,4 +104,10 @@ async function postToLinkedIn(content: string, progress: ProgressFn, useCompanyP
     if (!personalUrn) {
       progress('SPARK', 'Fetching LinkedIn profile...')
       personalUrn = await getLinkedInAuthorUrn(token) ?? ''
-      if (personalUrn) process
+      if (personalUrn) process.env.LINKEDIN_AUTHOR_URN = personalUrn
+    }
+    author = personalUrn
+  }
+
+  return postViaN8n('linkedin', content, progress, { authorUrn: author })
+}
