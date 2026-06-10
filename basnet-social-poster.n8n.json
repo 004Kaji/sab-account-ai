@@ -1,0 +1,155 @@
+{
+  "name": "Basnet Social Poster",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "path": "basnet-social",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "2",
+      "name": "Route by Platform",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [480, 300],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [{ "operator": { "type": "string", "operation": "equals" }, "leftValue": "={{ $json.platform }}", "rightValue": "linkedin" }]
+              },
+              "renameOutput": true,
+              "outputKey": "LinkedIn"
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [{ "operator": { "type": "string", "operation": "equals" }, "leftValue": "={{ $json.platform }}", "rightValue": "facebook" }]
+              },
+              "renameOutput": true,
+              "outputKey": "Facebook"
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [{ "operator": { "type": "string", "operation": "equals" }, "leftValue": "={{ $json.platform }}", "rightValue": "instagram" }]
+              },
+              "renameOutput": true,
+              "outputKey": "Instagram"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "3",
+      "name": "Post to LinkedIn Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [740, 120],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.linkedin.com/v2/ugcPosts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.access_token }}" },
+            { "name": "X-Restli-Protocol-Version", "value": "2.0.0" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ author: $json.author_urn, lifecycleState: 'PUBLISHED', specificContent: { 'com.linkedin.ugc.ShareContent': { shareCommentary: { text: $json.content }, shareMediaCategory: 'NONE' } }, visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' } }) }}"
+      }
+    },
+    {
+      "id": "4",
+      "name": "Post to Facebook Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [740, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $json.page_id }}/feed",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: $json.content, access_token: $json.access_token }) }}"
+      }
+    },
+    {
+      "id": "5",
+      "name": "Create Instagram Media",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [740, 480],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $json.ig_account_id }}/media",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ caption: $json.content, image_url: $json.image_url, access_token: $json.access_token }) }}"
+      }
+    },
+    {
+      "id": "6",
+      "name": "Publish Instagram Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [980, 480],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $json.ig_account_id }}/media_publish",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ creation_id: $json.id, access_token: $('Webhook').first().json.access_token }) }}"
+      }
+    },
+    {
+      "id": "7",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1220, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": true }"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Route by Platform", "type": "main", "index": 0 }]]
+    },
+    "Route by Platform": {
+      "main": [
+        [{ "node": "Post to LinkedIn Page", "type": "main", "index": 0 }],
+        [{ "node": "Post to Facebook Page", "type": "main", "index": 0 }],
+        [{ "node": "Create Instagram Media", "type": "main", "index": 0 }]
+      ]
+    },
+    "Post to LinkedIn Page": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
+    },
+    "Post to Facebook Page": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
+    },
+    "Create Instagram Media": {
+      "main": [[{ "node": "Publish Instagram Post", "type": "main", "index": 0 }]]
+    },
+    "Publish Instagram Post": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

@@ -123,8 +123,8 @@ const server = http.createServer(async (req, res) => {
       let result
       const r = route ?? 'ask'
       if      (r === 'marketing')    result = await handleMarketing(q, progress, fullContext)
-      else if (r === 'intel')        result = await handleIntel(q, progress)
-      else if (r === 'health-check') result = await handleHealth(q, progress)
+      else if (r === 'intel')        result = await handleIntel(q, progress, fullContext)
+      else if (r === 'health-check') result = await handleHealth(q, progress, fullContext)
       else if (r === 'technical')    result = await handleTechnical(q, progress)
       else                           result = await handlePersonal(q, progress, undefined, fullContext)
 

@@ -598,31 +598,25 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
     return { answer: summary, webSearchUsed: false }
   }
 
-  // ── General code question ─────────────────────────────────────────────
-  progress('FLUX', 'Reading project state...')
-  const gitLog    = run('git log --oneline -5')
+  // ── General code question — use Claude Code CLI for full codebase context ─
+  progress('FLUX', 'Running Claude Code analysis...')
+  const promptFile = path.join('/tmp', `flux-${Date.now()}.txt`)
+  const gitLog    = run('git log --oneline -3')
   const gitStatus = run('git status --short')
-
-  const q = question.toLowerCase()
-  let fileContext = ''
-  if (q.includes('voice'))    fileContext += `\n\nvoice route:\n${readLocal('src/app/api/agents/voice/route.ts').slice(0, 2000)}`
-  if (q.includes('stripe'))   fileContext += `\n\nstripe route:\n${readLocal('src/app/api/stripe/invoice-checkout/route.ts').slice(0, 2000)}`
-  if (q.includes('auth'))     fileContext += `\n\nmiddleware:\n${readLocal('src/middleware.ts').slice(0, 2000)}`
-  if (q.includes('agent'))    fileContext += `\n\nclassification:\n${readLocal('src/lib/agents/classification.ts').slice(0, 2000)}`
-  if (q.includes('payg'))     fileContext += `\n\nato.ts:\n${readLocal('src/lib/ato.ts').slice(0, 2000)}`
-
-  progress('FLUX', 'Analysing...')
-  const msg = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 300,
-    system: `You are Flux — SAB Account AI's engineering agent. VOICE interface.
-2-3 sentences MAX. Plain English. No markdown, no code blocks.
-Lead with the most important finding. Give one concrete action.
-Project: Git status: ${gitStatus || 'clean'} | Recent: ${gitLog}${fileContext}`,
-    messages: [{ role: 'user', content: question }],
-  })
-
+  fs.writeFileSync(promptFile, [
+    `You are Flux — SAB Account AI's engineering agent. VOICE interface.`,
+    `2-3 sentences MAX. Plain English. No markdown, no code blocks.`,
+    `Lead with the most important finding. Give one concrete action.`,
+    `Git status: ${gitStatus || 'clean'} | Recent: ${gitLog}`,
+    ``,
+    `Question: ${question}`,
+  ].join('\n'))
+  const claudeOut = run(
+    `claude -p "$(cat '${promptFile}')" --allowedTools "Read,Bash(git log*,git status*,npx tsc*)"`,
+    PROJECT_ROOT,
+    90000,
+  )
+  try { fs.unlinkSync(promptFile) } catch { }
   progress('FLUX', 'Done.')
-  const block = msg.content.find(b => b.type === 'text')
-  return { answer: block?.type === 'text' ? block.text : 'No response', webSearchUsed: false }
+  return { answer: claudeOut || 'No response', webSearchUsed: false }
 }

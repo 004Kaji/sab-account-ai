@@ -37,10 +37,13 @@ function saveBookkeeping(records: object[]): void {
 }
 
 const MONEY_TRIGGERS = ['spent', 'paid', 'bought', 'cost', 'earned', 'received', 'charged',
-  'invoice', 'income', 'expense', 'subscri', 'revenue', '$', 'dollar', 'aud']
+  'invoice', 'income', 'expense', 'subscri', 'revenue', '$', 'dollar']
 
 function isBookkeepingEntry(q: string): boolean {
-  return MONEY_TRIGGERS.some(t => q.toLowerCase().includes(t))
+  const lower = q.toLowerCase()
+  // 'aud' checked as whole word to avoid matching 'claude', 'audio', etc.
+  const hasAud = /\baud\b/.test(lower)
+  return hasAud || MONEY_TRIGGERS.some(t => lower.includes(t))
 }
 
 async function recordBookkeeping(question: string, progress: ProgressFn): Promise<string> {
@@ -81,7 +84,9 @@ const MAC_TRIGGERS = ['memory', 'ram', 'disk', 'cpu', 'battery', 'uptime', 'ssd'
 const WEB_TRIGGERS = ['visa', 'job', 'jobs', 'darwin', 'sydney', 'melbourne', 'brisbane', 'perth',
   'weather', 'price of', 'cost of', 'how much does', 'find me', 'salary', 'wage',
   'uni course', 'assignment', 'ato deadline', 'tax deadline', 'super deadline',
-  'latest news', 'news about', 'hire', 'hiring', 'what is the', 'where is', 'how do i', 'how to get']
+  'latest news', 'news about', 'hire', 'hiring', 'what is the', 'where is', 'how do i', 'how to get',
+  'claude', 'claude code', 'anthropic', 'sonnet', 'haiku', 'opus', 'latest model', 'llm', 'ai model',
+  'openai', 'gemini', 'gpt', 'cursor', 'windsurf', 'ai tool', 'mcp server']
 
 function needsSystemInfo(q: string): boolean { return MAC_TRIGGERS.some(t => q.includes(t)) }
 function needsWebSearch(q: string): boolean { return WEB_TRIGGERS.some(t => q.includes(t)) }
@@ -92,6 +97,8 @@ export interface AgentResult {
   answer: string
   url?: string
   webSearchUsed: boolean
+  suggestion?: string
+  nextAction?: string
 }
 
 export async function handlePersonal(question: string, progress: ProgressFn, filePaths?: string[], memoryContext?: string): Promise<AgentResult> {
@@ -127,10 +134,18 @@ export async function handlePersonal(question: string, progress: ProgressFn, fil
   let topUrl: string | undefined
   if (needsWebSearch(q)) {
     progress('RELAY', `Searching the web for: "${question}"...`)
-    const results = await tavilySearch(`${question} Australia 2026`, 3)
+    // For Claude/AI tool questions, target Anthropic docs directly
+    const isClaudeQuery = /claude|anthropic|sonnet|haiku|opus|claude code/i.test(question)
+    const searchQuery = isClaudeQuery
+      ? `${question} site:docs.anthropic.com OR site:anthropic.com 2025`
+      : `${question} Australia 2026`
+    const results = await tavilySearch(searchQuery, 3)
     topUrl = results.results[0]?.url
     if (results.answer) {
       webContext = `\n\nWeb: ${results.answer}`
+      progress('RELAY', `Found web results from ${topUrl ?? 'multiple sources'}`)
+    } else if (results.results.length) {
+      webContext = `\n\nWeb:\n${results.results.slice(0, 2).map(r => `- ${r.title}: ${r.content.slice(0, 200)}`).join('\n')}`
       progress('RELAY', `Found web results from ${topUrl ?? 'multiple sources'}`)
     }
   }

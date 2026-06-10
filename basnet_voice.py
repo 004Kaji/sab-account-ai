@@ -143,10 +143,13 @@ _KEYWORDS: dict[str, list[str]] = {
     "health":    ['churn', 'at risk', 'inactive', 'retention', 'not using',
                   'upgrade', 'conversion', 'lost user', 'user', 'signup', 'mrr',
                   'revenue', 'paid users'],
-    "intel":     ['competitor', 'xero', 'myob', 'market', 'ato update',
-                  'law change', 'payday super', 'pricing', 'what are competitors', 'news'],
+    "intel":     ['competitor', 'xero', 'myob', 'market research', 'market share',
+                  'ato update', 'law change', 'payday super', 'pricing',
+                  'what are competitors', 'news'],
     "marketing": ['tiktok', 'blog', 'post', 'content', 'what to write', 'topic',
-                  'hook', 'linkedin', 'facebook', 'accountant', 'instagram', 'twitter'],
+                  'hook', 'linkedin', 'facebook', 'accountant', 'instagram', 'twitter',
+                  'marketing', 'market', 'promote', 'advertise', 'campaign', 'social media',
+                  'grow', 'audience', 'reach', 'brand'],
     "personal":  ['visa', 'pr', 'university', 'goals', 'dream', 'north star',
                   'tired', 'overwhelmed', 'should i', 'what do i do', 'job', 'jobs',
                   'work', 'employment', 'career', 'apply', 'resume', 'darwin', 'sydney',
@@ -159,7 +162,7 @@ _KEYWORDS: dict[str, list[str]] = {
 }
 
 # mac checked before personal so "mac memory" doesn't hit web search
-_PRIORITY = ["mac", "technical", "health", "intel", "marketing", "personal"]
+_PRIORITY = ["mac", "technical", "health", "marketing", "intel", "personal"]
 
 # Phrase triggers for ambiguous words (require Mac-specific context)
 _MAC_PHRASE: list[tuple[str, list[str]]] = [
@@ -184,6 +187,18 @@ _ROUTE: dict[str, str] = {
 
 def classify_local(question: str) -> str:
     q = question.lower()
+    # Claude/AI tool questions → intel before 'code' keyword fires technical
+    _CLAUDE_PHRASES = ['claude code', 'claude sonnet', 'claude haiku', 'claude opus',
+                       'anthropic model', 'latest claude', 'mcp server', 'claude api',
+                       'what is claude', 'how does claude', 'claude vs', 'new claude']
+    if any(p in q for p in _CLAUDE_PHRASES):
+        return "intel"
+    # Specific intel phrases → intel before 'market' keyword fires marketing
+    _INTEL_PHRASES = ['market share', 'market research', 'market size', 'competitor',
+                      'xero', 'myob', 'ato update', 'ato rule', 'payday super',
+                      'law change', 'industry news']
+    if any(p in q for p in _INTEL_PHRASES):
+        return "intel"
     # Mac phrase triggers (ambiguous keywords need context)
     for trigger, ctx in _MAC_PHRASE:
         if trigger in q and any(c in q for c in ctx):
@@ -252,7 +267,9 @@ async def ask_local(question: str, route: str, mem_context: str = "", history: l
             "url": None, "warning": None, "topic": None, "is_complete": False, "next_suggestion": None}
 
 YES_WORDS = {"yes", "yeah", "yep", "sure", "open", "show", "go", "do it", "ok", "okay", "please",
-             "submit", "commit", "deploy", "send", "do that", "go ahead", "proceed", "correct", "right"}
+             "submit", "commit", "deploy", "send", "do that", "go ahead", "proceed", "correct", "right",
+             "upon", "let's go", "absolutely", "definitely", "of course", "sounds good", "perfect",
+             "post", "post it", "post this", "post now", "publish", "share it", "do the post"}
 FILTER_WORDS = {"filter", "sort", "recent", "latest", "new", "today", "date", "newest"}
 
 def is_yes(text: str) -> bool:
@@ -438,11 +455,12 @@ async def main():
                 None, save_memory, question, response
             )
 
-            # ── Flux conversation loop ─────────────────────────────────
+            # ── Follow-up suggestion loop (max 2 iterations) ──────────
             suggestion  = data.get("suggestion")
             next_action = data.get("next_action")
+            _follow_count = 0
 
-            while suggestion and next_action and next_action != "done":
+            while suggestion and next_action and next_action != "done" and _follow_count < 2:
                 await speak(suggestion)
                 subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"])
                 print("[Listening for 5 seconds...]")
@@ -454,19 +472,24 @@ async def main():
                 if not follow_reply or not is_yes(follow_reply):
                     break
 
-                # Map next_action to a question Flux understands
+                _follow_count += 1
+
+                # Build context-aware follow-up question using original topic
                 _action_map = {
-                    "commit_deploy":    "commit and deploy",
-                    "deploy":           "deploy to vercel",
-                    "sentry":           "check sentry",
-                    "audit":            "run full audit",
-                    "fix":              "fix errors",
-                    "fix_commit_deploy":"fix errors commit and deploy",
-                    "create_issues":    "check sentry",
+                    "commit_deploy":    ("commit and deploy",                               "technical"),
+                    "deploy":           ("deploy to vercel",                               "technical"),
+                    "sentry":           ("check sentry for runtime errors",                "technical"),
+                    "audit":            ("run full audit",                                 "technical"),
+                    "fix":              ("fix the errors",                                 "technical"),
+                    "fix_commit_deploy":("fix errors then commit and deploy",              "technical"),
+                    "create_issues":    ("check sentry and create issues",                 "technical"),
+                    "post":             (f"post this content: {response[:200]}",           "marketing"),
+                    "deep_dive":        (f"give me more detail about: {question}",         "intel"),
+                    "identify_churn":   ("identify which specific users are at churn risk","health-check"),
                 }
-                follow_q = _action_map.get(next_action, next_action)
-                print(f"[FLUX follow-up → {follow_q}]")
-                follow_data = await ask_local(follow_q, "technical", "", history)
+                follow_q, follow_route = _action_map.get(next_action, (next_action, route))
+                print(f"[{follow_route.upper()} follow-up → {follow_q[:60]}]")
+                follow_data = await ask_local(follow_q, follow_route, "", history)
                 follow_resp = follow_data.get("response", "Done.")
                 print(f"Basnet: {follow_resp}\n")
                 await speak(follow_resp)
