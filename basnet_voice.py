@@ -206,8 +206,10 @@ DIM   = "\033[2m"
 async def ask_local(question: str, route: str, mem_context: str = "", history: list = []) -> dict:
     """Call /stream on the local agent, print live progress, return final result."""
     import json as _json
+    # Technical route needs longer timeout — tsc + build can take 2-3 minutes
+    timeout = 180 if route == "technical" else 60
     try:
-        async with httpx.AsyncClient(timeout=60) as c:
+        async with httpx.AsyncClient(timeout=timeout) as c:
             async with c.stream(
                 "POST",
                 f"{LOCAL_AGENT_URL}/stream",
@@ -239,7 +241,9 @@ async def ask_local(question: str, route: str, mem_context: str = "", history: l
                             "next_suggestion": None,
                         }
     except Exception as e:
-        print(f"  \033[91m[ERROR]{RESET} {e}")
+        import traceback
+        print(f"  \033[91m[ERROR]{RESET} {type(e).__name__}: {e}")
+        print(traceback.format_exc()[:300])
     return {"response": "Local agent unreachable. Is `npm run dev` running in local-agent/?",
             "url": None, "warning": None, "topic": None, "is_complete": False, "next_suggestion": None}
 
