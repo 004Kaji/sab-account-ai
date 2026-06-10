@@ -130,6 +130,7 @@ async function createPR(title: string, body: string, head: string, base: string)
 interface ScanResult {
   tsErrors:    { file: string; line: number; message: string }[]
   buildErrors: string[]
+  buildRaw:    string
   gitStatus:   string
   gitLog:      string
 }
@@ -154,11 +155,12 @@ function scanProject(progress: ProgressFn): ScanResult {
 
   // Skip full build if tsc already found errors — saves 2 minutes
   let buildErrors: string[] = []
+  let buildRawFull = ''
   if (tsErrors.length === 0) {
     progress('FLUX', 'No TS errors — running build check...')
-    const buildRaw = run('npm run build 2>&1 | tail -10')
-    buildErrors = buildRaw.includes('error') || buildRaw.includes('Error')
-      ? buildRaw.split('\n').filter(l => l.toLowerCase().includes('error')).slice(0, 3)
+    buildRawFull = run('npm run build 2>&1 | tail -30')
+    buildErrors = buildRawFull.includes('error') || buildRawFull.includes('Error')
+      ? buildRawFull.split('\n').filter(l => l.toLowerCase().includes('error')).slice(0, 5)
       : []
     progress('FLUX', `Build: ${buildErrors.length === 0 ? 'clean ✓' : `${buildErrors.length} error(s)`}`)
   }
@@ -167,7 +169,7 @@ function scanProject(progress: ProgressFn): ScanResult {
   const gitStatus = run('git status --short')
   const gitLog    = run('git log --oneline -5')
 
-  return { tsErrors, buildErrors, gitStatus, gitLog }
+  return { tsErrors, buildErrors, buildRaw: buildRawFull, gitStatus, gitLog }
 }
 
 // ── Fix generation ─────────────────────────────────────────────────────
@@ -214,6 +216,59 @@ Return JSON with the fixed file.`,
   } catch {
     return null
   }
+}
+
+async function generateBuildFix(buildRaw: string, progress: ProgressFn): Promise<Fix[]> {
+  // Extract failing file paths from build output
+  const fileMatches = [...buildRaw.matchAll(/(?:src\/[^\s:'"]+\.tsx?)/g)]
+  const uniqueFiles = [...new Set(fileMatches.map(m => m[0]))].slice(0, 3)
+
+  if (uniqueFiles.length === 0) {
+    // No file path found — ask Claude to diagnose from the error text
+    progress('FLUX', 'Asking Claude to diagnose build error...')
+    const raw = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 500,
+      system: `You are Flux. Analyse this Next.js build error and identify which files need fixing and what change is needed.
+Return ONLY valid JSON: { "files": ["path/to/file"], "diagnosis": "one sentence" }`,
+      messages: [{ role: 'user', content: buildRaw.slice(0, 2000) }],
+    })
+    const block = raw.content.find(b => b.type === 'text')
+    try {
+      const d = JSON.parse(block?.type === 'text' ? block.text.replace(/```json\n?|\n?```/g,'').trim() : '{}') as { files?: string[] }
+      uniqueFiles.push(...(d.files ?? []).slice(0, 2))
+    } catch { /* ignore */ }
+  }
+
+  const fixes: Fix[] = []
+  for (const filePath of uniqueFiles) {
+    const currentCode = readLocal(filePath)
+    if (!currentCode) continue
+
+    progress('FLUX', `Fixing build error in ${filePath}...`)
+    try {
+      const raw = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4000,
+        system: `You are Flux — autonomous Next.js build fixer for SAB Account AI.
+Return ONLY valid JSON: { "summary": "one sentence fix description", "fixedCode": "complete corrected file content" }
+Rules: minimal change only, return COMPLETE file, do not add features.`,
+        messages: [{
+          role: 'user',
+          content: `Build error:\n${buildRaw.slice(0, 1500)}\n\nFile: ${filePath}\n\nCurrent content:\n${currentCode.slice(0, 4000)}\n\nFix it.`,
+        }],
+      })
+      const block = raw.content.find(b => b.type === 'text')
+      const text = block?.type === 'text' ? block.text : ''
+      const json = JSON.parse(text.replace(/```json\n?|\n?```/g, '').trim()) as Fix
+      writeLocal(filePath, json.fixedCode)
+      fixes.push({ filePath, fixedCode: json.fixedCode, summary: json.summary })
+      progress('FLUX', `Fixed: ${filePath}`)
+    } catch (e) {
+      progress('FLUX', `Could not auto-fix ${filePath}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  return fixes
 }
 
 // ── PR creation ────────────────────────────────────────────────────────
@@ -351,16 +406,20 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
     // Generate fixes for each unique file with errors
     const totalErrors = scan.tsErrors.length + scan.buildErrors.length
     progress('FLUX', `Found ${totalErrors} error(s) — ${scan.tsErrors.length} TypeScript, ${scan.buildErrors.length} build. Generating fixes...`)
-    const uniqueErrors = scan.tsErrors.filter((e, i, arr) => arr.findIndex(x => x.file === e.file) === i)
+
     const fixes: Fix[] = []
 
-    for (const error of uniqueErrors.slice(0, 3)) { // cap at 3 files per run
+    // Fix TypeScript errors first
+    const uniqueTsErrors = scan.tsErrors.filter((e, i, arr) => arr.findIndex(x => x.file === e.file) === i)
+    for (const error of uniqueTsErrors.slice(0, 3)) {
       const fix = await generateFix(error, progress)
-      if (fix) {
-        writeLocal(fix.filePath, fix.fixedCode)
-        fixes.push(fix)
-        progress('FLUX', `Fixed: ${fix.filePath}`)
-      }
+      if (fix) { writeLocal(fix.filePath, fix.fixedCode); fixes.push(fix) }
+    }
+
+    // Fix build errors (prerender failures, missing env, module errors)
+    if (scan.buildErrors.length > 0 && scan.tsErrors.length === 0) {
+      const buildFixes = await generateBuildFix(scan.buildRaw, progress)
+      fixes.push(...buildFixes)
     }
 
     if (fixes.length === 0) {
