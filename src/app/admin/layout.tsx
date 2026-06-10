@@ -1,5 +1,7 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
@@ -11,7 +13,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname()
   const [ready, setReady]   = useState(false)
   const [denied, setDenied] = useState(false)
-  const supabase = createBrowserClient()
+  const [supabase] = useState(() => createBrowserClient())
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {

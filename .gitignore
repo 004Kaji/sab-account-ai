@@ -46,3 +46,4 @@ dist
 Basnet-Memory*
 *.db
 *.sqlite
+.env*

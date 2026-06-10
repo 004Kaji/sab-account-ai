@@ -1,11 +1,13 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useState } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 
 export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false)
-  const supabase = createBrowserClient()
+  const [supabase] = useState(() => createBrowserClient())
 
   async function signInWithGoogle() {
     setLoading(true)

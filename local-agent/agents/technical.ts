@@ -349,7 +349,8 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
     }
 
     // Generate fixes for each unique file with errors
-    progress('FLUX', `Found ${scan.tsErrors.length} error(s). Generating fixes...`)
+    const totalErrors = scan.tsErrors.length + scan.buildErrors.length
+    progress('FLUX', `Found ${totalErrors} error(s) — ${scan.tsErrors.length} TypeScript, ${scan.buildErrors.length} build. Generating fixes...`)
     const uniqueErrors = scan.tsErrors.filter((e, i, arr) => arr.findIndex(x => x.file === e.file) === i)
     const fixes: Fix[] = []
 
@@ -363,7 +364,11 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
     }
 
     if (fixes.length === 0) {
-      return { answer: `Found ${scan.tsErrors.length} errors but could not generate fixes automatically. Check ${scan.tsErrors[0].file}:${scan.tsErrors[0].line} — ${scan.tsErrors[0].message}`, webSearchUsed: false }
+      const firstErr = scan.tsErrors[0]
+      const hint = firstErr
+        ? `Check ${firstErr.file}:${firstErr.line} — ${firstErr.message}`
+        : scan.buildErrors[0] ?? 'Check build output manually.'
+      return { answer: `Found errors but could not auto-fix: ${hint}`, webSearchUsed: false }
     }
 
     // Verify fixes
