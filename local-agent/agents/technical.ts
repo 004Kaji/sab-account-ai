@@ -13,6 +13,26 @@ const anthropic    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const PROJECT_ROOT = path.join(process.env.HOME ?? '', 'Desktop', 'sab-account-ai-project')
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN ?? ''
 const GITHUB_REPO  = process.env.GITHUB_REPO  ?? ''
+const RESEND_KEY   = process.env.RESEND_API_KEY ?? ''
+const EMAIL_TO     = process.env.FOUNDER_EMAIL ?? 'sanjog.basnet02@gmail.com'
+const EMAIL_FROM   = 'Basnet <basnet@sabaccountai.com>'
+
+async function sendFluxReport(subject: string, body: string): Promise<void> {
+  if (!RESEND_KEY) return
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: EMAIL_FROM,
+        to:   EMAIL_TO,
+        subject,
+        html: `<pre style="font-family:monospace;font-size:14px;line-height:1.6">${body}</pre>
+               <hr><p style="color:#666;font-size:12px">Sent by Flux — ${new Date().toLocaleString('en-AU', {timeZone:'Australia/Sydney'})} AEST</p>`,
+      }),
+    })
+  } catch { /* non-fatal */ }
+}
 
 // ── Shell helpers ──────────────────────────────────────────────────────
 
@@ -307,9 +327,12 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
 
       // Deploy if requested
       if (shouldDeploy) {
-        progress('FLUX', 'Deploying to Vercel...')
+        progress('FLUX', 'Deploying to Vercel (2-5 minutes)...')
         const deployResult = run('npx vercel --prod --yes 2>&1 | tail -5', PROJECT_ROOT, 300000)
-        answer += ` Deployed to Vercel — ${deployResult.slice(0, 100)}`
+        answer += ` Deployed to Vercel.`
+        progress('FLUX', 'Sending email report...')
+        await sendFluxReport('Flux — Deploy complete ✓',
+          `No errors found. Codebase healthy.\n\nDeploy:\n${deployResult}\n\nCommit: ${run('git log --oneline -1')}`)
       }
 
       return { answer, webSearchUsed: false }
@@ -365,9 +388,15 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
     let deployNote = ''
     if (shouldDeploy) {
       if (remaining === 0) {
-        progress('FLUX', 'Deploying to Vercel...')
+        progress('FLUX', 'Deploying to Vercel (2-5 minutes)...')
         const deployResult = run('npx vercel --prod --yes 2>&1 | tail -3', PROJECT_ROOT, 300000)
         deployNote = ` Deployed to Vercel.`
+        const fixList = fixes.map(f => `• ${f.filePath}: ${f.summary}`).join('\n')
+        progress('FLUX', 'Sending email report...')
+        await sendFluxReport(
+          `Flux — Fixed ${fixes.length} error(s) + deployed ✓`,
+          `Errors fixed:\n${fixList}\n\nPR: ${prUrl || 'N/A'}\n\nDeploy:\n${deployResult}\n\nCommit: ${run('git log --oneline -1')}`,
+        )
       } else {
         deployNote = ` Skipped deploy — ${remaining} error(s) still remaining.`
       }
@@ -394,9 +423,12 @@ export async function handleTechnical(question: string, progress: ProgressFn): P
       if (build.toLowerCase().includes('error')) {
         return { answer: `Build failed — commit done but deploy skipped. ${build.slice(0, 120)}`, webSearchUsed: false }
       }
-      progress('FLUX', 'Deploying to Vercel...')
+      progress('FLUX', 'Deploying to Vercel (2-5 minutes)...')
       const deploy = run('npx vercel --prod --yes 2>&1 | tail -3', PROJECT_ROOT, 300000)
       summary = summary ? `${summary}. Deployed to Vercel.` : `Deployed to Vercel. ${deploy.slice(0, 100)}`
+      progress('FLUX', 'Sending email report...')
+      await sendFluxReport('Flux — Deploy complete ✓',
+        `${summary}\n\nDeploy output:\n${deploy}\n\nCommit: ${run('git log --oneline -1')}`)
     }
     return { answer: summary, webSearchUsed: false }
   }
