@@ -48,6 +48,15 @@ type ApprovalItem = {
   content: string
   status: string
   createdAt: string
+  mediaUrls: string[]
+}
+
+type ImageOption = {
+  id: number
+  url: string
+  thumb: string
+  photographer: string
+  alt: string
 }
 
 type DashboardData = {
@@ -113,9 +122,15 @@ export default function AgentPage() {
   const [question, setQuestion]     = useState('')
   const [exchanges, setExchanges]   = useState<{ q: string; a: string; agent: string }[]>([])
   const [asking, setAsking]         = useState(false)
-  const [approvals, setApprovals]   = useState<ApprovalItem[]>([])
-  const [approving, setApproving]   = useState<string | null>(null)
-  const textareaRef                 = useRef<HTMLTextAreaElement>(null)
+  const [approvals, setApprovals]     = useState<ApprovalItem[]>([])
+  const [approving, setApproving]     = useState<string | null>(null)
+  const [editingId, setEditingId]     = useState<string | null>(null)
+  const [editContent, setEditContent] = useState<Record<string, string>>({})
+  const [saving, setSaving]           = useState<string | null>(null)
+  const [imagePickerFor, setImagePickerFor] = useState<string | null>(null)
+  const [imageOptions, setImageOptions]     = useState<ImageOption[]>([])
+  const [loadingImages, setLoadingImages]   = useState(false)
+  const textareaRef                   = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => { document.title = 'Basnet — SAB Account AI' }, [])
 
@@ -130,8 +145,8 @@ export default function AgentPage() {
         setData(json)
       }
       if (approvalRes.status === 'fulfilled') {
-        const json = await approvalRes.value.json() as { queue?: ApprovalItem[] }
-        setApprovals(json.queue ?? [])
+        const json = await approvalRes.value.json() as { queue?: (ApprovalItem & { mediaUrls?: string[] })[] }
+        setApprovals((json.queue ?? []).map(a => ({ ...a, mediaUrls: a.mediaUrls ?? [] })))
       }
     } catch { /* non-fatal */ } finally {
       setLoading(false)
@@ -156,6 +171,43 @@ export default function AgentPage() {
     } catch { /* non-fatal */ } finally {
       setApproving(null)
     }
+  }
+
+  async function saveEdit(id: string) {
+    setSaving(id)
+    try {
+      await fetch('/api/agents/approvals', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, content: editContent[id] }),
+      })
+      setApprovals(prev => prev.map(a => a.id === id ? { ...a, content: editContent[id] } : a))
+      setEditingId(null)
+    } catch { /* non-fatal */ } finally { setSaving(null) }
+  }
+
+  async function loadImages(id: string, content: string) {
+    setImagePickerFor(id)
+    setLoadingImages(true)
+    const keywords = ['accounting', 'tax', 'payroll', 'invoice', 'superannuation', 'bookkeeping', 'small business', 'finance']
+    const found = keywords.filter(k => content.toLowerCase().includes(k))
+    const query = found.length > 0 ? `${found[0]} australia business` : 'small business australia'
+    try {
+      const res = await fetch(`/api/agents/images?q=${encodeURIComponent(query)}`)
+      const data = await res.json() as { images: ImageOption[] }
+      setImageOptions(data.images ?? [])
+    } catch { setImageOptions([]) } finally { setLoadingImages(false) }
+  }
+
+  async function selectImage(id: string, imageUrl: string) {
+    await fetch('/api/agents/approvals', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, imageUrl }),
+    })
+    setApprovals(prev => prev.map(a => a.id === id ? { ...a, mediaUrls: [imageUrl] } : a))
+    setImagePickerFor(null)
+    setImageOptions([])
   }
 
   async function handleAsk(e: React.FormEvent) {
@@ -410,31 +462,128 @@ export default function AgentPage() {
             Pending Posts — {approvals.length} waiting for approval
           </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-            {approvals.map(a => (
-              <div key={a.id} style={{ padding: '0.875rem 1rem', background: 'var(--cream)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--char)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{a.platform}</span>
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text3)' }}>{timeAgo(a.createdAt)}</span>
+            {approvals.map(a => {
+              const isEditing   = editingId === a.id
+              const pickerOpen  = imagePickerFor === a.id
+              const imageUrl    = a.mediaUrls?.[0]
+              return (
+                <div key={a.id} style={{ padding: '0.875rem 1rem', background: 'var(--cream)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+
+                  {/* Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.625rem' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--char)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{a.platform}</span>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text3)' }}>{timeAgo(a.createdAt)}</span>
+                  </div>
+
+                  {/* Image preview */}
+                  {imageUrl ? (
+                    <div style={{ position: 'relative', marginBottom: '0.75rem', borderRadius: '6px', overflow: 'hidden' }}>
+                      <img src={imageUrl} alt="Post image" style={{ width: '100%', height: '180px', objectFit: 'cover', display: 'block' }} />
+                      <button
+                        onClick={() => void loadImages(a.id, a.content)}
+                        style={{ position: 'absolute', bottom: '0.5rem', right: '0.5rem', padding: '0.25rem 0.625rem', background: 'rgba(0,0,0,0.65)', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.6875rem', cursor: 'pointer', fontWeight: 500 }}
+                      >
+                        Change image
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => void loadImages(a.id, a.content)}
+                      style={{ display: 'block', width: '100%', padding: '0.625rem', marginBottom: '0.75rem', background: '#f8fafc', border: '1px dashed var(--border)', borderRadius: '6px', fontSize: '0.8125rem', color: 'var(--text3)', cursor: 'pointer', textAlign: 'center' }}
+                    >
+                      + Add image
+                    </button>
+                  )}
+
+                  {/* Image picker grid */}
+                  {pickerOpen && (
+                    <div style={{ marginBottom: '0.75rem' }}>
+                      {loadingImages ? (
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text3)', textAlign: 'center', padding: '0.5rem 0' }}>Searching Pexels…</p>
+                      ) : (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.375rem', marginBottom: '0.375rem' }}>
+                          {imageOptions.map(img => (
+                            <div
+                              key={img.id}
+                              onClick={() => void selectImage(a.id, img.url)}
+                              title={`Photo by ${img.photographer}`}
+                              style={{ cursor: 'pointer', borderRadius: '4px', overflow: 'hidden', border: '2px solid transparent', transition: 'border-color 0.15s' }}
+                              onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--ember)')}
+                              onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}
+                            >
+                              <img src={img.thumb} alt={img.alt} style={{ width: '100%', height: '72px', objectFit: 'cover', display: 'block' }} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <button
+                        onClick={() => { setImagePickerFor(null); setImageOptions([]) }}
+                        style={{ fontSize: '0.75rem', color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Content — view or edit */}
+                  {isEditing ? (
+                    <textarea
+                      value={editContent[a.id] ?? a.content}
+                      onChange={e => setEditContent(prev => ({ ...prev, [a.id]: e.target.value }))}
+                      rows={6}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '0.625rem 0.75rem', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '0.8125rem', color: 'var(--char)', lineHeight: 1.6, fontFamily: 'inherit', resize: 'vertical', marginBottom: '0.625rem', background: '#fff' }}
+                    />
+                  ) : (
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--text)', lineHeight: 1.55, marginBottom: '0.75rem', whiteSpace: 'pre-wrap' }}>{a.content}</p>
+                  )}
+
+                  {/* Action buttons */}
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {isEditing ? (
+                      <>
+                        <button
+                          onClick={() => void saveEdit(a.id)}
+                          disabled={saving === a.id}
+                          style={{ padding: '0.375rem 0.875rem', background: 'var(--ember)', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.8125rem', fontWeight: 500, cursor: saving === a.id ? 'not-allowed' : 'pointer', opacity: saving === a.id ? 0.6 : 1 }}
+                        >
+                          {saving === a.id ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          style={{ padding: '0.375rem 0.875rem', background: 'transparent', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '0.8125rem', cursor: 'pointer' }}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => void handleApproval(a.id, 'approve')}
+                          disabled={approving === a.id}
+                          style={{ padding: '0.375rem 0.875rem', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.8125rem', fontWeight: 500, cursor: approving === a.id ? 'not-allowed' : 'pointer', opacity: approving === a.id ? 0.6 : 1 }}
+                        >
+                          {approving === a.id ? 'Posting…' : 'Approve & Post'}
+                        </button>
+                        <button
+                          onClick={() => void handleApproval(a.id, 'reject')}
+                          disabled={approving === a.id}
+                          style={{ padding: '0.375rem 0.875rem', background: 'transparent', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '0.8125rem', cursor: approving === a.id ? 'not-allowed' : 'pointer' }}
+                        >
+                          Reject
+                        </button>
+                        <button
+                          onClick={() => { setEditingId(a.id); setEditContent(prev => ({ ...prev, [a.id]: a.content })) }}
+                          style={{ padding: '0.375rem 0.875rem', background: 'transparent', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '0.8125rem', cursor: 'pointer' }}
+                        >
+                          Edit
+                        </button>
+                      </>
+                    )}
+                  </div>
+
                 </div>
-                <p style={{ fontSize: '0.8125rem', color: 'var(--text)', lineHeight: 1.5, marginBottom: '0.75rem', whiteSpace: 'pre-wrap' }}>{a.content}</p>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button
-                    onClick={() => void handleApproval(a.id, 'approve')}
-                    disabled={approving === a.id}
-                    style={{ padding: '0.375rem 0.875rem', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.8125rem', fontWeight: 500, cursor: approving === a.id ? 'not-allowed' : 'pointer', opacity: approving === a.id ? 0.6 : 1 }}
-                  >
-                    {approving === a.id ? 'Posting…' : 'Approve & Post'}
-                  </button>
-                  <button
-                    onClick={() => void handleApproval(a.id, 'reject')}
-                    disabled={approving === a.id}
-                    style={{ padding: '0.375rem 0.875rem', background: 'transparent', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '0.8125rem', cursor: approving === a.id ? 'not-allowed' : 'pointer' }}
-                  >
-                    Reject
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

@@ -17,6 +17,29 @@ export async function GET() {
   }
 }
 
+// PATCH /api/agents/approvals — edit content or image of a pending draft
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = (await req.json().catch(() => ({}))) as {
+      id?: string
+      content?: string
+      imageUrl?: string
+    }
+    if (!body.id) return NextResponse.json({ success: false, error: 'id required' }, { status: 400 })
+
+    const supabase = createServiceClient()
+    const update: Record<string, unknown> = {}
+    if (body.content  !== undefined) update.content    = body.content
+    if (body.imageUrl !== undefined) update.media_urls = body.imageUrl ? [body.imageUrl] : []
+
+    const { error } = await supabase.from('marketing_approvals').update(update).eq('id', body.id)
+    if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    return NextResponse.json({ success: false, error: String(err) }, { status: 500 })
+  }
+}
+
 // POST /api/agents/approvals — approve or reject a draft
 export async function POST(req: NextRequest) {
   try {

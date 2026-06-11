@@ -546,6 +546,25 @@ type DraftPost = {
   approvalId: string
 }
 
+async function findPostImage(content: string): Promise<string> {
+  const key = process.env.PEXELS_API_KEY
+  if (!key) return ''
+  const keywords = ['accounting', 'tax', 'payroll', 'invoice', 'superannuation', 'bookkeeping', 'small business', 'finance']
+  const found = keywords.filter(k => content.toLowerCase().includes(k))
+  const query = found.length > 0 ? `${found[0]} australia business` : 'small business australia'
+  try {
+    const res = await fetch(
+      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=10&orientation=landscape`,
+      { headers: { Authorization: key } }
+    )
+    if (!res.ok) return ''
+    const data = await res.json() as { photos: { src: { large: string } }[] }
+    const photos = data.photos ?? []
+    if (!photos.length) return ''
+    return photos[Math.floor(Math.random() * Math.min(5, photos.length))].src.large
+  } catch { return '' }
+}
+
 export async function sparkDraftSocialPosts(context?: string): Promise<{
   drafts: DraftPost[]
   searchTopic?: string
@@ -622,9 +641,11 @@ Return ONLY valid JSON array:
   const drafts: DraftPost[] = []
   for (const post of posts) {
     if (!post.platform || !post.content) continue
+    const imageUrl = await findPostImage(post.content)
     const approvalId = await saveApprovalDraft({
-      platform: post.platform as SocialPlatform,
-      content: post.content,
+      platform:  post.platform as SocialPlatform,
+      content:   post.content,
+      mediaUrls: imageUrl ? [imageUrl] : [],
       weekStart: weekStartStr,
     })
     drafts.push({ platform: post.platform as SocialPlatform, content: post.content, approvalId })
