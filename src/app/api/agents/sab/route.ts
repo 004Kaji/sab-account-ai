@@ -11,6 +11,7 @@ import { runFlux, fluxDiagnose } from '@/lib/agents/sub/flux'
 import { sparkWeeklyBrief, sparkSendAccountantEmails, sparkWriteBlogPost, sparkDraftSocialPosts } from '@/lib/agents/sub/spark'
 import { runScout } from '@/lib/agents/sub/scout'
 import { runLift } from '@/lib/agents/sub/lift'
+import { atlasWeeklyIntel, atlasComplianceWatch } from '@/lib/agents/sub/atlas'
 
 const ENGINEERING_KEYWORDS = ['error', 'bug', 'build', 'stripe webhook', 'supabase', 'sentry', 'deploy', 'code', 'payg', 'test', 'rls', 'ssl', 'security']
 const MARKETING_KEYWORDS   = ['tiktok', 'blog', 'post', 'content', 'what to write', 'this week', 'topic', 'hook', 'linkedin', 'facebook', 'accountant', 'email']
@@ -114,6 +115,20 @@ Spark: ${JSON.stringify({ weekFocus: briefR.weekFocus, urgentFlag: briefR.urgent
       const report = await runLift()
       await logAgentAction({ agentName: 'sab', triggerType: trigger, outcome: report.summary, durationMs: Date.now() - start })
       return NextResponse.json({ success: true, report })
+    }
+
+    // ── TRIGGER: atlas_scan ────────────────────────────────────────────
+    if (trigger === 'atlas_scan') {
+      const report = await atlasWeeklyIntel()
+      await logAgentAction({ agentName: 'sab', triggerType: trigger, outcome: report.summary, durationMs: Date.now() - start })
+      return NextResponse.json({ success: true, report })
+    }
+
+    // ── TRIGGER: compliance_watch ──────────────────────────────────────
+    if (trigger === 'compliance_watch') {
+      const result = await atlasComplianceWatch()
+      await logAgentAction({ agentName: 'sab', triggerType: trigger, outcome: result.summary, durationMs: Date.now() - start })
+      return NextResponse.json({ success: true, ...result })
     }
 
     // ── TRIGGER: ask ───────────────────────────────────────────────────

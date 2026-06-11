@@ -14,7 +14,7 @@ import { sparkWeeklyBrief, sparkSendAccountantEmails } from '@/lib/agents/sub/sp
 import { relayAnswer, relayVisaCheck, relayGoalCheck } from '@/lib/agents/sub/relay'
 import { runScout } from '@/lib/agents/sub/scout'
 import { runLift } from '@/lib/agents/sub/lift'
-import { atlasResearch, atlasWeeklyIntel, atlasMonitorBrand } from '@/lib/agents/sub/atlas'
+import { atlasResearch, atlasWeeklyIntel, atlasMonitorBrand, atlasComplianceWatch } from '@/lib/agents/sub/atlas'
 import {
   runWatcherCycle, evaluateAndAlert, saveWatcherReport,
   proactiveInsight, getLastProactiveInsightTime, getLastWatcherReport,

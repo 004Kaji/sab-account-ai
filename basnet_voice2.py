@@ -91,7 +91,12 @@ VOICE_TRIGGERS: list[tuple[list[str], str, dict]] = [
         {"trigger": "atlas_scan"},
     ),
     (
-        ["draft social posts", "social media post", "facebook post", "linkedin post", "write a post", "draft a post", "post for facebook", "post for linkedin", "create social"],
+        ["check compliance", "ato update", "ato updates", "check ato", "fair work update", "compliance watch", "regulatory update", "check regulations"],
+        f"{VERCEL_URL}/api/agents/sab",
+        {"trigger": "compliance_watch"},
+    ),
+    (
+        ["draft social posts", "draft social post", "social media post", "social post", "facebook post", "linkedin post", "linked in post", "write a post", "draft a post", "post for facebook", "post for linkedin", "create social", "spark post", "run spark"],
         f"{VERCEL_URL}/api/agents/sab",
         {"trigger": "marketing_run", "data": {"marketingTrigger": "draft_social_posts"}},
     ),
@@ -350,11 +355,40 @@ async def main():
                         print(f"\n{RED}Basnet:{RESET} {err}\n")
                         await speak(err)
                 else:
+                    is_social = (t_body.get("data") or {}).get("marketingTrigger") == "draft_social_posts"
                     await speak("On it.")
-                    response = await fire_trigger(t_url, t_body)
-                    print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
-                    await speak(response)
-                    history.append({"q": question, "a": response})
+                    body_sent2 = {**t_body, "secret": WEBHOOK_SECRET}
+                    try:
+                        async with httpx.AsyncClient(timeout=180) as _c2:
+                            _r2 = await _c2.post(t_url, json=body_sent2)
+                            _d2 = _r2.json()
+                    except Exception as _e2:
+                        _d2 = {"error": str(_e2)}
+
+                    if is_social and _d2.get("drafted") is not None:
+                        platforms = ", ".join(_d2.get("platforms") or [])
+                        response = f"Drafted {_d2['drafted']} social posts for {platforms}."
+                        print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+                        await speak(response)
+                        history.append({"q": question, "a": response})
+
+                        # Offer to open dashboard
+                        await speak("Want me to open the dashboard so you can review and approve them?")
+                        subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"], capture_output=True)
+                        _da = await record(seconds=3)
+                        _dr = await transcribe(_da)
+                        Path(_da).unlink(missing_ok=True)
+                        if _dr and is_yes(_dr):
+                            open_chrome(f"{VERCEL_URL}/dashboard/agent")
+                            await speak("Opening dashboard now.")
+                    else:
+                        response = str(
+                            _d2.get("briefing") or _d2.get("answer") or _d2.get("message") or
+                            _d2.get("result") or _d2.get("error") or "Done."
+                        )[:400]
+                        print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+                        await speak(response)
+                        history.append({"q": question, "a": response})
                 continue
 
             # ── Standard voice route ─────────────────────────────────────

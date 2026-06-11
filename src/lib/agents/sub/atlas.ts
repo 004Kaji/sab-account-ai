@@ -85,29 +85,39 @@ export async function atlasWeeklyIntel(): Promise<AtlasReport> {
 an Australian invoicing and payroll SaaS targeting small businesses,
 freelancers, and migrant workers.
 
+COMPETITOR INTELLIGENCE:
 Search 1: "Xero Australia pricing 2026"
-Search 2: "ATO payday super update 2026"
-Search 3: "Australian payroll software 2026"
-Search 4: "MYOB price increase 2026"
-Search 5: "SAB Account AI"
+Search 2: "MYOB price increase OR new feature 2026"
+Search 3: "Australian payroll accounting software news 2026"
 
-For each finding report what changed, how urgent for SAB, one recommended action.
+REGULATORY & COMPLIANCE (critical for SAB Account AI):
+Search 4: site:ato.gov.au news OR updates 2026
+Search 5: "ATO payday super" OR "super guarantee rate" update 2026
+Search 6: site:fairwork.gov.au minimum wage OR payslip OR casual loading 2026
+Search 7: "Australian payroll tax" OR "BAS" changes 2026
+Search 8: site:treasury.gov.au small business OR payroll 2026
+
+MARKET SIGNALS:
+Search 9: "SAB Account AI" mentions reviews
+Search 10: Australian small business tax compliance news ${new Date().toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}
+
+For EVERY regulatory finding (ATO, Fair Work, Treasury): mark urgency "high" if it affects payroll calculations, super rates, BAS dates, payslip requirements, or minimum wage — these directly affect SAB Account AI's product accuracy.
 
 Return as JSON (no markdown):
 {
   "intel": [
     {
-      "category": "competitor|ato|market|brand|opportunity",
-      "source": "one word",
-      "finding": "what changed",
-      "relevance": "why it matters for SAB",
+      "category": "competitor|ato|market|brand|opportunity|compliance",
+      "source": "ATO|FairWork|Treasury|Xero|MYOB|Reddit|News",
+      "finding": "what changed or was announced",
+      "relevance": "why it matters for SAB Account AI",
       "urgency": "low|medium|high"
     }
   ],
   "summary": "3 sentences max",
   "actionItem": "one sentence or null"
 }`,
-    2000,
+    2500,
   ).catch(async () => {
     // Fallback to Claude without web search if tool not available
     return await callClaude({
@@ -193,6 +203,94 @@ Return JSON: { "intel": [], "summary": "No live search available this week — u
   }
 
   return report
+}
+
+// ── Compliance watch — ATO, Fair Work, Treasury, legislation ──────────
+
+export async function atlasComplianceWatch(): Promise<{ findings: AtlasIntel[]; summary: string }> {
+  const start = Date.now()
+
+  const raw = await callClaudeWithWebSearch(
+    ATLAS_IDENTITY,
+    `You are monitoring Australian regulatory websites for changes that affect a payroll and invoicing SaaS.
+
+Search these sources RIGHT NOW for any updates in the last 30 days:
+
+1. site:ato.gov.au — tax rates, BAS dates, PAYG withholding, super guarantee, payroll tax, GST changes
+2. site:fairwork.gov.au — minimum wage, payslip requirements, casual loading, leave entitlements, STP
+3. site:treasury.gov.au — budget announcements, small business tax changes
+4. site:legislation.gov.au — new acts or amendments affecting payroll or super
+5. "super guarantee rate 2026 2027" — any rate increase announcements
+6. "ATO BAS due dates 2026" — any deadline changes
+7. "Fair Work minimum wage 2026" — annual wage review outcome
+
+For each finding:
+- State exactly what changed or was announced
+- State the effective date if known
+- Rate urgency: HIGH if it affects calculations in SAB Account AI (rates, dates, rules), MEDIUM if it affects compliance advice, LOW if informational only
+
+Return JSON:
+{
+  "findings": [
+    {
+      "category": "ato|compliance|super|fairwork|legislation",
+      "source": "ATO|FairWork|Treasury|Legislation",
+      "finding": "exact change or announcement",
+      "relevance": "how this affects SAB Account AI product or users",
+      "urgency": "low|medium|high"
+    }
+  ],
+  "summary": "2-3 sentences on the most important compliance changes this month"
+}`,
+    2000,
+  ).catch(async () => {
+    return await callClaude({
+      systemPrompt: ATLAS_IDENTITY,
+      userMessage: 'Australian compliance watch — summarise known ATO, Fair Work, and super guarantee rules as of 2026. JSON format.',
+      maxTokens: 800,
+      expectJson: true,
+    })
+  })
+
+  type RawCompliance = { findings?: AtlasIntel[]; summary?: string }
+  let parsed: RawCompliance
+  try {
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+    parsed = JSON.parse(cleaned) as RawCompliance
+  } catch {
+    parsed = { findings: [], summary: 'Compliance watch ran — JSON parse failed.' }
+  }
+
+  const findings = parsed.findings ?? []
+  const summary  = parsed.summary ?? 'No compliance changes detected.'
+
+  // Alert on any high-urgency compliance finding
+  const urgent = findings.filter(f => f.urgency === 'high')
+  for (const f of urgent) {
+    await sendAlert(
+      `Compliance change: ${f.source}`,
+      `${f.finding}\n\nImpact: ${f.relevance}`,
+      'urgent',
+      'atlas',
+    )
+  }
+
+  if (findings.length > 0) {
+    await publishSignal({
+      from_agent:   'atlas',
+      signal_type:  'finding',
+      severity:     urgent.length > 0 ? 'urgent' : 'info',
+      summary:      `Compliance watch: ${summary.slice(0, 150)}`,
+      data:         { findings_count: findings.length, urgent_count: urgent.length, findings },
+      suggested_reactions: urgent.length > 0
+        ? 'Basnet must review immediately. Spark should update blog content if rules changed. Check if SAB Account AI calculations need updating.'
+        : 'Review in next morning briefing.',
+      expires_after_hours: 168,
+    })
+  }
+
+  await logSubAgent('atlas', 'compliance_watch', '', summary.slice(0, 200), Date.now() - start, true)
+  return { findings, summary }
 }
 
 // ── On-demand research ─────────────────────────────────────────────────
