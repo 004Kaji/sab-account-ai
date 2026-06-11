@@ -66,14 +66,21 @@ export async function POST(req: NextRequest) {
       }
 
       if (marketingTrigger === 'draft_social_posts') {
-        const result = await sparkDraftSocialPosts()
+        const result = await sparkDraftSocialPosts({
+          topicOverride: body.data?.topicOverride as string | undefined,
+          hookOverride:  body.data?.hookOverride  as string | undefined,
+          atlasBrief:    body.data?.atlasBrief    as boolean | undefined,
+        })
         await logAgentAction({ agentName: 'sab', triggerType: trigger, actionsTaken: { drafted: result.drafts.length }, durationMs: Date.now() - start })
         return NextResponse.json({ success: true, drafted: result.drafts.length, platforms: result.drafts.map(d => d.platform) })
       }
 
       if (marketingTrigger === 'write_blog_post') {
         const topicHint = body.data?.topic as string | undefined
-        const result = await sparkWriteBlogPost(topicHint)
+        const result = await sparkWriteBlogPost(topicHint, {
+          angle:      body.data?.angle      as string | undefined,
+          atlasBrief: body.data?.atlasBrief as boolean | undefined,
+        })
         await logAgentAction({ agentName: 'sab', triggerType: trigger, decision: result.post.title, durationMs: Date.now() - start })
         return NextResponse.json({ success: true, slug: result.post.slug, title: result.post.title, saved: result.saved, post: result.post })
       }

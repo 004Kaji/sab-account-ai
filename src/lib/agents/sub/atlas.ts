@@ -348,38 +348,51 @@ export async function atlasResearch(query: string): Promise<string> {
 }
 
 // ── Auto-trigger Spark when Atlas finds high-urgency content ───────────
-// Called internally — fires blog + social posts without user asking.
+// Fire-and-forget: POSTs to the SAB API as a separate Vercel function
+// invocation so Atlas doesn't wait for Spark's 2-3 min blog generation.
 
 async function autoTriggerSpark(brief: AtlasSparkBrief): Promise<void> {
   try {
-    // Dynamic import avoids circular dependency (spark imports from atlas world-state)
-    const { sparkWriteBlogPost, sparkDraftSocialPosts } = await import('./spark')
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'https://sabaccountai.com'
 
-    // Run blog + social in parallel, seeding topic from Atlas brief
-    const [blogResult, socialResult] = await Promise.allSettled([
-      sparkWriteBlogPost(brief.blog_topic, {
-        angle:         brief.blog_angle,
-        socialHook:    brief.social_hook,
-        atlasBrief:    true,
+    // Fire both triggers without awaiting — separate Vercel function invocations
+    fetch(`${baseUrl}/api/agents/sab`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        trigger: 'marketing_run',
+        data: {
+          marketingTrigger: 'write_blog_post',
+          topic: brief.blog_topic,
+          angle: brief.blog_angle,
+          atlasBrief: true,
+        },
       }),
-      sparkDraftSocialPosts({
-        topicOverride: brief.social_angle,
-        hookOverride:  brief.social_hook,
-        atlasBrief:    true,
-      }),
-    ])
+    }).catch(() => {})
 
-    const blogTitle = blogResult.status === 'fulfilled' ? blogResult.value.post.title : 'failed'
-    const socialCount = socialResult.status === 'fulfilled' ? socialResult.value.drafts.length : 0
+    fetch(`${baseUrl}/api/agents/sab`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        trigger: 'marketing_run',
+        data: {
+          marketingTrigger: 'draft_social_posts',
+          topicOverride: brief.social_angle,
+          hookOverride:  brief.social_hook,
+          atlasBrief: true,
+        },
+      }),
+    }).catch(() => {})
 
     await sendAlert(
       'Atlas auto-triggered Spark',
-      `Compliance change detected. Auto-published:\n• Blog: "${blogTitle}"\n• Social: ${socialCount} posts drafted for approval\n\nSource: ${brief.source_finding}`,
+      `High-urgency compliance finding. Spark is writing:\n• Blog: "${brief.blog_topic}"\n• Social posts (4 platforms)\n\nSource: ${brief.source_finding}`,
       'info',
       'atlas',
     )
   } catch (err) {
-    // Non-fatal — log but don't throw
     const msg = err instanceof Error ? err.message : String(err)
     await sendAlert('Atlas auto-trigger failed', msg, 'warning', 'atlas').catch(() => {})
   }
