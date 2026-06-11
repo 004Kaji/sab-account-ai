@@ -577,6 +577,13 @@ export async function sparkDraftSocialPosts(context?: string): Promise<{
 
   const extraCtx = context ? `\nAdditional context: ${context}` : ''
 
+  // Alternate tone each call — odd week = founder voice, even week = brand voice
+  const weekNum = Math.ceil(new Date().getDate() / 7)
+  const useFounderVoice = weekNum % 2 !== 0
+  const toneInstruction = useFounderVoice
+    ? `TONE THIS BATCH: Founder voice — written as Sanjog, the builder. Personal, honest, behind-the-scenes. Share a real insight, struggle, or lesson. "I built this because...", "Here's what I learned...", "We're 3 weeks from launch and...". Authentic, not polished.`
+    : `TONE THIS BATCH: Professional brand voice — written as SAB Account AI. Benefit-led, clear, authoritative. Focus on the problem solved, the outcome delivered, the compliance deadline. No jargon. No fluff. Strong CTA.`
+
   const raw = await callClaude({
     systemPrompt: `${SPARK_IDENTITY}\n\nMaster context: ${master}${trendContext}${extraCtx}`,
     userMessage: `Draft social posts for this week.
@@ -584,14 +591,23 @@ Week focus: ${brief?.focus_this_week ?? 'grow SAB Account AI'}
 Blog title: ${brief?.blog_post_title ?? ''}
 TikTok hooks: ${(brief?.tiktok_hooks as string[] | null)?.join(', ') ?? ''}
 
+${toneInstruction}
+
+IMPORTANT RULES:
+- No images, no picture references, no "link in bio", no emoji overload — text only
+- Twitter: max 280 chars, punchy, one idea
+- LinkedIn: 3-5 short paragraphs, line breaks between each, ends with a direct question or CTA
+- Instagram: text-only caption, 4-6 relevant hashtags at the end, no image description
+- TikTok: spoken script — hook line + 3 short talking points + CTA
+
 Return ONLY valid JSON array:
 [
   { "platform": "twitter",   "content": "tweet max 280 chars" },
-  { "platform": "linkedin",  "content": "linkedin post 3-4 sentences" },
+  { "platform": "linkedin",  "content": "linkedin post" },
   { "platform": "instagram", "content": "instagram caption with hashtags" },
-  { "platform": "tiktok",    "content": "tiktok script hook + 3 talking points" }
+  { "platform": "tiktok",    "content": "tiktok script" }
 ]`,
-    maxTokens: 800,
+    maxTokens: 1000,
     expectJson: true,
   })
 
