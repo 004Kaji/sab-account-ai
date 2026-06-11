@@ -219,7 +219,7 @@ async def fire_trigger(url: str, body: dict) -> str:
     """Fire a direct Basnet endpoint and return a short spoken summary."""
     body = {**body, "secret": WEBHOOK_SECRET}
     try:
-        async with httpx.AsyncClient(timeout=60) as c:
+        async with httpx.AsyncClient(timeout=180) as c:
             r = await c.post(url, json=body)
             d = r.json()
             return str(
