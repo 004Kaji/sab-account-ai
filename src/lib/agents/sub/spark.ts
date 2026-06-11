@@ -461,10 +461,14 @@ Write at least 6 substantial sections. Each section body should be 3-4 paragraph
 
   let post: SparkBlogPost
   try {
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
-    post = JSON.parse(cleaned) as SparkBlogPost
-  } catch {
-    throw new Error(`sparkWriteBlogPost: JSON parse failed — raw length ${raw.length}`)
+    // Strip markdown fences, then extract the outermost JSON object
+    const stripped = raw.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim()
+    const start    = stripped.indexOf('{')
+    const end      = stripped.lastIndexOf('}')
+    if (start === -1 || end === -1) throw new Error('no JSON object found')
+    post = JSON.parse(stripped.slice(start, end + 1)) as SparkBlogPost
+  } catch (e) {
+    throw new Error(`sparkWriteBlogPost: JSON parse failed — ${e instanceof Error ? e.message : e} (raw ${raw.length} chars)`)
   }
 
   // Ensure slug is unique
