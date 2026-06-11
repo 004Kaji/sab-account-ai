@@ -142,16 +142,30 @@ Return JSON: { "intel": [], "summary": "No live search available this week — u
   })
 
   type RawReport = { intel?: AtlasIntel[]; summary?: string; actionItem?: string | null }
-  let parsed: RawReport
-  try {
-    const start = raw.indexOf('{')
-    const end   = raw.lastIndexOf('}')
-    if (start === -1 || end === -1) throw new Error('no JSON object found')
-    parsed = JSON.parse(raw.slice(start, end + 1)) as RawReport
-  } catch {
-    parsed = {
+  let parsed: RawReport = { intel: [], summary: '', actionItem: null }
+  const tryParseJson = (text: string): RawReport | null => {
+    const s = text.indexOf('{')
+    const e = text.lastIndexOf('}')
+    if (s === -1 || e === -1) return null
+    try { return JSON.parse(text.slice(s, e + 1)) as RawReport } catch { return null }
+  }
+
+  parsed = tryParseJson(raw) ?? {}
+  if (!parsed.intel) {
+    // Claude returned natural language — ask it to reformat as JSON
+    const reformatted = await callClaude({
+      systemPrompt: 'You extract structured data from text and return ONLY valid JSON. No explanation, no markdown.',
+      userMessage: `Extract all findings from this research text and return ONLY this JSON (no markdown, no preamble):
+{"intel":[{"category":"competitor|ato|market|brand|opportunity|compliance","source":"ATO|FairWork|Treasury|Xero|MYOB|Reddit|News","finding":"what changed","relevance":"why it matters for SAB Account AI","urgency":"low|medium|high"}],"summary":"3 sentences max","actionItem":"one sentence or null"}
+
+RESEARCH TEXT:
+${raw.slice(0, 3000)}`,
+      maxTokens: 1500,
+      expectJson: true,
+    })
+    parsed = tryParseJson(reformatted) ?? {
       intel: [],
-      summary: 'Atlas weekly intel ran. JSON parse failed — raw output saved.',
+      summary: raw.slice(0, 200),
       actionItem: null,
     }
   }
@@ -271,14 +285,26 @@ Return JSON:
   })
 
   type RawCompliance = { findings?: AtlasIntel[]; summary?: string }
-  let parsed: RawCompliance
-  try {
-    const start = raw.indexOf('{')
-    const end   = raw.lastIndexOf('}')
-    if (start === -1 || end === -1) throw new Error('no JSON object found')
-    parsed = JSON.parse(raw.slice(start, end + 1)) as RawCompliance
-  } catch {
-    parsed = { findings: [], summary: 'Compliance watch ran — JSON parse failed.' }
+  const tryParseCompliance = (text: string): RawCompliance | null => {
+    const s = text.indexOf('{')
+    const e = text.lastIndexOf('}')
+    if (s === -1 || e === -1) return null
+    try { return JSON.parse(text.slice(s, e + 1)) as RawCompliance } catch { return null }
+  }
+
+  let parsed: RawCompliance = tryParseCompliance(raw) ?? {}
+  if (!parsed.findings) {
+    const reformatted = await callClaude({
+      systemPrompt: 'You extract structured data from text and return ONLY valid JSON. No explanation, no markdown.',
+      userMessage: `Extract compliance findings from this research and return ONLY this JSON:
+{"findings":[{"category":"ato|compliance|super|fairwork|legislation","source":"ATO|FairWork|Treasury|Legislation","finding":"exact change","relevance":"how it affects SAB Account AI","urgency":"low|medium|high"}],"summary":"2-3 sentences on key changes"}
+
+RESEARCH TEXT:
+${raw.slice(0, 3000)}`,
+      maxTokens: 1200,
+      expectJson: true,
+    })
+    parsed = tryParseCompliance(reformatted) ?? { findings: [], summary: raw.slice(0, 200) }
   }
 
   const findings = parsed.findings ?? []
