@@ -130,7 +130,10 @@ export default function AgentPage() {
   const [imagePickerFor, setImagePickerFor] = useState<string | null>(null)
   const [imageOptions, setImageOptions]     = useState<ImageOption[]>([])
   const [loadingImages, setLoadingImages]   = useState(false)
+  const [uploadingFor, setUploadingFor]     = useState<string | null>(null)
   const textareaRef                   = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef                  = useRef<HTMLInputElement>(null)
+  const fileInputFor                  = useRef<string | null>(null)
 
   useEffect(() => { document.title = 'Basnet — SAB Account AI' }, [])
 
@@ -208,6 +211,25 @@ export default function AgentPage() {
     setApprovals(prev => prev.map(a => a.id === id ? { ...a, mediaUrls: [imageUrl] } : a))
     setImagePickerFor(null)
     setImageOptions([])
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const id   = fileInputFor.current
+    const file = e.target.files?.[0]
+    if (!id || !file) return
+    setUploadingFor(id)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res  = await fetch('/api/agents/upload-image', { method: 'POST', body: form })
+      const data = await res.json() as { url?: string; error?: string }
+      if (data.url) {
+        await selectImage(id, data.url)
+      }
+    } catch { /* non-fatal */ } finally {
+      setUploadingFor(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
   }
 
   async function handleAsk(e: React.FormEvent) {
@@ -479,20 +501,37 @@ export default function AgentPage() {
                   {imageUrl ? (
                     <div style={{ position: 'relative', marginBottom: '0.75rem', borderRadius: '6px', overflow: 'hidden' }}>
                       <img src={imageUrl} alt="Post image" style={{ width: '100%', height: '180px', objectFit: 'cover', display: 'block' }} />
-                      <button
-                        onClick={() => void loadImages(a.id, a.content)}
-                        style={{ position: 'absolute', bottom: '0.5rem', right: '0.5rem', padding: '0.25rem 0.625rem', background: 'rgba(0,0,0,0.65)', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.6875rem', cursor: 'pointer', fontWeight: 500 }}
-                      >
-                        Change image
-                      </button>
+                      <div style={{ position: 'absolute', bottom: '0.5rem', right: '0.5rem', display: 'flex', gap: '0.375rem' }}>
+                        <button
+                          onClick={() => void loadImages(a.id, a.content)}
+                          style={{ padding: '0.25rem 0.625rem', background: 'rgba(0,0,0,0.65)', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.6875rem', cursor: 'pointer', fontWeight: 500 }}
+                        >
+                          Pexels
+                        </button>
+                        <button
+                          onClick={() => { fileInputFor.current = a.id; fileInputRef.current?.click() }}
+                          style={{ padding: '0.25rem 0.625rem', background: 'rgba(0,0,0,0.65)', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.6875rem', cursor: 'pointer', fontWeight: 500 }}
+                        >
+                          Upload
+                        </button>
+                      </div>
                     </div>
                   ) : (
-                    <button
-                      onClick={() => void loadImages(a.id, a.content)}
-                      style={{ display: 'block', width: '100%', padding: '0.625rem', marginBottom: '0.75rem', background: '#f8fafc', border: '1px dashed var(--border)', borderRadius: '6px', fontSize: '0.8125rem', color: 'var(--text3)', cursor: 'pointer', textAlign: 'center' }}
-                    >
-                      + Add image
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                      <button
+                        onClick={() => void loadImages(a.id, a.content)}
+                        style={{ flex: 1, padding: '0.625rem', background: '#f8fafc', border: '1px dashed var(--border)', borderRadius: '6px', fontSize: '0.8125rem', color: 'var(--text3)', cursor: 'pointer', textAlign: 'center' }}
+                      >
+                        Search Pexels
+                      </button>
+                      <button
+                        onClick={() => { fileInputFor.current = a.id; fileInputRef.current?.click() }}
+                        disabled={uploadingFor === a.id}
+                        style={{ flex: 1, padding: '0.625rem', background: '#f8fafc', border: '1px dashed var(--border)', borderRadius: '6px', fontSize: '0.8125rem', color: 'var(--text3)', cursor: 'pointer', textAlign: 'center', opacity: uploadingFor === a.id ? 0.5 : 1 }}
+                      >
+                        {uploadingFor === a.id ? 'Uploading…' : 'Upload from Mac'}
+                      </button>
+                    </div>
                   )}
 
                   {/* Image picker grid */}
@@ -587,6 +626,15 @@ export default function AgentPage() {
           </div>
         </div>
       )}
+
+      {/* Hidden file input for Mac uploads */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={e => void handleFileUpload(e)}
+      />
 
       <style>{`
         @media (max-width: 720px) {
