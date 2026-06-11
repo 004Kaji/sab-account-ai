@@ -163,12 +163,15 @@ ${raw.slice(0, 3000)}`,
     actionItem: parsed.actionItem ?? null,
   }
 
-  // Alert on high-urgency findings
+  // One digest email for all high-urgency findings
   const highUrgency = report.intel.filter(i => i.urgency === 'high')
-  for (const item of highUrgency) {
+  if (highUrgency.length > 0) {
+    const body = highUrgency.map((item, i) =>
+      `${i + 1}. [${item.source}] ${item.finding}\n   → ${item.relevance}`
+    ).join('\n\n')
     await sendAlert(
-      `Atlas: urgent market signal`,
-      `${item.finding}\n\nRelevance: ${item.relevance}\nSource: ${item.source}`,
+      `Atlas: ${highUrgency.length} urgent signal${highUrgency.length > 1 ? 's' : ''} this week`,
+      `${body}\n\nSummary: ${report.summary}`,
       'warning',
       'atlas',
     )
@@ -275,13 +278,22 @@ Rules:
   const findings = parsed.findings ?? []
   const summary  = parsed.summary ?? 'No compliance changes detected.'
 
-  // Alert on any high-urgency compliance finding
+  // One digest email for all compliance findings
   const urgent = findings.filter(f => f.urgency === 'high')
-  for (const f of urgent) {
+  if (findings.length > 0) {
+    const urgentLines = urgent.map((f, i) =>
+      `${i + 1}. [${f.source}] ${f.finding}\n   → ${f.relevance}`
+    ).join('\n\n')
+    const medLow = findings.filter(f => f.urgency !== 'high')
+    const medLowLines = medLow.length > 0
+      ? `\n\nOther findings:\n${medLow.map(f => `• [${f.source}] ${f.finding}`).join('\n')}`
+      : ''
     await sendAlert(
-      `Compliance change: ${f.source}`,
-      `${f.finding}\n\nImpact: ${f.relevance}`,
-      'urgent',
+      urgent.length > 0
+        ? `⚠️ ${urgent.length} urgent compliance change${urgent.length > 1 ? 's' : ''} — action needed`
+        : `Atlas compliance watch — ${findings.length} finding${findings.length > 1 ? 's' : ''}`,
+      `${urgentLines}${medLowLines}\n\nSummary: ${summary}`,
+      urgent.length > 0 ? 'urgent' : 'info',
       'atlas',
     )
   }
