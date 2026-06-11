@@ -3,12 +3,14 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
+import Anthropic from '@anthropic-ai/sdk'
 import { readMasterContext, callClaude, logAgentAction, getStripeMetrics } from '@/lib/agents/utils'
 import { VOICE_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 import { runFlux } from '@/lib/agents/sub/flux'
 import { relayAnswer } from '@/lib/agents/sub/relay'
 import { liftScanForChurnRisk } from '@/lib/agents/sub/lift'
 import { atlasResearch } from '@/lib/agents/sub/atlas'
+import { getWorldState, getRecentSignals } from '@/lib/agents/world-state'
 
 import { classifyQuestion } from '@/lib/agents/classification'
 
@@ -16,14 +18,35 @@ type ConversationRow = { question: string; answer: string; created_at: string }
 type HistoryEntry = { q: string; a: string }
 
 // Map shared classes to voice route handling groups
-function classify(question: string): 'PERSONAL' | 'MAC' | 'ENGINEERING' | 'USER_HEALTH' | 'MARKET_INTEL' | 'GENERAL' {
+function classify(question: string): 'PERSONAL' | 'MAC' | 'ENGINEERING' | 'USER_HEALTH' | 'MARKET_INTEL' | 'STRATEGY' | 'GENERAL' {
   const cls = classifyQuestion(question)
   if (cls === 'MAC')                                   return 'MAC'
+  if (cls === 'STRATEGY')                              return 'STRATEGY'
   if (cls === 'PERSONAL')                              return 'PERSONAL'
   if (cls === 'SAB_PRODUCT' || cls === 'QUALITY')      return 'ENGINEERING'
   if (cls === 'RETENTION')                             return 'USER_HEALTH'
   if (cls === 'MARKET')                                return 'MARKET_INTEL'
   return 'GENERAL'
+}
+
+// ── Fable 5 strategy synthesis ─────────────────────────────────────────
+// Used only for STRATEGY questions — pulls all signals, reasons across them.
+
+async function callFable5Strategy(systemPrompt: string, userMessage: string): Promise<string> {
+  try {
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    const res = await client.messages.create({
+      model:      'claude-fable-5',
+      max_tokens: 600,
+      system:     systemPrompt,
+      messages:   [{ role: 'user', content: userMessage }],
+    })
+    const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map(b => b.text).join('').trim()
+    return text || ''
+  } catch {
+    // Fallback to Sonnet if Fable 5 unavailable
+    return callClaude({ systemPrompt, userMessage, maxTokens: 600 })
+  }
 }
 
 function stripMarkdown(text: string): string {
@@ -165,6 +188,87 @@ export async function POST(req: NextRequest) {
         topic:           meta.topic,
         is_complete:     meta.isComplete && history.length >= 2,
         next_suggestion: meta.nextSuggestion,
+      })
+    }
+
+    // ── STRATEGY: pull all signals, synthesise with Fable 5 ──────────────
+    if (classification === 'STRATEGY') {
+      const [stripe, ws, signals, liftR, fluxR] = await Promise.allSettled([
+        getStripeMetrics(),
+        getWorldState(),
+        getRecentSignals(168),
+        liftScanForChurnRisk().catch(() => null),
+        runFlux().catch(() => null),
+      ])
+
+      const s   = stripe.status  === 'fulfilled' ? stripe.value  : null
+      const w   = ws.status      === 'fulfilled' ? ws.value      : null
+      const sig = signals.status === 'fulfilled' ? signals.value : []
+      const l   = liftR.status   === 'fulfilled' ? liftR.value   : null
+      const f   = fluxR.status   === 'fulfilled' ? fluxR.value   : null
+
+      const atlasSignal = sig.find(s => s.from_agent === 'atlas' && s.signal_type === 'recommendation')
+      const sparkSignal = sig.find(s => s.from_agent === 'spark')
+      const liftSignal  = sig.find(s => s.from_agent === 'lift' && s.severity === 'urgent')
+
+      const allContext = [
+        s  ? `STRIPE: MRR $${s.mrr.toFixed(0)}, MRR change $${s.mrrChange >= 0 ? '+' : ''}${s.mrrChange.toFixed(0)}, churn this week ${s.churnThisWeek}` : '',
+        w  ? `WORLD STATE: july1 countdown ${w.july1_countdown} days, churn risk score ${w.churn_risk_score}/10, signups today ${w.signups_today} vs baseline ${w.signups_baseline}` : '',
+        l  ? `LIFT: ${l.totalAtRisk} users at churn risk` : '',
+        f  ? `FLUX: ${f.overall}, PAYG ${f.payg.allPassing ? 'passing' : 'FAILING'}, ${f.sentry.newErrors.length} new errors` : '',
+        atlasSignal ? `ATLAS BRIEF: ${atlasSignal.summary}` : '',
+        sparkSignal ? `SPARK FOCUS: ${sparkSignal.summary}` : '',
+        liftSignal  ? `LIFT ALERT: ${liftSignal.summary}` : '',
+      ].filter(Boolean).join('\n')
+
+      const historyText = history.slice(-3).map(h => `Q: ${h.q}\nA: ${h.a}`).join('\n')
+
+      const strategyPrompt = `${VOICE_PERSONALITY}
+
+You are giving Sanjog a spoken business strategy answer. You have access to ALL live signals from every agent.
+Rules:
+- Speak in plain English, no markdown, no bullet points in speech
+- 3-5 sentences max — this is spoken out loud
+- Be specific: use real numbers from the data
+- Recommend ONE clear next action
+- If multiple things need attention, prioritise by urgency
+- Sound like a smart co-founder, not a report
+
+Master context: ${masterContext.slice(0, 800)}`
+
+      const strategyMessage = [
+        `LIVE SIGNALS RIGHT NOW:\n${allContext}`,
+        historyText ? `Recent conversation:\n${historyText}` : '',
+        currentTopic ? `Current topic: ${currentTopic}` : '',
+        `Sanjog's question: ${question}`,
+      ].filter(Boolean).join('\n\n')
+
+      const raw = await callFable5Strategy(strategyPrompt, strategyMessage)
+      const response = stripMarkdown(applyPersonality(raw))
+
+      const supabase = createServiceClient()
+      await supabase.from('agent_conversations').insert({
+        agent_name: 'basnet',
+        question,
+        answer: response,
+        context_used: { mode, classification: 'STRATEGY', signals: sig.length },
+      })
+
+      await logAgentAction({
+        agentName: 'voice', triggerType: mode,
+        inputContext: { question, classification: 'STRATEGY' },
+        decision: 'fable5_strategy', outcome: 'answered', durationMs: Date.now() - start,
+      })
+
+      return NextResponse.json({
+        response,
+        agentUsed: 'basnet',
+        classification: 'STRATEGY',
+        url: `${appUrl}/dashboard/agent`,
+        warning: null,
+        topic: 'business strategy',
+        is_complete: false,
+        next_suggestion: null,
       })
     }
 

@@ -9,6 +9,7 @@ export type QuestionClass =
   | 'SAB_MARKETING'
   | 'PERSONAL'
   | 'MAC'
+  | 'STRATEGY'
   | 'GENERAL'
 
 export const AGENT_KEYWORDS: Record<QuestionClass, string[]> = {
@@ -52,12 +53,22 @@ export const AGENT_KEYWORDS: Record<QuestionClass, string[]> = {
     'weather', 'how much', 'price', 'cost', 'where', 'what is',
     'hire', 'hiring', 'find', 'how to',
   ],
+  STRATEGY: [
+    'what should i do', 'what do i focus on', 'prioritise', 'prioritize',
+    'dropped', 'fell', 'declining', 'struggling', 'not growing',
+    'growth strategy', 'business strategy', 'next move', 'what now',
+    'plan', 'roadmap', 'direction', 'advice', 'recommend',
+    'this week focus', 'where should i focus', 'big picture',
+    'mrr dropped', 'churn is high', 'signups down', 'revenue down',
+    'what should basnet', 'what should spark', 'what should atlas',
+    'full picture', 'everything', 'overview', 'all agents',
+  ],
   GENERAL: [],
 }
 
-// MAC is checked before PERSONAL so "check my memory" doesn't go to web search
+// STRATEGY checked first — multi-signal questions beat single-agent routing
 const PRIORITY_ORDER: QuestionClass[] = [
-  'MAC', 'QUALITY', 'RETENTION', 'MARKET', 'SAB_PRODUCT', 'SAB_MARKETING', 'PERSONAL',
+  'MAC', 'STRATEGY', 'QUALITY', 'RETENTION', 'MARKET', 'SAB_PRODUCT', 'SAB_MARKETING', 'PERSONAL',
 ]
 
 export function classifyQuestion(question: string): QuestionClass {
