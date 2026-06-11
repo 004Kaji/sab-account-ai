@@ -585,14 +585,28 @@ export async function sparkDraftSocialPosts(context?: string): Promise<{
   const master = masterCtx.status === 'fulfilled' ? masterCtx.value.slice(0, 1500) : ''
   const brief = briefR.status === 'fulfilled' ? briefR.value.data : null
 
-  // Web search for trending topics
-  let trendContext = ''
-  let searchTopic: string | undefined
-  if (brief?.focus_this_week) {
-    searchTopic = `${brief.focus_this_week} Australia 2026`
-    const search = await tavilySearch(searchTopic, { maxResults: 3, includeAnswer: true })
-    if (search.answer) trendContext = `\nTrending context: ${search.answer}`
-  }
+  // Parallel viral signal research — 3 searches run simultaneously
+  const topic = brief?.focus_this_week ?? 'small business accounting australia'
+  const [viralLinkedIn, viralTwitter, redditSignals, trendingNews] = await Promise.allSettled([
+    tavilySearch(`viral linkedin posts australian small business accounting ${new Date().getFullYear()} high engagement`, { maxResults: 3, includeAnswer: true }),
+    tavilySearch(`trending twitter posts australia tax payroll small business this week`, { maxResults: 3, includeAnswer: true }),
+    tavilySearch(`site:reddit.com r/AusFinance OR r/australia "${topic.split(' ').slice(0, 3).join(' ')}"`, { maxResults: 3, includeAnswer: true }),
+    tavilySearch(`${topic} australia trending news ${new Date().toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}`, { maxResults: 3, includeAnswer: true }),
+  ])
+
+  const viralLinkedInContext  = viralLinkedIn.status  === 'fulfilled' && viralLinkedIn.value.answer  ? viralLinkedIn.value.answer  : ''
+  const viralTwitterContext   = viralTwitter.status   === 'fulfilled' && viralTwitter.value.answer   ? viralTwitter.value.answer   : ''
+  const redditContext         = redditSignals.status  === 'fulfilled' && redditSignals.value.answer  ? redditSignals.value.answer  : ''
+  const trendingNewsContext   = trendingNews.status   === 'fulfilled' && trendingNews.value.answer   ? trendingNews.value.answer   : ''
+
+  const trendContext = [
+    viralLinkedInContext  ? `\nViral LinkedIn signals: ${viralLinkedInContext}`  : '',
+    viralTwitterContext   ? `\nTrending Twitter/X signals: ${viralTwitterContext}` : '',
+    redditContext         ? `\nReddit Australia questions this week: ${redditContext}` : '',
+    trendingNewsContext   ? `\nTrending news this week: ${trendingNewsContext}`  : '',
+  ].join('')
+
+  const searchTopic = topic
 
   const extraCtx = context ? `\nAdditional context: ${context}` : ''
 
@@ -609,6 +623,18 @@ export async function sparkDraftSocialPosts(context?: string): Promise<{
 Week focus: ${brief?.focus_this_week ?? 'grow SAB Account AI'}
 Blog title: ${brief?.blog_post_title ?? ''}
 TikTok hooks: ${(brief?.tiktok_hooks as string[] | null)?.join(', ') ?? ''}
+
+VIRAL INTELLIGENCE — study these signals and mirror what's working:
+${viralLinkedInContext  ? `LinkedIn: ${viralLinkedInContext}`  : ''}
+${viralTwitterContext   ? `Twitter/X: ${viralTwitterContext}`  : ''}
+${redditContext         ? `Reddit AUS questions: ${redditContext}` : ''}
+${trendingNewsContext   ? `Trending this week: ${trendingNewsContext}` : ''}
+
+Use this intelligence to:
+- Pick hooks that match what's getting engagement right now
+- Mirror the tone and format of posts that are performing (short punchy lines, numbered lists, bold openers)
+- Reference current events or deadlines if relevant (e.g. Payday Super, EOFY, BAS dates)
+- Answer questions real Australians are asking on Reddit right now
 
 ${toneInstruction}
 
