@@ -7,7 +7,7 @@ import {
 } from '@/lib/agents/toolkits/sab-tech-toolkit'
 import { BASNET_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 import { runFlux, fluxDiagnose } from '@/lib/agents/sub/flux'
-import { sparkWeeklyBrief, sparkSendAccountantEmails } from '@/lib/agents/sub/spark'
+import { sparkWeeklyBrief, sparkSendAccountantEmails, sparkWriteBlogPost } from '@/lib/agents/sub/spark'
 import { runScout } from '@/lib/agents/sub/scout'
 import { runLift } from '@/lib/agents/sub/lift'
 
@@ -61,6 +61,13 @@ export async function POST(req: NextRequest) {
         const result = await sparkSendAccountantEmails()
         await logAgentAction({ agentName: 'sab', triggerType: trigger, actionsTaken: { sent: result.sent }, durationMs: Date.now() - start })
         return NextResponse.json({ success: true, ...result })
+      }
+
+      if (marketingTrigger === 'write_blog_post') {
+        const topicHint = body.data?.topic as string | undefined
+        const result = await sparkWriteBlogPost(topicHint)
+        await logAgentAction({ agentName: 'sab', triggerType: trigger, decision: result.post.title, durationMs: Date.now() - start })
+        return NextResponse.json({ success: true, slug: result.post.slug, title: result.post.title, saved: result.saved, post: result.post })
       }
 
       return NextResponse.json({ success: false, error: `Unknown marketingTrigger: ${marketingTrigger}` })

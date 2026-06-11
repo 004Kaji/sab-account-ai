@@ -329,6 +329,199 @@ Return ONLY valid JSON: { "subject": "string", "body": "string" }`,
   }
 }
 
+// ── Blog post generation ───────────────────────────────────────────────
+
+export interface SparkBlogPost {
+  slug:          string
+  title:         string
+  description:   string
+  excerpt:       string
+  tag:           string
+  quick_answer:  string
+  intro:         string
+  sections:      Array<{
+    heading:        string
+    body:           string
+    bullets?:       string[]
+    bullets_label?: string
+    callout?:       string
+  }>
+  faqs:          Array<{ question: string; answer: string }>
+  cta_text:      string
+  related_slugs: string[]
+  keywords:      string[]
+  word_count:    number
+  date_published: string
+  read_time:     string
+}
+
+const STATIC_BLOG_SLUGS = [
+  'gst-invoice-template-australia', 'eofy-checklist-sole-trader-2026',
+  'medicare-levy-exemption-international-students', 'how-to-pay-super-employees-australia',
+  'sole-trader-tax-deductions-australia', 'instant-asset-write-off-2026',
+  'best-invoicing-software-australia-sole-trader', 'do-sole-traders-pay-super-australia',
+  'super-guarantee-rate-australia-2025', 'xero-alternatives-australia',
+  'accounting-software-tradies-australia', 'payg-withholding-calculator-australia',
+  'how-much-tax-sole-trader-australia', 'how-to-register-gst-australia',
+  'payday-super-2026', 'single-touch-payroll-small-business-australia',
+  'abn-contractor-tax-australia', 'bas-due-dates-australia-2026',
+  'payslip-requirements-australia', 'casual-employee-payroll-australia',
+  'work-from-home-tax-deductions-australia-2026', 'contractor-vs-employee-australia',
+  'payroll-tax-australia-2026',
+]
+
+export async function sparkWriteBlogPost(topicHint?: string): Promise<{ post: SparkBlogPost; saved: boolean }> {
+  const start = Date.now()
+  const supabase = createServiceClient()
+
+  // Gather context: world state, signals, existing DB slugs, this week's brief
+  const [ws, recentSignals, existingDbR, briefR] = await Promise.allSettled([
+    (await import('@/lib/agents/world-state')).getWorldState(),
+    (await import('@/lib/agents/world-state')).getRecentSignals(168),
+    supabase.from('blog_posts').select('slug').eq('status', 'published'),
+    supabase.from('content_briefs').select('blog_post_title, focus_this_week')
+      .order('week_start', { ascending: false }).limit(1).maybeSingle(),
+  ])
+
+  const worldState    = ws.status === 'fulfilled' ? ws.value : null
+  const signals       = recentSignals.status === 'fulfilled' ? recentSignals.value : []
+  const dbSlugs: string[] = existingDbR.status === 'fulfilled'
+    ? (existingDbR.value.data ?? []).map((r: { slug: string }) => r.slug)
+    : []
+  const weekBrief     = briefR.status === 'fulfilled' ? briefR.value.data : null
+  const allTakenSlugs = [...STATIC_BLOG_SLUGS, ...dbSlugs]
+
+  const atlasFinding  = signals.find(s => s.from_agent === 'atlas')?.summary ?? ''
+  const july1Days     = worldState?.july1_countdown ?? 0
+  const churnRisk     = worldState?.churn_risk_score ?? 0
+
+  const suggestedTopic =
+    topicHint ??
+    weekBrief?.blog_post_title ??
+    (july1Days > 0 && july1Days <= 21
+      ? 'Payday Super cash flow impact for small business payroll'
+      : churnRisk >= 6
+      ? 'How to switch invoicing software in Australia without losing your data'
+      : atlasFinding
+      ? `SAB Account AI vs Xero: what changed in 2026`
+      : 'How to generate a legal invoice in Australia (complete guide)')
+
+  const masterCtx = await readMasterContext().catch(() => '')
+
+  const raw = await callClaude({
+    systemPrompt: `${SPARK_IDENTITY}
+
+You are writing an SEO blog post for sabaccountai.com — an Australian invoicing and payroll SaaS.
+Audience: sole traders, small business owners, freelancers, migrant workers in Australia.
+Tone: plain English, practical, no fluff. Cite real Australian rules (Fair Work, ATO, SRO).
+Word count target: ~2000 words of visible body text.
+
+Master context: ${masterCtx.slice(0, 800)}`,
+    userMessage: `Write a full 2000-word SEO blog post on this topic: "${suggestedTopic}"
+
+Already published topics (DO NOT duplicate):
+${allTakenSlugs.slice(0, 30).join(', ')}
+
+${atlasFinding ? `Recent market intel from Atlas: ${atlasFinding}` : ''}
+${july1Days > 0 && july1Days <= 21 ? `URGENT: July 1 Payday Super deadline is ${july1Days} days away — weave this in if relevant` : ''}
+
+Return ONLY valid JSON with this exact structure (no markdown wrapper):
+{
+  "slug": "kebab-case-url-slug",
+  "title": "SEO title with year",
+  "description": "meta description under 160 chars",
+  "excerpt": "2-3 sentence blog card excerpt",
+  "tag": "Tax|Payroll|GST|Super|Compliance|Invoicing|EOFY",
+  "quick_answer": "2-3 sentence answer for the callout box at top",
+  "intro": "3 paragraphs separated by \\n\\n",
+  "sections": [
+    {
+      "heading": "H2 section title",
+      "body": "3-4 paragraphs separated by \\n\\n",
+      "bullets": ["optional bullet 1", "bullet 2"],
+      "bullets_label": "optional label above bullets",
+      "callout": "optional highlighted note"
+    }
+  ],
+  "faqs": [
+    { "question": "FAQ question?", "answer": "Clear answer in 2-3 sentences." }
+  ],
+  "cta_text": "1 sentence call to action for SAB Account AI",
+  "related_slugs": ["existing-slug-1", "existing-slug-2"],
+  "keywords": ["primary keyword", "keyword 2", "keyword 3"],
+  "word_count": 2000,
+  "date_published": "${new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}",
+  "read_time": "9 min read"
+}
+
+Write at least 6 substantial sections. Each section body should be 3-4 paragraphs. FAQs: at least 5 questions.`,
+    maxTokens: 5000,
+    expectJson: true,
+  })
+
+  let post: SparkBlogPost
+  try {
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+    post = JSON.parse(cleaned) as SparkBlogPost
+  } catch {
+    throw new Error(`sparkWriteBlogPost: JSON parse failed — raw length ${raw.length}`)
+  }
+
+  // Ensure slug is unique
+  if (allTakenSlugs.includes(post.slug)) {
+    post.slug = `${post.slug}-${new Date().getFullYear()}`
+  }
+
+  // Save to Supabase
+  let saved = false
+  try {
+    const { error } = await supabase.from('blog_posts').insert({
+      slug:          post.slug,
+      title:         post.title,
+      description:   post.description,
+      excerpt:       post.excerpt,
+      tag:           post.tag,
+      quick_answer:  post.quick_answer,
+      intro:         post.intro,
+      sections:      post.sections,
+      faqs:          post.faqs,
+      cta_text:      post.cta_text,
+      related_slugs: post.related_slugs,
+      keywords:      post.keywords,
+      word_count:    post.word_count,
+      status:        'published',
+      date_published: post.date_published,
+      read_time:     post.read_time,
+      created_by:    'spark',
+      updated_at:    new Date().toISOString(),
+    })
+    if (!error) saved = true
+    else console.error('[spark] blog post insert error:', error.message)
+  } catch (err) {
+    console.error('[spark] blog post save failed:', err)
+  }
+
+  // Update world state + publish signal
+  await Promise.allSettled([
+    (await import('@/lib/agents/world-state')).updateWorldState({
+      spark_last_topic: post.title.slice(0, 200),
+      last_updated_by: 'spark',
+    }),
+    (await import('@/lib/agents/world-state')).publishSignal({
+      from_agent:   'spark',
+      signal_type:  'action_taken',
+      severity:     'info',
+      summary:      `Blog post published: "${post.title}"`,
+      data:         { slug: post.slug, tag: post.tag, word_count: post.word_count, saved },
+      suggested_reactions: 'Basnet should note new content in next briefing. Submit slug to Google Search Console URL Inspection.',
+      expires_after_hours: 168,
+    }),
+  ])
+
+  await logSubAgent('spark', 'write_blog_post', post.slug, post.title, Date.now() - start, saved)
+  return { post, saved }
+}
+
 export async function sparkTurnMetricIntoPost(metric: string, value: string): Promise<string> {
   try {
     return await callClaude({

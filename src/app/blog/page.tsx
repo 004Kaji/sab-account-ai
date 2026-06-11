@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
+import { createServiceClient } from '@/lib/supabase'
 
 export const metadata: Metadata = {
   title: 'Australian Tax Guides — SAB Account AI Blog',
@@ -215,7 +216,29 @@ const TAG_COLORS: Record<string, string> = {
   Compliance: '#0f766e',
 }
 
-export default function BlogPage() {
+type DbPost = { slug: string; title: string; excerpt: string; tag: string; date_published: string; read_time: string }
+
+async function getDbPosts(): Promise<DbPost[]> {
+  try {
+    const supabase = createServiceClient()
+    const { data } = await supabase
+      .from('blog_posts')
+      .select('slug, title, excerpt, tag, date_published, read_time')
+      .eq('status', 'published')
+      .order('created_at', { ascending: false })
+    return (data ?? []) as DbPost[]
+  } catch {
+    return []
+  }
+}
+
+export default async function BlogPage() {
+  const dbPosts = await getDbPosts()
+  const allPosts = [
+    ...dbPosts.map(p => ({ slug: p.slug, title: p.title, excerpt: p.excerpt, tag: p.tag, date: p.date_published, readTime: p.read_time })),
+    ...POSTS,
+  ]
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--cream)' }}>
       {/* Nav */}
@@ -242,7 +265,7 @@ export default function BlogPage() {
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {POSTS.map((post) => (
+          {allPosts.map((post) => (
             <Link
               key={post.slug}
               href={`/blog/${post.slug}`}
