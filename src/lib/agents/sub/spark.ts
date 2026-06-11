@@ -454,8 +454,8 @@ Return ONLY valid JSON with this exact structure (no markdown wrapper):
   "read_time": "9 min read"
 }
 
-Write at least 6 substantial sections. Each section body should be 3-4 paragraphs. FAQs: at least 5 questions.`,
-    maxTokens: 5000,
+Write 5-6 sections. Each section body should be 2-3 paragraphs. FAQs: 4-5 questions. Keep each answer concise (2-3 sentences).`,
+    maxTokens: 8000,
     expectJson: true,
   })
 

@@ -91,7 +91,7 @@ VOICE_TRIGGERS: list[tuple[list[str], str, dict]] = [
         {"trigger": "atlas_scan"},
     ),
     (
-        ["write blog post", "write a blog", "spark blog", "generate blog", "new blog post"],
+        ["write blog post", "write a blog", "spark blog", "generate blog", "new blog post", "white blog post", "white blog", "right blog post"],
         f"{VERCEL_URL}/api/agents/sab",
         {"trigger": "marketing_run", "data": {"marketingTrigger": "write_blog_post"}},
     ),
