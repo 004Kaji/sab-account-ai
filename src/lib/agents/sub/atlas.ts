@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase'
 import { callClaude, sendAlert, logAgentAction, logSubAgent } from '@/lib/agents/utils'
+import { tavilySearch } from '@/lib/agents/toolkits/sab-marketing-toolkit'
 import { BASNET_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 import { getWorldState, getRecentSignals, updateWorldState, publishSignal } from '@/lib/agents/world-state'
 
@@ -90,55 +91,40 @@ export async function atlasWeeklyIntel(): Promise<AtlasReport> {
     }
   }
 
-  const raw = await callClaudeWithWebSearch(
-    ATLAS_IDENTITY,
-    `Search for these topics and report findings relevant to SAB Account AI,
-an Australian invoicing and payroll SaaS targeting small businesses,
-freelancers, and migrant workers.
+  // Run 5 Tavily searches in parallel (same approach as sparkDraftSocialPosts)
+  const month = new Date().toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })
+  const [xeroR, atoR, fairWorkR, superR, marketR] = await Promise.allSettled([
+    tavilySearch(`Xero OR MYOB Australia pricing feature update ${month}`, { maxResults: 3, includeAnswer: true }),
+    tavilySearch(`site:ato.gov.au payroll tax super BAS update ${new Date().getFullYear()}`, { maxResults: 3, includeAnswer: true }),
+    tavilySearch(`site:fairwork.gov.au minimum wage payslip casual loading ${new Date().getFullYear()}`, { maxResults: 3, includeAnswer: true }),
+    tavilySearch(`Australia super guarantee rate payday super update ${new Date().getFullYear()}`, { maxResults: 3, includeAnswer: true }),
+    tavilySearch(`Australian small business accounting invoicing payroll news ${month}`, { maxResults: 3, includeAnswer: true }),
+  ])
 
-COMPETITOR INTELLIGENCE:
-Search 1: "Xero Australia pricing 2026"
-Search 2: "MYOB price increase OR new feature 2026"
-Search 3: "Australian payroll accounting software news 2026"
+  const searchContext = [
+    xeroR.status    === 'fulfilled' && xeroR.value.answer    ? `COMPETITOR: ${xeroR.value.answer}`    : '',
+    atoR.status     === 'fulfilled' && atoR.value.answer     ? `ATO: ${atoR.value.answer}`             : '',
+    fairWorkR.status=== 'fulfilled' && fairWorkR.value.answer? `FAIR WORK: ${fairWorkR.value.answer}`  : '',
+    superR.status   === 'fulfilled' && superR.value.answer   ? `SUPER: ${superR.value.answer}`         : '',
+    marketR.status  === 'fulfilled' && marketR.value.answer  ? `MARKET: ${marketR.value.answer}`       : '',
+  ].filter(Boolean).join('\n\n')
 
-REGULATORY & COMPLIANCE (critical for SAB Account AI):
-Search 4: site:ato.gov.au news OR updates 2026
-Search 5: "ATO payday super" OR "super guarantee rate" update 2026
-Search 6: site:fairwork.gov.au minimum wage OR payslip OR casual loading 2026
-Search 7: "Australian payroll tax" OR "BAS" changes 2026
-Search 8: site:treasury.gov.au small business OR payroll 2026
+  const raw = await callClaude({
+    systemPrompt: ATLAS_IDENTITY,
+    userMessage: `You have just received live intelligence from web searches. Analyse and return findings as JSON.
 
-MARKET SIGNALS:
-Search 9: "SAB Account AI" mentions reviews
-Search 10: Australian small business tax compliance news ${new Date().toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}
+LIVE SEARCH RESULTS:
+${searchContext || 'No search results available this run.'}
 
-For EVERY regulatory finding (ATO, Fair Work, Treasury): mark urgency "high" if it affects payroll calculations, super rates, BAS dates, payslip requirements, or minimum wage — these directly affect SAB Account AI's product accuracy.
+Return ONLY valid JSON (no markdown, no preamble):
+{"intel":[{"category":"competitor|ato|market|brand|opportunity|compliance","source":"ATO|FairWork|Treasury|Xero|MYOB|Reddit|News","finding":"what changed or was announced","relevance":"why it matters for SAB Account AI","urgency":"low|medium|high"}],"summary":"3 sentences max","actionItem":"one sentence or null"}
 
-Return as JSON (no markdown):
-{
-  "intel": [
-    {
-      "category": "competitor|ato|market|brand|opportunity|compliance",
-      "source": "ATO|FairWork|Treasury|Xero|MYOB|Reddit|News",
-      "finding": "what changed or was announced",
-      "relevance": "why it matters for SAB Account AI",
-      "urgency": "low|medium|high"
-    }
-  ],
-  "summary": "3 sentences max",
-  "actionItem": "one sentence or null"
-}`,
-    2500,
-  ).catch(async () => {
-    // Fallback to Claude without web search if tool not available
-    return await callClaude({
-      systemPrompt: ATLAS_IDENTITY,
-      userMessage: `Generate a weekly competitive intelligence brief for SAB Account AI.
-Consider: Xero/MYOB pricing, ATO payday super updates, Australian payroll trends.
-Return JSON: { "intel": [], "summary": "No live search available this week — using knowledge base.", "actionItem": null }`,
-      maxTokens: 1000,
-      expectJson: true,
-    })
+Rules:
+- Only include REAL findings from the search results above
+- Mark urgency "high" if it affects: payroll calculations, super rates, BAS dates, payslip requirements, minimum wage
+- If no findings, return: {"intel":[],"summary":"No significant changes found this week.","actionItem":null}`,
+    maxTokens: 1500,
+    expectJson: true,
   })
 
   type RawReport = { intel?: AtlasIntel[]; summary?: string; actionItem?: string | null }
@@ -242,47 +228,21 @@ ${raw.slice(0, 3000)}`,
 export async function atlasComplianceWatch(): Promise<{ findings: AtlasIntel[]; summary: string }> {
   const start = Date.now()
 
-  const raw = await callClaudeWithWebSearch(
-    ATLAS_IDENTITY,
-    `You are monitoring Australian regulatory websites for changes that affect a payroll and invoicing SaaS.
+  // 4 parallel Tavily searches targeting Australian regulatory sources
+  const yr = new Date().getFullYear()
+  const [atoR, fairWorkR, superR, treasuryR] = await Promise.allSettled([
+    tavilySearch(`site:ato.gov.au BAS dates PAYG withholding super guarantee rate ${yr}`, { maxResults: 4, includeAnswer: true }),
+    tavilySearch(`site:fairwork.gov.au minimum wage payslip casual loading leave entitlements ${yr}`, { maxResults: 4, includeAnswer: true }),
+    tavilySearch(`Australia super guarantee rate increase payday super ${yr}`, { maxResults: 4, includeAnswer: true }),
+    tavilySearch(`Australia treasury budget small business payroll tax compliance announcement ${yr}`, { maxResults: 3, includeAnswer: true }),
+  ])
 
-Search these sources RIGHT NOW for any updates in the last 30 days:
-
-1. site:ato.gov.au — tax rates, BAS dates, PAYG withholding, super guarantee, payroll tax, GST changes
-2. site:fairwork.gov.au — minimum wage, payslip requirements, casual loading, leave entitlements, STP
-3. site:treasury.gov.au — budget announcements, small business tax changes
-4. site:legislation.gov.au — new acts or amendments affecting payroll or super
-5. "super guarantee rate 2026 2027" — any rate increase announcements
-6. "ATO BAS due dates 2026" — any deadline changes
-7. "Fair Work minimum wage 2026" — annual wage review outcome
-
-For each finding:
-- State exactly what changed or was announced
-- State the effective date if known
-- Rate urgency: HIGH if it affects calculations in SAB Account AI (rates, dates, rules), MEDIUM if it affects compliance advice, LOW if informational only
-
-Return JSON:
-{
-  "findings": [
-    {
-      "category": "ato|compliance|super|fairwork|legislation",
-      "source": "ATO|FairWork|Treasury|Legislation",
-      "finding": "exact change or announcement",
-      "relevance": "how this affects SAB Account AI product or users",
-      "urgency": "low|medium|high"
-    }
-  ],
-  "summary": "2-3 sentences on the most important compliance changes this month"
-}`,
-    2000,
-  ).catch(async () => {
-    return await callClaude({
-      systemPrompt: ATLAS_IDENTITY,
-      userMessage: 'Australian compliance watch — summarise known ATO, Fair Work, and super guarantee rules as of 2026. JSON format.',
-      maxTokens: 800,
-      expectJson: true,
-    })
-  })
+  const complianceContext = [
+    atoR.status      === 'fulfilled' && atoR.value.answer      ? `ATO: ${atoR.value.answer}`          : '',
+    fairWorkR.status === 'fulfilled' && fairWorkR.value.answer  ? `FAIR WORK: ${fairWorkR.value.answer}`: '',
+    superR.status    === 'fulfilled' && superR.value.answer     ? `SUPER: ${superR.value.answer}`       : '',
+    treasuryR.status === 'fulfilled' && treasuryR.value.answer  ? `TREASURY: ${treasuryR.value.answer}` : '',
+  ].filter(Boolean).join('\n\n')
 
   type RawCompliance = { findings?: AtlasIntel[]; summary?: string }
   const tryParseCompliance = (text: string): RawCompliance | null => {
@@ -292,20 +252,25 @@ Return JSON:
     try { return JSON.parse(text.slice(s, e + 1)) as RawCompliance } catch { return null }
   }
 
-  let parsed: RawCompliance = tryParseCompliance(raw) ?? {}
-  if (!parsed.findings) {
-    const reformatted = await callClaude({
-      systemPrompt: 'You extract structured data from text and return ONLY valid JSON. No explanation, no markdown.',
-      userMessage: `Extract compliance findings from this research and return ONLY this JSON:
-{"findings":[{"category":"ato|compliance|super|fairwork|legislation","source":"ATO|FairWork|Treasury|Legislation","finding":"exact change","relevance":"how it affects SAB Account AI","urgency":"low|medium|high"}],"summary":"2-3 sentences on key changes"}
+  const complianceRaw = await callClaude({
+    systemPrompt: ATLAS_IDENTITY,
+    userMessage: `Analyse these live search results and return compliance findings as JSON.
 
-RESEARCH TEXT:
-${raw.slice(0, 3000)}`,
-      maxTokens: 1200,
-      expectJson: true,
-    })
-    parsed = tryParseCompliance(reformatted) ?? { findings: [], summary: raw.slice(0, 200) }
-  }
+LIVE SEARCH RESULTS:
+${complianceContext || 'No search results available.'}
+
+Return ONLY valid JSON (no markdown, no preamble):
+{"findings":[{"category":"ato|compliance|super|fairwork|legislation","source":"ATO|FairWork|Treasury|Legislation","finding":"exact change or announcement with effective date if known","relevance":"how this affects SAB Account AI product or users","urgency":"low|medium|high"}],"summary":"2-3 sentences on the most important compliance changes"}
+
+Rules:
+- Only include REAL findings from the search results above
+- Mark HIGH urgency if it affects: super rates, BAS dates, minimum wage, payslip requirements, PAYG calculations
+- If nothing material found: {"findings":[],"summary":"No new compliance changes detected this watch."}`,
+    maxTokens: 1200,
+    expectJson: true,
+  })
+
+  const parsed: RawCompliance = tryParseCompliance(complianceRaw) ?? { findings: [], summary: complianceContext.slice(0, 200) }
 
   const findings = parsed.findings ?? []
   const summary  = parsed.summary ?? 'No compliance changes detected.'
