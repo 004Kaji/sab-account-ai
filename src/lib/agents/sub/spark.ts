@@ -600,33 +600,39 @@ export async function sparkDraftSocialPosts(context?: string): Promise<{
   const weekNum = Math.ceil(new Date().getDate() / 7)
   const useFounderVoice = weekNum % 2 !== 0
   const toneInstruction = useFounderVoice
-    ? `TONE THIS BATCH: Founder voice — written as Sanjog, the builder. Personal, honest, behind-the-scenes. Share a real insight, struggle, or lesson. "I built this because...", "Here's what I learned...", "We're 3 weeks from launch and...". Authentic, not polished.`
-    : `TONE THIS BATCH: Professional brand voice — written as SAB Account AI. Benefit-led, clear, authoritative. Focus on the problem solved, the outcome delivered, the compliance deadline. No jargon. No fluff. Strong CTA.`
+    ? `TONE: Founder voice — written as Sanjog, the builder. Personal, honest, real. Share a specific insight, struggle, or lesson learned. Use "I", "we", "here's what I found". Sound like a human who built something, not a marketing team.`
+    : `TONE: Professional-human mix — brand voice with warmth. Clear, benefit-led, but not corporate. Write like a smart friend explaining something important, not a SaaS landing page.`
 
   const raw = await callClaude({
     systemPrompt: `${SPARK_IDENTITY}\n\nMaster context: ${master}${trendContext}${extraCtx}`,
-    userMessage: `Draft social posts for this week.
+    userMessage: `Draft social posts for this week for SAB Account AI (sabaccountai.com).
 Week focus: ${brief?.focus_this_week ?? 'grow SAB Account AI'}
 Blog title: ${brief?.blog_post_title ?? ''}
 TikTok hooks: ${(brief?.tiktok_hooks as string[] | null)?.join(', ') ?? ''}
 
 ${toneInstruction}
 
-IMPORTANT RULES:
-- No images, no picture references, no "link in bio", no emoji overload — text only
-- Twitter: max 280 chars, punchy, one idea
-- LinkedIn: 3-5 short paragraphs, line breaks between each, ends with a direct question or CTA
-- Instagram: text-only caption, 4-6 relevant hashtags at the end, no image description
-- TikTok: spoken script — hook line + 3 short talking points + CTA
+RULES FOR ALL POSTS:
+- Use 1-3 relevant emojis per post — placed naturally, not at the start of every line
+- Include hashtags: Twitter 2-3, LinkedIn 3-5, Instagram 6-8, TikTok 3-4
+- CTA must be "Try it free → sabaccountai.com" (never just the raw URL alone)
+- Language: mix of human and professional — real words, no buzzwords, no "leverage" or "utilise"
+- Each post must have a strong HOOK as the first line — a specific claim, stat, or question that stops the scroll
+
+PLATFORM FORMATS:
+- Twitter: max 280 chars · strong hook · 1 emoji · 2-3 hashtags · CTA on last line
+- LinkedIn: 1 hook line → blank line → 3-4 short paragraphs (1-2 sentences each) → blank line → CTA → 3-5 hashtags. Use line breaks. Sound human.
+- Instagram: hook line with emoji · 4-5 short punchy lines · blank line · CTA · 6-8 hashtags on separate lines
+- TikTok: spoken script · hook (first 3 seconds) · 3 short talking points · CTA to try free
 
 Return ONLY valid JSON array:
 [
-  { "platform": "twitter",   "content": "tweet max 280 chars" },
-  { "platform": "linkedin",  "content": "linkedin post" },
-  { "platform": "instagram", "content": "instagram caption with hashtags" },
-  { "platform": "tiktok",    "content": "tiktok script" }
+  { "platform": "twitter",   "content": "full tweet text" },
+  { "platform": "linkedin",  "content": "full linkedin post" },
+  { "platform": "instagram", "content": "full instagram caption" },
+  { "platform": "tiktok",    "content": "full tiktok script" }
 ]`,
-    maxTokens: 1000,
+    maxTokens: 1200,
     expectJson: true,
   })
 
