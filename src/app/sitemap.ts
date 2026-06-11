@@ -154,6 +154,37 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'monthly',
       priority: 0.85,
     },
+    // New posts — June 11 2026
+    {
+      url: `${BASE}/blog/payslip-requirements-australia`,
+      lastModified: new Date('2026-06-11'),
+      changeFrequency: 'monthly',
+      priority: 0.9,
+    },
+    {
+      url: `${BASE}/blog/casual-employee-payroll-australia`,
+      lastModified: new Date('2026-06-11'),
+      changeFrequency: 'monthly',
+      priority: 0.9,
+    },
+    {
+      url: `${BASE}/blog/work-from-home-tax-deductions-australia-2026`,
+      lastModified: new Date('2026-06-11'),
+      changeFrequency: 'monthly',
+      priority: 0.9,
+    },
+    {
+      url: `${BASE}/blog/contractor-vs-employee-australia`,
+      lastModified: new Date('2026-06-11'),
+      changeFrequency: 'monthly',
+      priority: 0.9,
+    },
+    {
+      url: `${BASE}/blog/payroll-tax-australia-2026`,
+      lastModified: new Date('2026-06-11'),
+      changeFrequency: 'monthly',
+      priority: 0.9,
+    },
     {
       url: `${BASE}/ato-verification`,
       lastModified: new Date('2026-05-25'),

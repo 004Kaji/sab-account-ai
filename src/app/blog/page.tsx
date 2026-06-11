@@ -17,6 +17,46 @@ export const metadata: Metadata = {
 
 const POSTS = [
   {
+    slug: 'payroll-tax-australia-2026',
+    title: 'Payroll Tax Australia 2026: State Thresholds, Rates and When to Register',
+    excerpt: 'Payroll tax is a state tax — completely separate from PAYG withholding. Thresholds range from $900K (VIC) to $2M (ACT). Here are the 2026 rates for all states and territories.',
+    date: '11 Jun 2026',
+    readTime: '10 min read',
+    tag: 'Tax',
+  },
+  {
+    slug: 'contractor-vs-employee-australia',
+    title: 'Contractor vs Employee Australia 2026: How to Get the Classification Right',
+    excerpt: 'Having an ABN does not make someone a contractor. The High Court looks at the totality of the relationship. Get it wrong and you face years of back-paid super, leave, and fines up to $82,500.',
+    date: '11 Jun 2026',
+    readTime: '9 min read',
+    tag: 'Compliance',
+  },
+  {
+    slug: 'work-from-home-tax-deductions-australia-2026',
+    title: 'Work From Home Tax Deductions Australia 2026: The 67 Cents Method Explained',
+    excerpt: 'The ATO\'s revised fixed rate is 67 cents per hour worked from home. Here is exactly what it covers, what records you must keep, and when the actual cost method gives a bigger deduction.',
+    date: '11 Jun 2026',
+    readTime: '9 min read',
+    tag: 'Tax',
+  },
+  {
+    slug: 'casual-employee-payroll-australia',
+    title: 'How to Pay Casual Employees in Australia 2026: Rates, PAYG and Payslips',
+    excerpt: 'Casual employees get 25% loading on top of the award rate, 12% super, and PAYG withholding on every payment. From July 2026 super must be paid on payday. Complete guide for employers.',
+    date: '11 Jun 2026',
+    readTime: '8 min read',
+    tag: 'Payroll',
+  },
+  {
+    slug: 'payslip-requirements-australia',
+    title: 'Payslip Requirements Australia 2026: What Every Employer Must Include',
+    excerpt: 'The Fair Work Act requires payslips within 1 working day of payday. Here is the complete checklist of what must appear on every Australian payslip — and the penalties if you get it wrong.',
+    date: '11 Jun 2026',
+    readTime: '8 min read',
+    tag: 'Payroll',
+  },
+  {
     slug: 'instant-asset-write-off-2026',
     title: '$20,000 Instant Asset Write-Off 2026: What Sole Traders Must Buy Before 30 June',
     excerpt: 'Hard deadline: 30 June 2026. Assets must be first used or installed ready for use before midnight to claim the full $20,000 deduction. Learn exactly what qualifies, the install-by rule, mixed-use apportionment, and what records to keep.',
@@ -172,6 +212,7 @@ const TAG_COLORS: Record<string, string> = {
   Invoicing: '#0891b2',
   Tax: '#b45309',
   Payroll: '#6d28d9',
+  Compliance: '#0f766e',
 }
 
 export default function BlogPage() {
