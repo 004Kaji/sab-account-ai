@@ -8,7 +8,7 @@ import {
 } from '@/lib/agents/toolkits/sab-tech-toolkit'
 import { BASNET_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 import { runFlux, fluxDiagnose } from '@/lib/agents/sub/flux'
-import { sparkWeeklyBrief, sparkSendAccountantEmails, sparkWriteBlogPost } from '@/lib/agents/sub/spark'
+import { sparkWeeklyBrief, sparkSendAccountantEmails, sparkWriteBlogPost, sparkDraftSocialPosts } from '@/lib/agents/sub/spark'
 import { runScout } from '@/lib/agents/sub/scout'
 import { runLift } from '@/lib/agents/sub/lift'
 
@@ -62,6 +62,12 @@ export async function POST(req: NextRequest) {
         const result = await sparkSendAccountantEmails()
         await logAgentAction({ agentName: 'sab', triggerType: trigger, actionsTaken: { sent: result.sent }, durationMs: Date.now() - start })
         return NextResponse.json({ success: true, ...result })
+      }
+
+      if (marketingTrigger === 'draft_social_posts') {
+        const result = await sparkDraftSocialPosts()
+        await logAgentAction({ agentName: 'sab', triggerType: trigger, actionsTaken: { drafted: result.drafts.length }, durationMs: Date.now() - start })
+        return NextResponse.json({ success: true, drafted: result.drafts.length, platforms: result.drafts.map(d => d.platform) })
       }
 
       if (marketingTrigger === 'write_blog_post') {

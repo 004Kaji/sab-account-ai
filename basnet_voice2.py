@@ -91,6 +91,11 @@ VOICE_TRIGGERS: list[tuple[list[str], str, dict]] = [
         {"trigger": "atlas_scan"},
     ),
     (
+        ["draft social posts", "social media post", "facebook post", "linkedin post", "write a post", "draft a post", "post for facebook", "post for linkedin", "create social"],
+        f"{VERCEL_URL}/api/agents/sab",
+        {"trigger": "marketing_run", "data": {"marketingTrigger": "draft_social_posts"}},
+    ),
+    (
         ["write blog post", "write a blog", "spark blog", "generate blog", "new blog post", "white blog post", "white blog", "right blog post"],
         f"{VERCEL_URL}/api/agents/sab",
         {"trigger": "marketing_run", "data": {"marketingTrigger": "write_blog_post"}},
@@ -222,6 +227,12 @@ async def fire_trigger(url: str, body: dict) -> str:
         async with httpx.AsyncClient(timeout=180) as c:
             r = await c.post(url, json=body)
             d = r.json()
+            if d.get("title") and d.get("slug"):
+                saved = "Saved." if d.get("saved") else "Generated but not saved."
+                return f"Blog post written. Title: {d['title']}. {saved}"
+            if d.get("drafted") is not None:
+                platforms = ", ".join(d.get("platforms") or [])
+                return f"Drafted {d['drafted']} social posts for {platforms}. Check your dashboard to review and approve them."
             return str(
                 d.get("briefing") or d.get("answer") or d.get("message") or
                 d.get("result") or "Done."
@@ -292,13 +303,58 @@ async def main():
             trigger = match_trigger(question)
             if trigger:
                 t_url, t_body = trigger
-                label = t_body.get("trigger", "agent").upper()
+                is_blog = (t_body.get("data") or {}).get("marketingTrigger") == "write_blog_post"
+                label   = t_body.get("trigger", "agent").upper()
                 print(f"{CYAN}[TRIGGER → {label}]{RESET}")
-                await speak("On it.")
-                response = await fire_trigger(t_url, t_body)
-                print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
-                await speak(response)
-                history.append({"q": question, "a": response})
+
+                if is_blog:
+                    await speak("On it. Writing the post now — give me a minute.")
+                    body_sent = {**t_body, "secret": WEBHOOK_SECRET}
+                    try:
+                        async with httpx.AsyncClient(timeout=180) as _c:
+                            _r = await _c.post(t_url, json=body_sent)
+                            _d = _r.json()
+                    except Exception as _e:
+                        _d = {"error": str(_e)}
+
+                    if _d.get("slug") and _d.get("title"):
+                        post_url = f"{VERCEL_URL}/blog/{_d['slug']}"
+                        response = f"Blog post written: {_d['title']}."
+                        print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+                        await speak(response)
+                        history.append({"q": question, "a": response})
+
+                        # Offer to open in browser
+                        await speak("Want me to open it in your browser?")
+                        subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"], capture_output=True)
+                        _oa = await record(seconds=3)
+                        _or = await transcribe(_oa)
+                        Path(_oa).unlink(missing_ok=True)
+                        if _or and is_yes(_or):
+                            open_chrome(post_url)
+                            await speak("Opening now.")
+
+                        # Offer to write another
+                        await speak("Want me to write another blog post?")
+                        subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"], capture_output=True)
+                        _na = await record(seconds=3)
+                        _nr = await transcribe(_na)
+                        Path(_na).unlink(missing_ok=True)
+                        if _nr and is_yes(_nr):
+                            await speak("On it. Writing the next post now.")
+                            response2 = await fire_trigger(t_url, t_body)
+                            print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response2}\n")
+                            await speak(response2)
+                    else:
+                        err = str(_d.get("error") or _d.get("message") or "Blog post failed.")
+                        print(f"\n{RED}Basnet:{RESET} {err}\n")
+                        await speak(err)
+                else:
+                    await speak("On it.")
+                    response = await fire_trigger(t_url, t_body)
+                    print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+                    await speak(response)
+                    history.append({"q": question, "a": response})
                 continue
 
             # ── Standard voice route ─────────────────────────────────────
