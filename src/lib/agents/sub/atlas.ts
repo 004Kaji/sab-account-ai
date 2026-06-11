@@ -15,11 +15,22 @@ Always end with: what this means for SAB Account AI.
 `
 
 export interface AtlasIntel {
-  category:  'competitor' | 'ato' | 'market' | 'brand' | 'opportunity'
+  category:  'competitor' | 'ato' | 'market' | 'brand' | 'opportunity' | 'compliance'
   source:    string
   finding:   string
   relevance: string
   urgency:   'low' | 'medium' | 'high'
+}
+
+export interface AtlasSparkBrief {
+  blog_topic:        string        // exact SEO blog title Spark should write
+  blog_angle:        string        // why this topic matters RIGHT NOW
+  social_hook:       string        // best hook line for social posts
+  social_angle:      string        // what angle to take across all platforms
+  campaign_idea:     string        // short campaign concept (1-2 sentences)
+  campaign_urgency:  'low' | 'medium' | 'high'
+  source_finding:    string        // the Atlas finding that triggered this brief
+  auto_publish:      boolean       // true = Spark should publish without waiting
 }
 
 export interface AtlasReport {
@@ -200,6 +211,12 @@ Return JSON: { "intel": [], "summary": "No live search available this week — u
         : 'No immediate action needed.',
       expires_after_hours: 168,
     })
+
+    // Generate Spark brief from findings and auto-trigger if high urgency
+    const sparkBrief = await atlasGenerateSparkBrief(report.intel, report.summary)
+    if (sparkBrief?.auto_publish) {
+      await autoTriggerSpark(sparkBrief)
+    }
   }
 
   return report
@@ -287,6 +304,15 @@ Return JSON:
         : 'Review in next morning briefing.',
       expires_after_hours: 168,
     })
+
+    // Generate Spark brief from compliance findings — always auto-publish on urgent
+    const sparkBrief = await atlasGenerateSparkBrief(
+      findings.map(f => ({ ...f, category: 'compliance' as const })),
+      summary,
+    )
+    if (sparkBrief?.auto_publish) {
+      await autoTriggerSpark(sparkBrief)
+    }
   }
 
   await logSubAgent('atlas', 'compliance_watch', '', summary.slice(0, 200), Date.now() - start, true)
@@ -325,6 +351,110 @@ export async function atlasResearch(query: string): Promise<string> {
 
   await logSubAgent('atlas', 'research', query.slice(0, 100), answer.slice(0, 200), Date.now() - start, true)
   return answer
+}
+
+// ── Auto-trigger Spark when Atlas finds high-urgency content ───────────
+// Called internally — fires blog + social posts without user asking.
+
+async function autoTriggerSpark(brief: AtlasSparkBrief): Promise<void> {
+  try {
+    // Dynamic import avoids circular dependency (spark imports from atlas world-state)
+    const { sparkWriteBlogPost, sparkDraftSocialPosts } = await import('./spark')
+
+    // Run blog + social in parallel, seeding topic from Atlas brief
+    const [blogResult, socialResult] = await Promise.allSettled([
+      sparkWriteBlogPost(brief.blog_topic, {
+        angle:         brief.blog_angle,
+        socialHook:    brief.social_hook,
+        atlasBrief:    true,
+      }),
+      sparkDraftSocialPosts({
+        topicOverride: brief.social_angle,
+        hookOverride:  brief.social_hook,
+        atlasBrief:    true,
+      }),
+    ])
+
+    const blogTitle = blogResult.status === 'fulfilled' ? blogResult.value.post.title : 'failed'
+    const socialCount = socialResult.status === 'fulfilled' ? socialResult.value.drafts.length : 0
+
+    await sendAlert(
+      'Atlas auto-triggered Spark',
+      `Compliance change detected. Auto-published:\n• Blog: "${blogTitle}"\n• Social: ${socialCount} posts drafted for approval\n\nSource: ${brief.source_finding}`,
+      'info',
+      'atlas',
+    )
+  } catch (err) {
+    // Non-fatal — log but don't throw
+    const msg = err instanceof Error ? err.message : String(err)
+    await sendAlert('Atlas auto-trigger failed', msg, 'warning', 'atlas').catch(() => {})
+  }
+}
+
+// ── Atlas → Spark intelligence brief ──────────────────────────────────
+// Called after every scan. Produces a structured brief that Spark reads
+// before choosing blog topics, social hooks, or campaign angles.
+
+export async function atlasGenerateSparkBrief(
+  findings: AtlasIntel[],
+  contextSummary: string,
+): Promise<AtlasSparkBrief | null> {
+  if (findings.length === 0) return null
+
+  const topFindings = findings
+    .sort((a, b) => (b.urgency === 'high' ? 1 : 0) - (a.urgency === 'high' ? 1 : 0))
+    .slice(0, 5)
+
+  const highUrgency = findings.filter(f => f.urgency === 'high')
+
+  const raw = await callClaude({
+    systemPrompt: `${ATLAS_IDENTITY}
+You are generating a content brief for Spark (SAB Account AI's marketing sub-agent).
+Spark will use this brief to write a blog post, draft social media posts, and plan a marketing campaign.
+The brief must be grounded in REAL findings — no generic advice.`,
+    userMessage: `Based on these intelligence findings, generate a content brief for Spark.
+
+FINDINGS:
+${topFindings.map((f, i) => `${i + 1}. [${f.urgency.toUpperCase()}] ${f.source}: ${f.finding}\n   Why it matters: ${f.relevance}`).join('\n')}
+
+CONTEXT: ${contextSummary}
+
+Generate a JSON brief (no markdown):
+{
+  "blog_topic": "exact SEO blog title — specific, timely, 8-12 words, includes Australian context",
+  "blog_angle": "1-2 sentences: why this topic is urgent RIGHT NOW for Australian small businesses",
+  "social_hook": "first line of a social post — must be provocative or surprising, under 20 words",
+  "social_angle": "the core message across all platforms — what do we want Australian SMBs to feel or do",
+  "campaign_idea": "1-2 sentence campaign concept tying blog + social + CTA (try it free → sabaccountai.com)",
+  "campaign_urgency": "low|medium|high",
+  "source_finding": "the single most important finding that drives this brief",
+  "auto_publish": ${highUrgency.length > 0 ? 'true' : 'false'}
+}`,
+    maxTokens: 600,
+    expectJson: true,
+  })
+
+  try {
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+    const brief = JSON.parse(cleaned) as AtlasSparkBrief
+
+    // Publish as a recommendation signal so Spark can read it
+    await publishSignal({
+      from_agent:    'atlas',
+      signal_type:   'recommendation',
+      severity:      brief.campaign_urgency === 'high' ? 'urgent' : brief.campaign_urgency === 'medium' ? 'warning' : 'info',
+      summary:       `Spark brief: ${brief.blog_topic}`,
+      data:          brief as unknown as Record<string, unknown>,
+      suggested_reactions: brief.auto_publish
+        ? 'Spark: auto-publish blog post and social posts based on this brief immediately.'
+        : 'Spark: use this brief as topic/hook guidance for next blog and social posts.',
+      expires_after_hours: 168,
+    })
+
+    return brief
+  } catch {
+    return null
+  }
 }
 
 // ── Brand monitoring ───────────────────────────────────────────────────

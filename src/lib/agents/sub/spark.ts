@@ -370,7 +370,10 @@ const STATIC_BLOG_SLUGS = [
   'payroll-tax-australia-2026',
 ]
 
-export async function sparkWriteBlogPost(topicHint?: string): Promise<{ post: SparkBlogPost; saved: boolean }> {
+export async function sparkWriteBlogPost(
+  topicHint?: string,
+  options?: { angle?: string; socialHook?: string; atlasBrief?: boolean },
+): Promise<{ post: SparkBlogPost; saved: boolean }> {
   const start = Date.now()
   const supabase = createServiceClient()
 
@@ -391,12 +394,19 @@ export async function sparkWriteBlogPost(topicHint?: string): Promise<{ post: Sp
   const weekBrief     = briefR.status === 'fulfilled' ? briefR.value.data : null
   const allTakenSlugs = [...STATIC_BLOG_SLUGS, ...dbSlugs]
 
-  const atlasFinding  = signals.find(s => s.from_agent === 'atlas')?.summary ?? ''
-  const july1Days     = worldState?.july1_countdown ?? 0
-  const churnRisk     = worldState?.churn_risk_score ?? 0
+  // Read Atlas recommendation signal — highest priority topic source
+  type AtlasBriefData = { blog_topic?: string; blog_angle?: string; source_finding?: string }
+  const atlasRecommendation = signals.find(
+    s => s.from_agent === 'atlas' && s.signal_type === 'recommendation'
+  )?.data as AtlasBriefData | undefined
+  const atlasFinding = signals.find(s => s.from_agent === 'atlas')?.summary ?? ''
+  const july1Days    = worldState?.july1_countdown ?? 0
+  const churnRisk    = worldState?.churn_risk_score ?? 0
 
+  // Topic priority: caller hint → Atlas recommendation → weekly brief → world state fallback
   const suggestedTopic =
     topicHint ??
+    (atlasRecommendation?.blog_topic) ??
     weekBrief?.blog_post_title ??
     (july1Days > 0 && july1Days <= 21
       ? 'Payday Super cash flow impact for small business payroll'
@@ -405,6 +415,12 @@ export async function sparkWriteBlogPost(topicHint?: string): Promise<{ post: Sp
       : atlasFinding
       ? `SAB Account AI vs Xero: what changed in 2026`
       : 'How to generate a legal invoice in Australia (complete guide)')
+
+  // Angle from Atlas brief or explicit options
+  const angleContext = options?.angle ?? atlasRecommendation?.blog_angle ?? ''
+  const sourceFinding = options?.atlasBrief
+    ? (atlasRecommendation?.source_finding ?? atlasFinding)
+    : atlasFinding
 
   const masterCtx = await readMasterContext().catch(() => '')
 
@@ -422,7 +438,8 @@ Master context: ${masterCtx.slice(0, 800)}`,
 Already published topics (DO NOT duplicate):
 ${allTakenSlugs.slice(0, 30).join(', ')}
 
-${atlasFinding ? `Recent market intel from Atlas: ${atlasFinding}` : ''}
+${angleContext ? `ANGLE — why this topic is urgent RIGHT NOW: ${angleContext}` : ''}
+${sourceFinding ? `Intelligence from Atlas: ${sourceFinding}` : ''}
 ${july1Days > 0 && july1Days <= 21 ? `URGENT: July 1 Payday Super deadline is ${july1Days} days away — weave this in if relevant` : ''}
 
 Return ONLY valid JSON with this exact structure (no markdown wrapper):
@@ -565,28 +582,48 @@ async function findPostImage(content: string): Promise<string> {
   } catch { return '' }
 }
 
-export async function sparkDraftSocialPosts(context?: string): Promise<{
+export async function sparkDraftSocialPosts(options?: {
+  topicOverride?: string
+  hookOverride?:  string
+  atlasBrief?:    boolean
+} | string): Promise<{
   drafts: DraftPost[]
   searchTopic?: string
 }> {
   const start = Date.now()
   const supabase = createServiceClient()
 
+  // Support legacy string context arg for backwards compatibility
+  const opts = typeof options === 'string' ? {} : (options ?? {})
+  const legacyContext = typeof options === 'string' ? options : undefined
+
   const weekStart = new Date()
   weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1)
   const weekStartStr = weekStart.toISOString().split('T')[0]
 
-  const [masterCtx, briefR] = await Promise.allSettled([
+  const [masterCtx, briefR, signalsR] = await Promise.allSettled([
     readMasterContext(),
     supabase.from('content_briefs').select('focus_this_week, blog_post_title, tiktok_hooks')
       .eq('week_start', weekStartStr).maybeSingle(),
+    getRecentSignals(168),
   ])
 
-  const master = masterCtx.status === 'fulfilled' ? masterCtx.value.slice(0, 1500) : ''
-  const brief = briefR.status === 'fulfilled' ? briefR.value.data : null
+  const master  = masterCtx.status === 'fulfilled' ? masterCtx.value.slice(0, 1500) : ''
+  const brief   = briefR.status === 'fulfilled' ? briefR.value.data : null
+  const signals = signalsR.status === 'fulfilled' ? signalsR.value : []
 
-  // Parallel viral signal research — 3 searches run simultaneously
-  const topic = brief?.focus_this_week ?? 'small business accounting australia'
+  // Read Atlas recommendation signal for social hooks
+  type AtlasBriefSignal = { social_hook?: string; social_angle?: string; campaign_idea?: string }
+  const atlasRec = signals.find(
+    s => s.from_agent === 'atlas' && s.signal_type === 'recommendation'
+  )?.data as AtlasBriefSignal | undefined
+
+  // Topic priority: explicit override → Atlas recommendation → weekly brief → fallback
+  const topic =
+    opts.topicOverride ??
+    atlasRec?.social_angle ??
+    brief?.focus_this_week ??
+    'small business accounting australia'
   const [viralLinkedIn, viralTwitter, redditSignals, trendingNews] = await Promise.allSettled([
     tavilySearch(`viral linkedin posts australian small business accounting ${new Date().getFullYear()} high engagement`, { maxResults: 3, includeAnswer: true }),
     tavilySearch(`trending twitter posts australia tax payroll small business this week`, { maxResults: 3, includeAnswer: true }),
@@ -608,7 +645,9 @@ export async function sparkDraftSocialPosts(context?: string): Promise<{
 
   const searchTopic = topic
 
-  const extraCtx = context ? `\nAdditional context: ${context}` : ''
+  const atlasHook = opts.hookOverride ?? atlasRec?.social_hook ?? ''
+  const atlasCampaign = atlasRec?.campaign_idea ?? ''
+  const extraCtx = legacyContext ? `\nAdditional context: ${legacyContext}` : ''
 
   // Alternate tone each call — odd week = founder voice, even week = brand voice
   const weekNum = Math.ceil(new Date().getDate() / 7)
@@ -620,9 +659,11 @@ export async function sparkDraftSocialPosts(context?: string): Promise<{
   const raw = await callClaude({
     systemPrompt: `${SPARK_IDENTITY}\n\nMaster context: ${master}${trendContext}${extraCtx}`,
     userMessage: `Draft social posts for this week for SAB Account AI (sabaccountai.com).
-Week focus: ${brief?.focus_this_week ?? 'grow SAB Account AI'}
+Week focus: ${topic}
 Blog title: ${brief?.blog_post_title ?? ''}
 TikTok hooks: ${(brief?.tiktok_hooks as string[] | null)?.join(', ') ?? ''}
+${atlasHook ? `\n🧠 ATLAS RECOMMENDED HOOK (use this as the opener or base for at least 2 platforms): "${atlasHook}"` : ''}
+${atlasCampaign ? `🧠 ATLAS CAMPAIGN IDEA: ${atlasCampaign}` : ''}
 
 VIRAL INTELLIGENCE — study these signals and mirror what's working:
 ${viralLinkedInContext  ? `LinkedIn: ${viralLinkedInContext}`  : ''}
