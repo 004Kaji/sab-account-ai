@@ -144,9 +144,10 @@ Return JSON: { "intel": [], "summary": "No live search available this week — u
   type RawReport = { intel?: AtlasIntel[]; summary?: string; actionItem?: string | null }
   let parsed: RawReport
   try {
-    // Strip any markdown if present
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
-    parsed = JSON.parse(cleaned) as RawReport
+    const start = raw.indexOf('{')
+    const end   = raw.lastIndexOf('}')
+    if (start === -1 || end === -1) throw new Error('no JSON object found')
+    parsed = JSON.parse(raw.slice(start, end + 1)) as RawReport
   } catch {
     parsed = {
       intel: [],
@@ -272,8 +273,10 @@ Return JSON:
   type RawCompliance = { findings?: AtlasIntel[]; summary?: string }
   let parsed: RawCompliance
   try {
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
-    parsed = JSON.parse(cleaned) as RawCompliance
+    const start = raw.indexOf('{')
+    const end   = raw.lastIndexOf('}')
+    if (start === -1 || end === -1) throw new Error('no JSON object found')
+    parsed = JSON.parse(raw.slice(start, end + 1)) as RawCompliance
   } catch {
     parsed = { findings: [], summary: 'Compliance watch ran — JSON parse failed.' }
   }
@@ -435,8 +438,10 @@ Generate a JSON brief (no markdown):
   })
 
   try {
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
-    const brief = JSON.parse(cleaned) as AtlasSparkBrief
+    const s = raw.indexOf('{')
+    const e = raw.lastIndexOf('}')
+    if (s === -1 || e === -1) throw new Error('no JSON object found')
+    const brief = JSON.parse(raw.slice(s, e + 1)) as AtlasSparkBrief
 
     // Publish as a recommendation signal so Spark can read it
     await publishSignal({
