@@ -189,97 +189,244 @@ Return ONLY valid JSON:
   return parsed
 }
 
+// ── Find accountants in a location + add to outreach queue ────────────
+
+async function tavilyExtractEmail(url: string): Promise<string | null> {
+  const apiKey = process.env.TAVILY_API_KEY
+  if (!apiKey) return null
+  try {
+    const res = await fetch('https://api.tavily.com/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: apiKey, urls: [url] }),
+    })
+    if (!res.ok) return null
+    type ExtractRes = { results?: Array<{ raw_content?: string }> }
+    const data = await res.json() as ExtractRes
+    const content = data.results?.[0]?.raw_content ?? ''
+    const match = content.match(/[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/i)
+    return match ? match[0].toLowerCase() : null
+  } catch { return null }
+}
+
+export async function sparkFindAccountants(location = 'Darwin, Australia'): Promise<{ found: number; added: number }> {
+  const start = Date.now()
+  const supabase = createServiceClient()
+
+  // Search for 3 accountant types in parallel
+  const searches = await Promise.allSettled([
+    tavilySearch(`accounting firm ${location} contact email`, { maxResults: 6, includeAnswer: false }),
+    tavilySearch(`bookkeeper ${location} small business contact`, { maxResults: 6, includeAnswer: false }),
+    tavilySearch(`tax agent registered BAS agent ${location} contact`, { maxResults: 5, includeAnswer: false }),
+  ])
+
+  type Candidate = { name: string; url: string; practiceType: string }
+  const candidates: Candidate[] = []
+  const seenDomains = new Set<string>()
+  const typeLabels = ['accounting firm', 'bookkeeper', 'tax agent']
+
+  searches.forEach((r, i) => {
+    if (r.status !== 'fulfilled') return
+    for (const result of r.value.results) {
+      try {
+        const domain = new URL(result.url).hostname.replace('www.', '')
+        // Skip directories and irrelevant sites
+        if (/yelp|yellowpages|truelocal|seek|linkedin|facebook|gov\.au|ato\.gov|myob|xero|quickbooks/.test(domain)) continue
+        if (seenDomains.has(domain)) continue
+        seenDomains.add(domain)
+        const name = result.title.split(/[-|]/)[0].trim()
+        candidates.push({ name, url: result.url, practiceType: typeLabels[i] })
+      } catch { /* skip malformed URLs */ }
+    }
+  })
+
+  let added = 0
+
+  for (const candidate of candidates.slice(0, 10)) {
+    // Check if already in the pipeline (by domain match in email column)
+    const domain = new URL(candidate.url).hostname.replace('www.', '')
+    const { count } = await supabase
+      .from('accountant_outreach')
+      .select('id', { count: 'exact', head: true })
+      .ilike('email', `%${domain}%`)
+    if ((count ?? 0) > 0) continue
+
+    // Try to extract email from snippet first, then crawl the site
+    const snippetEmail = candidate.url.match(/[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/i)?.[0]
+    const email = snippetEmail ?? await tavilyExtractEmail(candidate.url)
+
+    if (!email) continue // only add if we have a real email
+
+    await supabase.from('accountant_outreach').insert({
+      name:          candidate.name,
+      email:         email.toLowerCase(),
+      practice_type: candidate.practiceType,
+      location,
+      status:        'pending',
+    })
+    added++
+  }
+
+  await logSubAgent('spark', 'find_accountants', location, `Found ${candidates.length} candidates, added ${added} new`, Date.now() - start, added > 0)
+  return { found: candidates.length, added }
+}
+
+// ── Send professional deal emails to accountants (2/day, auto-follow-up) ─
+
+const ACCOUNTANT_EMAIL_SYSTEM = `You write professional B2B cold emails on behalf of Sanjog Basnet, founder of SAB Account AI.
+
+ABOUT SAB ACCOUNT AI:
+- Australian invoicing and payroll SaaS for sole traders and small businesses
+- Website: sabaccountai.com
+- Pricing: $9/month (Starter) or $19/month (Pro)
+- 60% cheaper than Xero or MYOB for clients who only need invoicing, payroll, and compliance
+- Key features: PAYG withholding (ATO-compliant), super tracking, BAS, Payday Super compliance
+
+THE REFERRAL DEAL YOU ARE OFFERING:
+- 20% referral commission on the first year of every paying client referred
+- Free 60-day trial for any client they refer — no credit card needed
+- No lock-in contract for their clients
+
+PAYDAY SUPER (urgent, timely):
+- Payday Super starts July 28, 2026 — all employers must pay super on every payday, not quarterly
+- ATO penalties apply immediately from July 28 with no grace period
+- SAB Account AI handles this automatically
+
+SENDER DETAILS (always include in signature):
+Sanjog Basnet
+Founder, SAB Account AI
+0145 304 090
+basnet@sabaccountai.com
+sabaccountai.com
+
+STRICT RULES:
+- Never use: "innovative", "cutting-edge", "game-changing", "excited to share", "I hope this finds you well"
+- Be direct and specific — use real numbers ($9-19/month, 20%, July 28, 60%)
+- Sound like a real person writing one email, not a marketing template
+- No more than 3 short paragraphs
+- One clear call to action only`
+
 export async function sparkSendAccountantEmails(): Promise<{ sent: number; names: string[] }> {
   const start = Date.now()
   const supabase = createServiceClient()
   const today = new Date().toISOString().split('T')[0]
 
-  type AccountantRow = { id: string; name: string; email: string; practice_type: string | null; location: string | null }
+  type AccountantRow = {
+    id: string; name: string; email: string
+    practice_type: string | null; location: string | null
+    email_subject: string | null; emailed_at: string | null
+  }
 
-  // Get pending accountants, fallback to follow-ups
+  // Priority 1: pending (never emailed)
+  let isFollowUp = false
   let { data: targets } = await supabase
-    .from('accountant_outreach').select('id, name, email, practice_type, location')
+    .from('accountant_outreach')
+    .select('id, name, email, practice_type, location, email_subject, emailed_at')
     .eq('status', 'pending').is('emailed_at', null).limit(2)
 
+  // Priority 2: follow-ups due today
   if (!targets || targets.length === 0) {
     const { data: followUps } = await supabase
-      .from('accountant_outreach').select('id, name, email, practice_type, location')
-      .lte('follow_up_due', today).eq('replied', false).limit(2)
+      .from('accountant_outreach')
+      .select('id, name, email, practice_type, location, email_subject, emailed_at')
+      .lte('follow_up_due', today).eq('replied', false).eq('status', 'emailed').limit(2)
     targets = followUps
+    isFollowUp = true
   }
 
   if (!targets || targets.length === 0) return { sent: 0, names: [] }
 
-  const [masterCtx, learningsCtx, winnersR] = await Promise.allSettled([
-    readMasterContext(),
-    readAgentLearnings(3),
-    supabase.from('accountant_outreach')
-      .select('email_subject')
-      .eq('replied', true)
-      .not('email_subject', 'is', null)
-      .order('emailed_at', { ascending: false })
-      .limit(5),
-  ])
+  // Load winning subject lines from past replied emails (learning loop)
+  const { data: winnersData } = await supabase
+    .from('accountant_outreach')
+    .select('email_subject')
+    .eq('replied', true)
+    .not('email_subject', 'is', null)
+    .order('emailed_at', { ascending: false })
+    .limit(5)
 
-  const master   = masterCtx.status   === 'fulfilled' ? masterCtx.value.slice(0, 1000)   : ''
-  const learnings = learningsCtx.status === 'fulfilled' ? learningsCtx.value              : ''
   type WinnerRow = { email_subject: string | null }
-  const winningSubjects = winnersR.status === 'fulfilled'
-    ? (winnersR.value.data ?? []).map((r: WinnerRow) => r.email_subject).filter(Boolean)
-    : []
+  const winningSubjects = (winnersData ?? [])
+    .map((r: WinnerRow) => r.email_subject)
+    .filter(Boolean) as string[]
 
   const resend = new Resend(process.env.RESEND_API_KEY)
+  if (!process.env.RESEND_API_KEY) return { sent: 0, names: [] }
   const names: string[] = []
 
   for (const accountant of targets as AccountantRow[]) {
     try {
-      const winnerContext = winningSubjects.length > 0
-        ? `\nSubject lines that got replies in the past:\n${winningSubjects.map(s => `- "${s}"`).join('\n')}\nUse these as inspiration, not copies.`
-        : ''
-      const learningsContext = learnings
-        ? `\nWhat worked / failed in past outreach:\n${learnings}`
+      const winnerHint = winningSubjects.length > 0
+        ? `\nSubject lines that got replies before (use as inspiration, not copies):\n${winningSubjects.map(s => `- "${s}"`).join('\n')}`
         : ''
 
-      const emailRaw = await callClaude({
-        systemPrompt: `${SPARK_IDENTITY}\n\nContext: ${master}${learningsContext}`,
-        userMessage: `Write a personalised cold email from Sanjog Basnet, founder of SAB Account AI.
-Name: ${accountant.name}
-Practice: ${accountant.practice_type ?? 'accounting'}
+      const userMessage = isFollowUp
+        ? `Write a SHORT FOLLOW-UP email (max 80 words). This accountant did not reply to the first email sent 7 days ago.
+
+Accountant: ${accountant.name}
+Practice type: ${accountant.practice_type ?? 'accounting practice'}
 Location: ${accountant.location ?? 'Australia'}
-${winnerContext}
-Return ONLY valid JSON: { "subject": "string", "body": "string" }`,
-        maxTokens: 500,
+Previous subject line: "${accountant.email_subject ?? 'SAB Account AI referral'}"
+
+Use the Payday Super July 28 angle as new information they haven't heard yet.
+CTA: offer a free trial for their clients, not a call this time.
+Return ONLY valid JSON: { "subject": "Re: ${accountant.email_subject ?? 'SAB Account AI'}", "body": "..." }`
+        : `Write an INITIAL cold email (max 150 words, 3 paragraphs).
+
+Accountant: ${accountant.name}
+Practice type: ${accountant.practice_type ?? 'accounting practice'}
+Location: ${accountant.location ?? 'Australia'}
+${winnerHint}
+
+Paragraph 1: Who you are and why you're reaching out (1-2 sentences max).
+Paragraph 2: The specific deal — 20% commission + free trial for their clients + Payday Super compliance angle.
+Paragraph 3: One CTA — ask for a 15-minute call.
+End with the full signature.
+Return ONLY valid JSON: { "subject": "...", "body": "..." }`
+
+      const emailRaw = await callClaude({
+        systemPrompt: ACCOUNTANT_EMAIL_SYSTEM,
+        userMessage,
+        maxTokens: 600,
         expectJson: true,
       })
 
       type EmailJSON = { subject: string; body: string }
-      const emailJSON = JSON.parse(emailRaw) as EmailJSON
+      let emailJSON: EmailJSON
+      try {
+        emailJSON = JSON.parse(emailRaw) as EmailJSON
+      } catch {
+        // If JSON parse fails, skip this accountant rather than send a broken email
+        continue
+      }
+
+      if (!emailJSON.subject || !emailJSON.body) continue
 
       await resend.emails.send({
-        from: 'Sanjog Basnet <basnet@sabaccountai.com>',
-        to: accountant.email,
+        from:    'Sanjog Basnet <basnet@sabaccountai.com>',
+        to:      accountant.email,
         subject: emailJSON.subject,
-        text: emailJSON.body,
+        text:    emailJSON.body,
       })
 
       const followUpDate = new Date()
       followUpDate.setDate(followUpDate.getDate() + 7)
 
       await supabase.from('accountant_outreach').update({
-        emailed_at: new Date().toISOString(),
-        status: 'emailed',
-        follow_up_due: followUpDate.toISOString().split('T')[0],
-        email_subject: emailJSON.subject,
-        email_body: emailJSON.body,
+        emailed_at:     new Date().toISOString(),
+        status:         'emailed',
+        follow_up_due:  followUpDate.toISOString().split('T')[0],
+        email_subject:  emailJSON.subject,
+        email_body:     emailJSON.body,
       }).eq('id', accountant.id)
 
       names.push(accountant.name)
     } catch (err) {
-      console.error('sparkSendAccountantEmails failed for', accountant.name, err)
+      console.error('[spark] accountant email failed for', accountant.name, err)
     }
   }
 
-  await logSubAgent('spark', 'accountant_emails', '', `Sent to: ${names.join(', ')}`, Date.now() - start, names.length > 0)
+  await logSubAgent('spark', 'accountant_emails', '', `Sent to: ${names.join(', ')} (followUp: ${isFollowUp})`, Date.now() - start, names.length > 0)
   return { sent: names.length, names }
 }
 

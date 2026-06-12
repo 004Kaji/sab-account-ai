@@ -7,6 +7,7 @@ export const maxDuration = 300
 
 import { NextRequest, NextResponse } from 'next/server'
 import { atlasWeeklyIntel, atlasComplianceWatch } from '@/lib/agents/sub/atlas'
+import { sparkFindAccountants } from '@/lib/agents/sub/spark'
 import { logAgentAction } from '@/lib/agents/utils'
 
 export async function GET(req: NextRequest) {
@@ -17,8 +18,9 @@ export async function GET(req: NextRequest) {
 
   const start = Date.now()
   const results = {
-    intel:      { ok: false, findings: 0, error: '' },
-    compliance: { ok: false, findings: 0, error: '' },
+    intel:        { ok: false, findings: 0, error: '' },
+    compliance:   { ok: false, findings: 0, error: '' },
+    accountants:  { ok: false, added: 0,    error: '' },
   }
 
   // Weekly market intel — also publishes Spark brief + auto-triggers blog
@@ -35,6 +37,14 @@ export async function GET(req: NextRequest) {
     results.compliance = { ok: true, findings: report.findings.length, error: '' }
   } catch (err) {
     results.compliance.error = err instanceof Error ? err.message : String(err)
+  }
+
+  // Find new accountants in Darwin and add to outreach queue
+  try {
+    const r = await sparkFindAccountants('Darwin, Australia')
+    results.accountants = { ok: true, added: r.added, error: '' }
+  } catch (err) {
+    results.accountants.error = err instanceof Error ? err.message : String(err)
   }
 
   await logAgentAction({
