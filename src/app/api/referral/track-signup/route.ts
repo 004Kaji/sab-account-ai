@@ -29,7 +29,24 @@ export async function POST(req: NextRequest) {
     .eq('code', refCode)
     .maybeSingle()
 
-  if (!rc) return NextResponse.json({ ok: true, notFound: true })
+  if (!rc) {
+    // Check if this is a partner referral code
+    const { data: partner } = await supabase
+      .from('partner_applications')
+      .select('id, conversions_count')
+      .eq('ref_code', refCode)
+      .maybeSingle()
+
+    if (partner) {
+      await supabase
+        .from('partner_applications')
+        .update({ conversions_count: ((partner.conversions_count as number) ?? 0) + 1 })
+        .eq('id', partner.id as string)
+      return NextResponse.json({ ok: true, partner: true })
+    }
+
+    return NextResponse.json({ ok: true, notFound: true })
+  }
 
   const referrerId = rc.user_id as string
 
