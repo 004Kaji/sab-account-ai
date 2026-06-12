@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
+import PartnerApplyForm from './PartnerApplyForm'
 
 export const metadata: Metadata = {
   title: 'Accountant Partner Program — SAB Account AI',
@@ -196,57 +197,7 @@ export default function PartnersPage() {
               We review applications within 1 business day and send your referral link by email.
             </p>
 
-            {/* Mailto form — simple, no backend needed */}
-            <form
-              action="mailto:basnet@sabaccountai.com"
-              method="get"
-              encType="text/plain"
-              style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
-            >
-              <div>
-                <label className="sab-label">Your name *</label>
-                <input type="text" name="Your name" required className="sab-input" placeholder="Jane Smith" />
-              </div>
-              <div>
-                <label className="sab-label">Business / firm name *</label>
-                <input type="text" name="Firm name" required className="sab-input" placeholder="Smith & Co Accounting" />
-              </div>
-              <div>
-                <label className="sab-label">Email address *</label>
-                <input type="email" name="Email" required className="sab-input" placeholder="jane@smithaccounting.com.au" />
-              </div>
-              <div>
-                <label className="sab-label">Phone number</label>
-                <input type="tel" name="Phone" className="sab-input" placeholder="0400 000 000" />
-              </div>
-              <div>
-                <label className="sab-label">How many clients do you think you could refer?</label>
-                <select name="Estimated referrals" className="sab-input" style={{ cursor: 'pointer' }}>
-                  <option value="">Select an option</option>
-                  <option value="1-5">1–5 clients</option>
-                  <option value="6-20">6–20 clients</option>
-                  <option value="21-50">21–50 clients</option>
-                  <option value="50+">50+ clients</option>
-                </select>
-              </div>
-              <div>
-                <label className="sab-label">Anything else you&apos;d like us to know?</label>
-                <textarea
-                  name="Notes"
-                  rows={3}
-                  className="sab-input"
-                  style={{ resize: 'vertical', minHeight: '80px' }}
-                  placeholder="Optional — any questions, or how you found us"
-                />
-              </div>
-              <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
-                Send application
-              </button>
-              <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', textAlign: 'center', lineHeight: 1.5 }}>
-                This opens your email client. Or email us directly at{' '}
-                <a href="mailto:basnet@sabaccountai.com" style={{ color: 'var(--ember)' }}>basnet@sabaccountai.com</a>
-              </p>
-            </form>
+            <PartnerApplyForm />
           </div>
         </section>
 
