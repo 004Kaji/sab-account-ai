@@ -14,6 +14,15 @@ export default function CookieConsent() {
     }
   }, [])
 
+  useEffect(() => {
+    if (visible) {
+      document.body.style.paddingBottom = '80px'
+    } else {
+      document.body.style.paddingBottom = ''
+    }
+    return () => { document.body.style.paddingBottom = '' }
+  }, [visible])
+
   function accept() {
     localStorage.setItem(STORAGE_KEY, 'accepted')
     setVisible(false)

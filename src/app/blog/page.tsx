@@ -274,6 +274,7 @@ export default async function BlogPage() {
               <article style={{
                 background: '#ffffff',
                 border: '1px solid var(--border)',
+                borderLeft: `3px solid ${TAG_COLORS[post.tag] ?? 'var(--ember)'}`,
                 borderRadius: 'var(--r)',
                 padding: '1.5rem',
                 transition: 'box-shadow 0.15s',
