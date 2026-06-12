@@ -189,6 +189,38 @@ Return ONLY valid JSON:
   return parsed
 }
 
+// ── Fetch a relevant Pexels image for a blog post ─────────────────────
+
+const TAG_PEXELS_QUERY: Record<string, string> = {
+  Tax:        'australian tax business paperwork',
+  GST:        'business invoice receipt',
+  Payroll:    'payroll salary office',
+  Super:      'superannuation retirement savings',
+  EOFY:       'financial year accounting reports',
+  Compliance: 'business compliance law office',
+  Invoicing:  'business invoice payment laptop',
+  PAYG:       'payroll tax withholding office',
+  Medicare:   'healthcare australia',
+  ABN:        'self employed freelancer laptop',
+}
+
+async function fetchPexelsImage(tag: string, title: string): Promise<string | null> {
+  const apiKey = process.env.PEXELS_API_KEY
+  if (!apiKey) return null
+  try {
+    const query = encodeURIComponent(TAG_PEXELS_QUERY[tag] ?? title.split(' ').slice(0, 4).join(' '))
+    const res = await fetch(
+      `https://api.pexels.com/v1/search?query=${query}&per_page=1&orientation=landscape`,
+      { headers: { Authorization: apiKey } },
+    )
+    if (!res.ok) return null
+    const data = await res.json() as { photos: Array<{ src: { large: string } }> }
+    return data.photos?.[0]?.src?.large ?? null
+  } catch {
+    return null
+  }
+}
+
 // ── Find accountants in a location + add to outreach queue ────────────
 
 function buildEmailHtml(body: string, ctaText: string, includePartnerLink = false): string {
@@ -680,6 +712,9 @@ Write 5-6 sections. Each section body should be 2-3 paragraphs. FAQs: 4-5 questi
     throw new Error(`sparkWriteBlogPost: JSON parse failed — ${e instanceof Error ? e.message : e} (raw ${raw.length} chars)`)
   }
 
+  // Fetch Pexels hero image
+  const imageUrl = await fetchPexelsImage(post.tag, post.title)
+
   // Ensure slug is unique
   if (allTakenSlugs.includes(post.slug)) {
     post.slug = `${post.slug}-${new Date().getFullYear()}`
@@ -705,6 +740,7 @@ Write 5-6 sections. Each section body should be 2-3 paragraphs. FAQs: 4-5 questi
       status:        'published',
       date_published: post.date_published,
       read_time:     post.read_time,
+      image_url:     imageUrl,
       created_by:    'spark',
       updated_at:    new Date().toISOString(),
     })

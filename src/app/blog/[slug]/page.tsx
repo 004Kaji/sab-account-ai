@@ -27,6 +27,7 @@ interface BlogPost {
   related_slugs: string[]
   date_published: string
   read_time:     string
+  image_url?:    string | null
   status:        string
   updated_at:    string
 }
@@ -115,6 +116,17 @@ export default async function DynamicBlogPostPage(
         <div style={{ marginBottom: '2rem' }}>
           <Link href="/blog" style={{ color: 'var(--ember)', fontSize: '0.875rem', textDecoration: 'none' }}>← Blog</Link>
         </div>
+
+        {/* Hero image */}
+        {post.image_url && (
+          <div style={{ marginBottom: '2rem', borderRadius: 'var(--r)', overflow: 'hidden', maxHeight: '360px' }}>
+            <img
+              src={post.image_url}
+              alt={post.title}
+              style={{ width: '100%', height: '360px', objectFit: 'cover', display: 'block' }}
+            />
+          </div>
+        )}
 
         {/* Tag */}
         <div style={{ marginBottom: '2rem' }}>

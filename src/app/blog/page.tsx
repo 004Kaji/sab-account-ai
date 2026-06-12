@@ -216,14 +216,14 @@ const TAG_COLORS: Record<string, string> = {
   Compliance: '#0f766e',
 }
 
-type DbPost = { slug: string; title: string; excerpt: string; tag: string; date_published: string; read_time: string }
+type DbPost = { slug: string; title: string; excerpt: string; tag: string; date_published: string; read_time: string; image_url?: string | null }
 
 async function getDbPosts(): Promise<DbPost[]> {
   try {
     const supabase = createServiceClient()
     const { data } = await supabase
       .from('blog_posts')
-      .select('slug, title, excerpt, tag, date_published, read_time')
+      .select('slug, title, excerpt, tag, date_published, read_time, image_url')
       .eq('status', 'published')
       .order('created_at', { ascending: false })
     return (data ?? []) as DbPost[]
@@ -235,8 +235,8 @@ async function getDbPosts(): Promise<DbPost[]> {
 export default async function BlogPage() {
   const dbPosts = await getDbPosts()
   const allPosts = [
-    ...dbPosts.map(p => ({ slug: p.slug, title: p.title, excerpt: p.excerpt, tag: p.tag, date: p.date_published, readTime: p.read_time })),
-    ...POSTS,
+    ...dbPosts.map(p => ({ slug: p.slug, title: p.title, excerpt: p.excerpt, tag: p.tag, date: p.date_published, readTime: p.read_time, imageUrl: p.image_url ?? null })),
+    ...POSTS.map(p => ({ ...p, imageUrl: null })),
   ]
 
   return (
@@ -276,9 +276,17 @@ export default async function BlogPage() {
                 border: '1px solid var(--border)',
                 borderLeft: `3px solid ${TAG_COLORS[post.tag] ?? 'var(--ember)'}`,
                 borderRadius: 'var(--r)',
-                padding: '1.5rem',
+                overflow: 'hidden',
                 transition: 'box-shadow 0.15s',
               }}>
+                {post.imageUrl && (
+                  <img
+                    src={post.imageUrl}
+                    alt={post.title}
+                    style={{ width: '100%', height: '160px', objectFit: 'cover', display: 'block' }}
+                  />
+                )}
+                <div style={{ padding: '1.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
                   <span style={{
                     fontSize: '0.6875rem',
@@ -303,6 +311,7 @@ export default async function BlogPage() {
                 <p style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: 'var(--ember)', fontWeight: 500 }}>
                   Read guide →
                 </p>
+                </div>
               </article>
             </Link>
           ))}
