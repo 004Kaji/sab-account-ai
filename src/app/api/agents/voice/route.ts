@@ -10,6 +10,7 @@ import { runFlux } from '@/lib/agents/sub/flux'
 import { relayAnswer } from '@/lib/agents/sub/relay'
 import { liftScanForChurnRisk } from '@/lib/agents/sub/lift'
 import { atlasResearch } from '@/lib/agents/sub/atlas'
+import { sparkFindBusinessProspects } from '@/lib/agents/sub/spark'
 import { getWorldState, getRecentSignals } from '@/lib/agents/world-state'
 
 import { classifyQuestion } from '@/lib/agents/classification'
@@ -291,6 +292,19 @@ Master context: ${masterContext.slice(0, 800)}`
       subAgentContext = `Total users: ${totalR.count ?? 0}. Paid users: ${paidR.count ?? 0}. At-risk: ${lift?.totalAtRisk ?? 0}. MRR: $${stripeMetrics.mrr.toFixed(0)}`
       agentUsed = 'lift'
       actionUrl = `${appUrl}/dashboard/agent`
+    } else if (/prospect|find.*lead|find.*customer|find.*prospect|outreach|cold email/i.test(question)) {
+      // Fire prospect search in background — takes 30-60s, result arrives via email
+      sparkFindBusinessProspects().catch(() => null)
+      return NextResponse.json({
+        response: "On it. Spark is searching for local Darwin businesses and drafting outreach emails right now. Check your Gmail in about a minute — you'll get a list of prospects with personalised Payday Super emails ready to copy and send.",
+        agentUsed: 'spark',
+        classification,
+        url: undefined,
+        warning: null,
+        topic: 'prospect outreach',
+        is_complete: true,
+        next_suggestion: null,
+      })
     } else if (classification === 'MARKET_INTEL') {
       const intel = await atlasResearch(question).catch(() => null)
       if (intel) {

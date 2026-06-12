@@ -8,7 +8,7 @@ import {
 } from '@/lib/agents/toolkits/sab-tech-toolkit'
 import { BASNET_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 import { runFlux, fluxDiagnose } from '@/lib/agents/sub/flux'
-import { sparkWeeklyBrief, sparkSendAccountantEmails, sparkWriteBlogPost, sparkDraftSocialPosts } from '@/lib/agents/sub/spark'
+import { sparkWeeklyBrief, sparkSendAccountantEmails, sparkWriteBlogPost, sparkDraftSocialPosts, sparkFindBusinessProspects } from '@/lib/agents/sub/spark'
 import { runScout } from '@/lib/agents/sub/scout'
 import { runLift } from '@/lib/agents/sub/lift'
 import { atlasWeeklyIntel, atlasComplianceWatch } from '@/lib/agents/sub/atlas'
@@ -83,6 +83,13 @@ export async function POST(req: NextRequest) {
         })
         await logAgentAction({ agentName: 'sab', triggerType: trigger, decision: result.post.title, durationMs: Date.now() - start })
         return NextResponse.json({ success: true, slug: result.post.slug, title: result.post.title, saved: result.saved, post: result.post })
+      }
+
+      if (marketingTrigger === 'find_prospects') {
+        const location = (body.data?.location as string | undefined) ?? 'Darwin, Australia'
+        const result = await sparkFindBusinessProspects(location)
+        await logAgentAction({ agentName: 'sab', triggerType: trigger, actionsTaken: { found: result.found }, durationMs: Date.now() - start })
+        return NextResponse.json({ success: true, ...result })
       }
 
       return NextResponse.json({ success: false, error: `Unknown marketingTrigger: ${marketingTrigger}` })

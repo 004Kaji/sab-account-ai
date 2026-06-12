@@ -792,3 +792,140 @@ export async function sparkPostApproved(approvalId: string): Promise<{
     return { success: false, error: msg }
   }
 }
+
+// ── Find local business prospects + draft outreach emails ──────────────
+// Searches for real small businesses in the given location, drafts a
+// personalised Payday Super email for each, and emails Sanjog the list
+// to copy-paste and send manually from his personal Gmail.
+
+export async function sparkFindBusinessProspects(location = 'Darwin, Australia'): Promise<{
+  found: number
+  emailedSanjog: boolean
+}> {
+  const start = Date.now()
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  if (!process.env.RESEND_API_KEY) return { found: 0, emailedSanjog: false }
+
+  // Search 4 business types in parallel
+  const businessTypes = [
+    `cafe restaurant ${location}`,
+    `plumber electrician tradie ${location}`,
+    `cleaning company ${location}`,
+    `retail shop small business ${location}`,
+  ]
+
+  const searches = await Promise.allSettled(
+    businessTypes.map(q => tavilySearch(q, { maxResults: 5, includeAnswer: false }))
+  )
+
+  // Extract prospects: business name + website from Tavily results
+  type Prospect = { name: string; website: string; type: string }
+  const prospects: Prospect[] = []
+  const seen = new Set<string>()
+
+  const typeLabels = ['cafe/restaurant', 'tradie', 'cleaning', 'retail']
+  searches.forEach((r, i) => {
+    if (r.status !== 'fulfilled') return
+    for (const result of (r.value.results ?? []).slice(0, 4)) {
+      const domain = new URL(result.url).hostname.replace('www.', '')
+      if (seen.has(domain)) continue
+      // Skip directories, news sites, and government pages
+      if (/yelp|yellowpages|truelocal|hipages|seek|abc\.net|news|gov\.au|facebook|linkedin|instagram/.test(domain)) continue
+      seen.add(domain)
+      prospects.push({
+        name: result.title.split(' - ')[0].split(' | ')[0].trim(),
+        website: result.url,
+        type: typeLabels[i],
+      })
+      if (prospects.length >= 12) break
+    }
+    if (prospects.length >= 12) return
+  })
+
+  if (prospects.length === 0) {
+    await logSubAgent('spark', 'find_prospects', location, 'No prospects found', Date.now() - start, false)
+    return { found: 0, emailedSanjog: false }
+  }
+
+  // Draft all emails in one Claude call (efficient — one call, all prospects)
+  const prospectList = prospects.map((p, i) =>
+    `${i + 1}. Business: ${p.name} | Type: ${p.type} | Website: ${p.website}`
+  ).join('\n')
+
+  const emailsRaw = await callClaude({
+    systemPrompt: `${SPARK_IDENTITY}
+
+You are drafting cold outreach emails on behalf of Sanjog Basnet, founder of SAB Account AI (sabaccountai.com).
+Context: Payday Super starts July 28, 2026. Every Australian employer must now pay superannuation on EVERY payday instead of quarterly. ATO penalties start immediately with no grace period.
+The goal is NOT to pitch the product upfront — just be genuinely helpful about the deadline, then mention SAB Account AI as the tool that handles this automatically.
+Tone: friendly, direct, personal. 3 short paragraphs max. No buzzwords.`,
+    userMessage: `Draft a cold email for each business below. All are small businesses in ${location} with employees.
+
+${prospectList}
+
+Return ONLY a valid JSON array:
+[
+  {
+    "index": 1,
+    "subject": "email subject line",
+    "body": "full email body (plain text, 3 paragraphs max, sign off as Sanjog)"
+  },
+  ...
+]`,
+    maxTokens: 2500,
+    expectJson: true,
+  })
+
+  type DraftEmail = { index: number; subject: string; body: string }
+  let drafts: DraftEmail[] = []
+  try {
+    drafts = JSON.parse(emailsRaw) as DraftEmail[]
+  } catch {
+    drafts = []
+  }
+
+  // Build the email to Sanjog — one email with all prospects + drafts
+  const sections = prospects.map((p, i) => {
+    const draft = drafts.find(d => d.index === i + 1)
+    return `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${i + 1}. ${p.name.toUpperCase()} (${p.type})
+Website: ${p.website}
+Find email: Go to their website → Contact page
+
+SUBJECT: ${draft?.subject ?? 'Payday Super — are you ready for July 28?'}
+
+${draft?.body ?? '(draft unavailable)'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+  }).join('\n')
+
+  const emailBody = `Hi Sanjog,
+
+Spark found ${prospects.length} real local businesses in ${location} with employees. Below are personalised Payday Super outreach emails ready to copy-paste.
+
+HOW TO USE:
+1. Go to each website and find their contact email
+2. Copy the email draft below
+3. Send from your personal Gmail (not sabaccountai.com — keep it personal)
+4. Reply rate is best within 48 hours of finding them
+
+PROSPECTS + DRAFTS:
+${sections}
+
+Good luck — send the first 5 today.
+— Spark`
+
+  let emailedSanjog = false
+  try {
+    await resend.emails.send({
+      from:    'Spark <basnet@sabaccountai.com>',
+      to:      'sanjog.basnet02@gmail.com',
+      subject: `Spark found ${prospects.length} prospects in ${location} — emails ready to send`,
+      text:    emailBody,
+    })
+    emailedSanjog = true
+  } catch { /* email send failed silently */ }
+
+  await logSubAgent('spark', 'find_prospects', location, `Found ${prospects.length} prospects, emailed: ${emailedSanjog}`, Date.now() - start, emailedSanjog)
+  return { found: prospects.length, emailedSanjog }
+}

@@ -33,6 +33,8 @@ export const AGENT_KEYWORDS: Record<QuestionClass, string[]> = {
     'tiktok', 'blog', 'post', 'content', 'what to write', 'topic',
     'hook', 'linkedin', 'facebook', 'accountant', 'email', 'signup',
     'instagram', 'twitter',
+    'find prospects', 'find leads', 'find customers', 'prospect', 'outreach',
+    'local business', 'cold email',
   ],
   MAC: [
     'memory', 'ram', 'disk', 'storage', 'space', 'cpu', 'battery',
