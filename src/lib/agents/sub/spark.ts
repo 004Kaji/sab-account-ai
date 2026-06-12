@@ -213,53 +213,71 @@ export async function sparkFindAccountants(location = 'Darwin, Australia'): Prom
   const start = Date.now()
   const supabase = createServiceClient()
 
-  // Search for 3 accountant types in parallel
+  // Extract city name for directory searches (e.g. "Darwin, Australia" → "Darwin")
+  const city = location.split(',')[0].trim()
+
+  // Target Yellow Pages AU and True Local — Australian directories that list
+  // real business emails, far more reliable than generic web search results.
   const searches = await Promise.allSettled([
-    tavilySearch(`accounting firm ${location} contact email`, { maxResults: 6, includeAnswer: false }),
-    tavilySearch(`bookkeeper ${location} small business contact`, { maxResults: 6, includeAnswer: false }),
-    tavilySearch(`tax agent registered BAS agent ${location} contact`, { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`site:yellowpages.com.au accountant ${city}`,          { maxResults: 6, includeAnswer: false }),
+    tavilySearch(`site:yellowpages.com.au bookkeeper ${city}`,          { maxResults: 6, includeAnswer: false }),
+    tavilySearch(`site:yellowpages.com.au "tax agent" ${city}`,         { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`site:truelocal.com.au accountant ${city} email`,      { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`accountant ${city} Australia email "@" contact`,      { maxResults: 5, includeAnswer: false }),
   ])
 
-  type Candidate = { name: string; url: string; practiceType: string }
+  type Candidate = { name: string; url: string; practiceType: string; snippetEmail: string | null }
   const candidates: Candidate[] = []
-  const seenDomains = new Set<string>()
-  const typeLabels = ['accounting firm', 'bookkeeper', 'tax agent']
+  const seenUrls = new Set<string>()
+  const EMAIL_RE = /[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/gi
+  const typeLabels = ['accounting firm', 'bookkeeper', 'tax agent', 'accounting firm', 'accounting firm']
 
   searches.forEach((r, i) => {
     if (r.status !== 'fulfilled') return
     for (const result of r.value.results) {
-      try {
-        const domain = new URL(result.url).hostname.replace('www.', '')
-        // Skip directories and irrelevant sites
-        if (/yelp|yellowpages|truelocal|seek|linkedin|facebook|gov\.au|ato\.gov|myob|xero|quickbooks/.test(domain)) continue
-        if (seenDomains.has(domain)) continue
-        seenDomains.add(domain)
-        const name = result.title.split(/[-|]/)[0].trim()
-        candidates.push({ name, url: result.url, practiceType: typeLabels[i] })
-      } catch { /* skip malformed URLs */ }
+      if (seenUrls.has(result.url)) continue
+      seenUrls.add(result.url)
+
+      // Pull any email visible directly in the Tavily snippet
+      const emailsInSnippet = (result.content + ' ' + result.title).match(EMAIL_RE) ?? []
+      const snippetEmail = emailsInSnippet
+        .find(e => !e.includes('example') && !e.includes('noreply') && !e.includes('no-reply'))
+        ?.toLowerCase() ?? null
+
+      const name = result.title
+        .replace(/\s*[-|–]\s*(Yellow Pages|True Local|Accounting|Bookkeeping).*$/i, '')
+        .trim()
+
+      candidates.push({ name, url: result.url, practiceType: typeLabels[i], snippetEmail })
     }
   })
 
   let added = 0
 
-  for (const candidate of candidates.slice(0, 10)) {
-    // Check if already in the pipeline (by domain match in email column)
-    const domain = new URL(candidate.url).hostname.replace('www.', '')
+  for (const candidate of candidates.slice(0, 15)) {
+    // Determine best email: snippet first, then crawl the listing/website
+    let email = candidate.snippetEmail
+
+    if (!email) {
+      // Crawl the listing page (Yellow Pages / True Local / firm's own site)
+      email = await tavilyExtractEmail(candidate.url)
+    }
+
+    if (!email) continue  // skip if we genuinely can't find an email
+
+    // Skip internal/system emails
+    if (/noreply|no-reply|example|test@|admin@|info@yellowpages|info@truelocal/.test(email)) continue
+
+    // Deduplicate — skip if this email is already in the pipeline
     const { count } = await supabase
       .from('accountant_outreach')
       .select('id', { count: 'exact', head: true })
-      .ilike('email', `%${domain}%`)
+      .eq('email', email)
     if ((count ?? 0) > 0) continue
-
-    // Try to extract email from snippet first, then crawl the site
-    const snippetEmail = candidate.url.match(/[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/i)?.[0]
-    const email = snippetEmail ?? await tavilyExtractEmail(candidate.url)
-
-    if (!email) continue // only add if we have a real email
 
     await supabase.from('accountant_outreach').insert({
       name:          candidate.name,
-      email:         email.toLowerCase(),
+      email,
       practice_type: candidate.practiceType,
       location,
       status:        'pending',
@@ -267,7 +285,7 @@ export async function sparkFindAccountants(location = 'Darwin, Australia'): Prom
     added++
   }
 
-  await logSubAgent('spark', 'find_accountants', location, `Found ${candidates.length} candidates, added ${added} new`, Date.now() - start, added > 0)
+  await logSubAgent('spark', 'find_accountants', location, `Candidates: ${candidates.length}, added: ${added}`, Date.now() - start, added > 0)
   return { found: candidates.length, added }
 }
 
