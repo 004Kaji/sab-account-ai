@@ -27,6 +27,14 @@
     {
       "path": "/api/cron/spark",
       "schedule": "0 23 * * 1"
+    },
+    {
+      "path": "/api/cron/morning",
+      "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/cron/watch",
+      "schedule": "0 */6 * * *"
     }
   ]
 }

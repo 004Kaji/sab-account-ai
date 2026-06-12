@@ -975,6 +975,30 @@ function ReferralsTab() {
         </div>
       </div>
 
+      {/* Partner program upsell */}
+      <div style={{
+        background: 'var(--ember-p)', border: '1px solid rgba(200,75,47,0.2)',
+        borderRadius: 'var(--r2)', padding: '1.25rem 1.5rem',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        flexWrap: 'wrap', gap: '1rem',
+      }}>
+        <div>
+          <p style={{ fontWeight: 700, color: 'var(--char)', fontSize: '0.9rem', marginBottom: '0.25rem' }}>
+            Are you an accountant or bookkeeper?
+          </p>
+          <p style={{ color: 'var(--text2)', fontSize: '0.825rem' }}>
+            Join the Partner Program — earn 20% ongoing monthly commission for every client you refer.
+          </p>
+        </div>
+        <a href="/dashboard/partner" style={{
+          display: 'inline-block', background: 'var(--ember)', color: 'white',
+          padding: '0.6rem 1.25rem', borderRadius: 'var(--r)',
+          fontWeight: 600, fontSize: '0.825rem', textDecoration: 'none', whiteSpace: 'nowrap',
+        }}>
+          Partner dashboard →
+        </a>
+      </div>
+
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }
