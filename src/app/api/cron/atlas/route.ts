@@ -39,13 +39,27 @@ export async function GET(req: NextRequest) {
     results.compliance.error = err instanceof Error ? err.message : String(err)
   }
 
-  // Find new accountants in Darwin and add to outreach queue
-  try {
-    const r = await sparkFindAccountants('Darwin, Australia')
-    results.accountants = { ok: true, added: r.added, error: '' }
-  } catch (err) {
-    results.accountants.error = err instanceof Error ? err.message : String(err)
+  // Find new accountants across all Australian cities and add to outreach queue
+  const cities = [
+    'Sydney, Australia',
+    'Melbourne, Australia',
+    'Brisbane, Australia',
+    'Perth, Australia',
+    'Adelaide, Australia',
+    'Darwin, Australia',
+    'Gold Coast, Australia',
+    'Canberra, Australia',
+    'Newcastle, Australia',
+    'Hobart, Australia',
+  ]
+  let totalAdded = 0
+  for (const city of cities) {
+    try {
+      const r = await sparkFindAccountants(city)
+      totalAdded += r.added
+    } catch { /* continue to next city */ }
   }
+  results.accountants = { ok: true, added: totalAdded, error: '' }
 
   await logAgentAction({
     agentName:    'cron',
