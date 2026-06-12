@@ -191,6 +191,15 @@ Return ONLY valid JSON:
 
 // ── Find accountants in a location + add to outreach queue ────────────
 
+function buildEmailHtml(body: string, ctaText: string): string {
+  const htmlBody = body
+    .split('\n\n')
+    .filter(p => p.trim())
+    .map(p => `<p style="margin:0 0 16px 0;">${p.trim().replace(/\n/g, '<br>')}</p>`)
+    .join('')
+  return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:580px;margin:0 auto;padding:24px;color:#222;line-height:1.6;">${htmlBody}<p style="margin:28px 0 0 0;"><a href="https://sabaccountai.com" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 28px;text-decoration:none;border-radius:6px;font-weight:600;font-size:15px;">${ctaText}</a></p><p style="margin-top:28px;color:#666;font-size:13px;border-top:1px solid #eee;padding-top:16px;line-height:1.8;">Sanjog Basnet<br>Founder, SAB Account AI<br>0145 304 090 · basnet@sabaccountai.com · sabaccountai.com</p></body></html>`
+}
+
 async function tavilyExtractEmail(url: string): Promise<string | null> {
   const apiKey = process.env.TAVILY_API_KEY
   if (!apiKey) return null
@@ -390,6 +399,7 @@ Previous subject: "${accountant.email_subject ?? 'SAB Account AI referral'}"
 
 New angle: Payday Super July 28 — every employer must pay super on every payday from that date. SAB Account AI handles this automatically for their clients.
 CTA: offer a free 60-day trial for their clients (no call needed this time).
+Do NOT include a sign-off or signature — those are added automatically.
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`
 
         : `Write an INITIAL cold email (max 150 words, 3 short paragraphs).
@@ -402,7 +412,7 @@ ${winnerHint}
 Para 1: One sentence on who you are and why you're contacting them.
 Para 2: The deal — 20% referral commission on first year + free 60-day trial for any client they refer + SAB Account AI is 60% cheaper than Xero for sole traders.
 Para 3: One CTA — ask for a 15-minute call this week.
-End with full signature.
+Do NOT include a sign-off or signature — those are added automatically.
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`
 
       const emailRaw = await callClaude({
@@ -425,6 +435,10 @@ Return ONLY valid JSON: { "subject": "string", "body": "string" }`
         to:      accountant.email,
         subject: emailJSON.subject,
         text:    emailJSON.body,
+        html:    buildEmailHtml(
+          emailJSON.body,
+          accountant.isFollowUp ? 'Start free trial → sabaccountai.com' : 'Try it free → sabaccountai.com',
+        ),
       })
 
       if (accountant.isFollowUp) {
@@ -1101,4 +1115,205 @@ Good luck — send the first 5 today.
 
   await logSubAgent('spark', 'find_prospects', location, `Found ${prospects.length} prospects, emailed: ${emailedSanjog}`, Date.now() - start, emailedSanjog)
   return { found: prospects.length, emailedSanjog }
+}
+
+// ── Find small businesses/freelancers + add to business outreach queue ───
+
+const BUSINESS_EMAIL_SYSTEM = `You write short, direct cold emails on behalf of Sanjog Basnet, founder of SAB Account AI.
+
+ABOUT SAB ACCOUNT AI:
+- Australian invoicing, payroll, and compliance SaaS for small businesses and freelancers
+- Website: sabaccountai.com
+- Pricing: $9/month (Starter) or $19/month (Pro) — 60-day free trial, no credit card needed
+- Key features: invoicing, PAYG withholding, super tracking, BAS, Payday Super compliance
+- 60% cheaper than Xero or MYOB for businesses that only need invoicing and payroll
+
+PAYDAY SUPER (urgent, timely):
+- Payday Super starts July 28, 2026 — all employers must pay super on EVERY payday, not quarterly
+- ATO penalties apply immediately from July 28 with no grace period
+- SAB Account AI calculates and tracks this automatically
+
+SENDER DETAILS:
+Sanjog Basnet | Founder, SAB Account AI | 0145 304 090 | basnet@sabaccountai.com
+
+STRICT RULES:
+- Never use: "innovative", "cutting-edge", "game-changing", "excited to share", "I hope this finds you well"
+- Be direct — use real numbers ($9/month, July 28, 60 days free)
+- Sound like a real person writing to a local business owner, not a marketing team
+- Max 3 short paragraphs, under 100 words total
+- One clear CTA only — try free at sabaccountai.com
+- Tone: casual and human, not corporate
+- Do NOT include a sign-off or signature — those are added automatically`
+
+export async function sparkFindBusinesses(location = 'Darwin, Australia'): Promise<{ found: number; added: number }> {
+  const start = Date.now()
+  const supabase = createServiceClient()
+  const city = location.split(',')[0].trim()
+
+  const searches = await Promise.allSettled([
+    tavilySearch(`site:yellowpages.com.au plumber electrician carpenter ${city}`, { maxResults: 6, includeAnswer: false }),
+    tavilySearch(`site:yellowpages.com.au cafe restaurant bakery ${city}`,        { maxResults: 6, includeAnswer: false }),
+    tavilySearch(`site:yellowpages.com.au hair salon beauty fitness ${city}`,     { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`site:truelocal.com.au small business ${city} email`,            { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`freelancer consultant ${city} Australia email "@" contact`,     { maxResults: 5, includeAnswer: false }),
+  ])
+
+  type Candidate = { name: string; url: string; businessType: string; snippetEmail: string | null }
+  const candidates: Candidate[] = []
+  const seenUrls = new Set<string>()
+  const EMAIL_RE = /[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/gi
+  const typeLabels = ['tradie', 'hospitality', 'beauty/wellness', 'small business', 'freelancer']
+
+  searches.forEach((r, i) => {
+    if (r.status !== 'fulfilled') return
+    for (const result of r.value.results) {
+      if (seenUrls.has(result.url)) continue
+      seenUrls.add(result.url)
+      const emailsInSnippet = (result.content + ' ' + result.title).match(EMAIL_RE) ?? []
+      const snippetEmail = emailsInSnippet
+        .find(e => !e.includes('example') && !e.includes('noreply') && !e.includes('no-reply'))
+        ?.toLowerCase() ?? null
+      const name = result.title
+        .replace(/\s*[-|–]\s*(Yellow Pages|True Local|Yelp|Hipages).*$/i, '')
+        .trim()
+      candidates.push({ name, url: result.url, businessType: typeLabels[i], snippetEmail })
+    }
+  })
+
+  let added = 0
+
+  for (const candidate of candidates.slice(0, 15)) {
+    let email = candidate.snippetEmail
+    if (!email) email = await tavilyExtractEmail(candidate.url)
+    if (!email) continue
+    if (/noreply|no-reply|example|test@|admin@|info@yellowpages|info@truelocal/.test(email)) continue
+
+    const { count } = await supabase
+      .from('business_outreach')
+      .select('id', { count: 'exact', head: true })
+      .eq('email', email)
+    if ((count ?? 0) > 0) continue
+
+    await supabase.from('business_outreach').insert({
+      name:          candidate.name,
+      email,
+      business_type: candidate.businessType,
+      location,
+      status:        'pending',
+    })
+    added++
+  }
+
+  await logSubAgent('spark', 'find_businesses', location, `Candidates: ${candidates.length}, added: ${added}`, Date.now() - start, added > 0)
+  return { found: candidates.length, added }
+}
+
+export async function sparkSendBusinessEmails(): Promise<{ sent: number; names: string[] }> {
+  const start = Date.now()
+  const supabase = createServiceClient()
+  const today = new Date().toISOString().split('T')[0]
+
+  if (!process.env.RESEND_API_KEY) return { sent: 0, names: [] }
+
+  type BusinessRow = {
+    id: string; name: string; email: string
+    business_type: string | null; location: string | null
+    email_subject: string | null; isFollowUp: boolean
+  }
+
+  const [pendingR, followUpsR] = await Promise.all([
+    supabase.from('business_outreach')
+      .select('id, name, email, business_type, location, email_subject')
+      .eq('status', 'pending').is('emailed_at', null)
+      .order('created_at', { ascending: true }).limit(2),
+    supabase.from('business_outreach')
+      .select('id, name, email, business_type, location, email_subject')
+      .eq('status', 'emailed').eq('replied', false)
+      .lte('follow_up_due', today)
+      .order('follow_up_due', { ascending: true }).limit(2),
+  ])
+
+  const followUps = (followUpsR.data ?? []).map(r => ({ ...r, isFollowUp: true  }))
+  const pending   = (pendingR.data   ?? []).map(r => ({ ...r, isFollowUp: false }))
+  const targets = ([...followUps, ...pending] as BusinessRow[]).slice(0, 2)
+  if (targets.length === 0) return { sent: 0, names: [] }
+
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  const names: string[] = []
+
+  for (const business of targets) {
+    try {
+      const userMessage = business.isFollowUp
+        ? `Write a SHORT FOLLOW-UP email (max 60 words). This business owner did not reply 7 days ago.
+
+Business: ${business.name}
+Type: ${business.business_type ?? 'small business'}
+Location: ${business.location ?? 'Australia'}
+Previous subject: "${business.email_subject ?? 'SAB Account AI'}"
+
+Angle: July 28 Payday Super deadline is coming fast. Offer 60-day free trial — no credit card, no lock-in.
+Return ONLY valid JSON: { "subject": "string", "body": "string" }`
+
+        : `Write an INITIAL cold email (max 100 words, casual tone, 3 short paragraphs).
+
+Business: ${business.name}
+Type: ${business.business_type ?? 'small business'}
+Location: ${business.location ?? 'Australia'}
+
+Para 1: One sentence — why you're reaching out. For employers: Payday Super July 28 deadline. For freelancers: PAYG and invoicing made simple.
+Para 2: SAB Account AI handles this automatically — $9/month, 60% cheaper than Xero.
+Para 3: 60-day free trial, no credit card needed.
+Return ONLY valid JSON: { "subject": "string", "body": "string" }`
+
+      const emailRaw = await callClaude({
+        systemPrompt: BUSINESS_EMAIL_SYSTEM,
+        userMessage,
+        maxTokens: 400,
+        expectJson: true,
+      })
+
+      type EmailJSON = { subject: string; body: string }
+      let emailJSON: EmailJSON
+      try {
+        emailJSON = JSON.parse(emailRaw) as EmailJSON
+      } catch { continue }
+
+      if (!emailJSON.subject?.trim() || !emailJSON.body?.trim()) continue
+
+      await resend.emails.send({
+        from:    'Sanjog Basnet <basnet@sabaccountai.com>',
+        to:      business.email,
+        subject: emailJSON.subject,
+        text:    emailJSON.body,
+        html:    buildEmailHtml(
+          emailJSON.body,
+          business.isFollowUp ? 'Start free trial → sabaccountai.com' : 'Try it free → sabaccountai.com',
+        ),
+      })
+
+      if (business.isFollowUp) {
+        await supabase.from('business_outreach').update({
+          emailed_at: new Date().toISOString(),
+          status:     'followed_up',
+        }).eq('id', business.id)
+      } else {
+        const followUpDate = new Date()
+        followUpDate.setDate(followUpDate.getDate() + 7)
+        await supabase.from('business_outreach').update({
+          emailed_at:    new Date().toISOString(),
+          status:        'emailed',
+          follow_up_due: followUpDate.toISOString().split('T')[0],
+          email_subject: emailJSON.subject,
+          email_body:    emailJSON.body,
+        }).eq('id', business.id)
+      }
+
+      names.push(`${business.name}${business.isFollowUp ? ' (follow-up)' : ''}`)
+    } catch (err) {
+      console.error('[spark] business email failed for', business.name, err)
+    }
+  }
+
+  await logSubAgent('spark', 'business_emails', '', `Sent: ${names.join(', ')}`, Date.now() - start, names.length > 0)
+  return { sent: names.length, names }
 }

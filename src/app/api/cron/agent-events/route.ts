@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { logAgentAction } from '@/lib/agents/utils'
 import { liftOnboardingEmail, liftReEngagementEmail } from '@/lib/agents/sub/lift'
-import { sparkUpgradePrompt, sparkSendAccountantEmails } from '@/lib/agents/sub/spark'
+import { sparkUpgradePrompt, sparkSendAccountantEmails, sparkSendBusinessEmails } from '@/lib/agents/sub/spark'
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('Authorization')
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
   const supabase = createServiceClient()
   const start = Date.now()
-  const results = { newUser: 0, invoice8th: 0, inactive30d: 0, accountantEmails: 0, errors: 0 }
+  const results = { newUser: 0, invoice8th: 0, inactive30d: 0, accountantEmails: 0, businessEmails: 0, errors: 0 }
 
   // ── 1. new_user: signed up in last 24h, not yet AI-welcomed ──────────
   try {
@@ -144,6 +144,15 @@ export async function GET(req: NextRequest) {
     results.accountantEmails = r.sent
   } catch (err) {
     console.error('[cron/agent-events] accountant_emails phase failed:', err)
+    results.errors++
+  }
+
+  // ── 5. business_emails: send 2 small business / freelancer emails per day ─
+  try {
+    const r = await sparkSendBusinessEmails()
+    results.businessEmails = r.sent
+  } catch (err) {
+    console.error('[cron/agent-events] business_emails phase failed:', err)
     results.errors++
   }
 
