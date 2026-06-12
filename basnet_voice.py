@@ -272,8 +272,15 @@ YES_WORDS = {"yes", "yeah", "yep", "sure", "open", "show", "go", "do it", "ok", 
              "post", "post it", "post this", "post now", "publish", "share it", "do the post"}
 FILTER_WORDS = {"filter", "sort", "recent", "latest", "new", "today", "date", "newest"}
 
+def _normalize(text: str) -> str:
+    import re
+    # "Y-E-S-S" → "YESS", "N-O" → "NO" (spelled-out letters)
+    normalized = re.sub(r'\b([A-Za-z])(-[A-Za-z])+\b', lambda m: m.group(0).replace('-', ''), text)
+    return normalized.lower()
+
 def is_yes(text: str) -> bool:
-    return any(w in text.lower() for w in YES_WORDS)
+    n = _normalize(text)
+    return any(w in n for w in YES_WORDS)
 
 def is_filter_request(text: str) -> bool:
     return any(w in text.lower() for w in FILTER_WORDS)
@@ -474,18 +481,21 @@ async def main():
 
                 _follow_count += 1
 
+                # Detect company page intent from follow-up reply
+                _wants_company = bool(re.search(r'sab page|company page|sab account|the page|our page', follow_reply, re.IGNORECASE))
+
                 # Build context-aware follow-up question using original topic
                 _action_map = {
-                    "commit_deploy":    ("commit and deploy",                               "technical"),
-                    "deploy":           ("deploy to vercel",                               "technical"),
-                    "sentry":           ("check sentry for runtime errors",                "technical"),
-                    "audit":            ("run full audit",                                 "technical"),
-                    "fix":              ("fix the errors",                                 "technical"),
-                    "fix_commit_deploy":("fix errors then commit and deploy",              "technical"),
-                    "create_issues":    ("check sentry and create issues",                 "technical"),
-                    "post":             (f"post this content: {response[:200]}",           "marketing"),
-                    "deep_dive":        (f"give me more detail about: {question}",         "intel"),
-                    "identify_churn":   ("identify which specific users are at churn risk","health-check"),
+                    "commit_deploy":    ("commit and deploy",                                                      "technical"),
+                    "deploy":           ("deploy to vercel",                                                      "technical"),
+                    "sentry":           ("check sentry for runtime errors",                                       "technical"),
+                    "audit":            ("run full audit",                                                        "technical"),
+                    "fix":              ("fix the errors",                                                        "technical"),
+                    "fix_commit_deploy":("fix errors then commit and deploy",                                     "technical"),
+                    "create_issues":    ("check sentry and create issues",                                        "technical"),
+                    "post":             (f"post this {'to the SAB page' if _wants_company else 'to linkedin'}: {response[:200]}", "marketing"),
+                    "deep_dive":        (f"give me more detail about: {question}",                                "intel"),
+                    "identify_churn":   ("identify which specific users are at churn risk",                      "health-check"),
                 }
                 follow_q, follow_route = _action_map.get(next_action, (next_action, route))
                 print(f"[{follow_route.upper()} follow-up → {follow_q[:60]}]")
@@ -503,10 +513,15 @@ async def main():
             if len(history) > 5:
                 history = history[-5:]
 
-            # ── Offer browser only for genuinely useful URLs ──
+            # ── Offer browser only for actionable URLs (not web search references) ──
             _SKIP_DOMAINS = ['facebook.com', 'twitter.com', 'instagram.com', 'reddit.com',
                              'youtube.com', 'tiktok.com', 'pinterest.com']
-            useful_url = url and not any(d in url for d in _SKIP_DOMAINS)
+            _OPEN_DOMAINS = ['linkedin.com', 'supabase.com', 'vercel.com', 'stripe.com',
+                             'sentry.io', 'github.com', 'resend.com', 'sabaccountai.com',
+                             'localhost', 'n8n.io', 'upstash.io']
+            useful_url = (url
+                and not any(d in url for d in _SKIP_DOMAINS)
+                and any(d in url for d in _OPEN_DOMAINS))
             if useful_url:
                 print(f"[URL: {url}]")
                 should_open = await ask_to_open_browser(url)

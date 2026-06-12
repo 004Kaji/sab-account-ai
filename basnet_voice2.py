@@ -395,18 +395,22 @@ async def main():
             print(f"{DIM}[Asking Basnet...]{RESET}")
             data = await call_voice(question, history, current_topic)
 
-            response   = data.get("response", "No response.")
-            warning    = data.get("warning")
-            topic      = data.get("topic") or current_topic
-            is_done    = data.get("is_complete", False)
-            suggestion = data.get("next_suggestion")
-            url        = data.get("url")
-            agent_used = data.get("agentUsed", "basnet").upper()
+            response       = data.get("response", "No response.")
+            warning        = data.get("warning")
+            topic          = data.get("topic") or current_topic
+            is_done        = data.get("is_complete", False)
+            suggestion     = data.get("next_suggestion")
+            url            = data.get("url")
+            agent_used     = data.get("agentUsed", "basnet").upper()
+            classification = data.get("classification", "")
 
-            # Print agent label
+            # Print agent label — show Fable 5 badge on strategy mode
             agent_colour = {"RELAY": CYAN, "FLUX": GREEN, "LIFT": "\033[94m",
                             "ATLAS": YELLOW, "SPARK": "\033[95m"}.get(agent_used, "")
-            print(f"  {agent_colour}[{agent_used}]{RESET}")
+            if classification == "STRATEGY":
+                print(f"  {BOLD}\033[95m[FABLE 5 — STRATEGY MODE]{RESET}")
+            else:
+                print(f"  {agent_colour}[{agent_used}]{RESET}")
 
             # Speak warning first
             if warning:
