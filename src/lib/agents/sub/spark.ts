@@ -311,7 +311,7 @@ ABOUT SAB ACCOUNT AI:
 
 THE REFERRAL DEAL YOU ARE OFFERING:
 - 20% referral commission on the first year of every paying client referred
-- Free 60-day trial for any client they refer — no credit card needed
+- Free 14-day trial for any client they refer — no credit card needed
 - No lock-in contract for their clients
 
 PAYDAY SUPER (urgent, timely):
@@ -398,7 +398,7 @@ Location: ${accountant.location ?? 'Australia'}
 Previous subject: "${accountant.email_subject ?? 'SAB Account AI referral'}"
 
 New angle: Payday Super July 28 — every employer must pay super on every payday from that date. SAB Account AI handles this automatically for their clients.
-CTA: offer a free 60-day trial for their clients (no call needed this time).
+CTA: offer a free 14-day trial for their clients (no call needed this time).
 Do NOT include a sign-off or signature — those are added automatically.
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`
 
@@ -410,7 +410,7 @@ Location: ${accountant.location ?? 'Australia'}
 ${winnerHint}
 
 Para 1: One sentence on who you are and why you're contacting them.
-Para 2: The deal — 20% referral commission on first year + free 60-day trial for any client they refer + SAB Account AI is 60% cheaper than Xero for sole traders.
+Para 2: The deal — 20% referral commission on first year + free 14-day trial for any client they refer + SAB Account AI is 60% cheaper than Xero for sole traders.
 Para 3: One CTA — ask for a 15-minute call this week.
 Do NOT include a sign-off or signature — those are added automatically.
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`
@@ -1124,7 +1124,7 @@ const BUSINESS_EMAIL_SYSTEM = `You write short, direct cold emails on behalf of 
 ABOUT SAB ACCOUNT AI:
 - Australian invoicing, payroll, and compliance SaaS for small businesses and freelancers
 - Website: sabaccountai.com
-- Pricing: $9/month (Starter) or $19/month (Pro) — 60-day free trial, no credit card needed
+- Pricing: $9/month (Starter) or $19/month (Pro) — 14-day free trial, no credit card needed
 - Key features: invoicing, PAYG withholding, super tracking, BAS, Payday Super compliance
 - 60% cheaper than Xero or MYOB for businesses that only need invoicing and payroll
 
@@ -1251,7 +1251,7 @@ Type: ${business.business_type ?? 'small business'}
 Location: ${business.location ?? 'Australia'}
 Previous subject: "${business.email_subject ?? 'SAB Account AI'}"
 
-Angle: July 28 Payday Super deadline is coming fast. Offer 60-day free trial — no credit card, no lock-in.
+Angle: July 28 Payday Super deadline is coming fast. Offer 14-day free trial — no credit card, no lock-in.
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`
 
         : `Write an INITIAL cold email (max 100 words, casual tone, 3 short paragraphs).
@@ -1262,7 +1262,7 @@ Location: ${business.location ?? 'Australia'}
 
 Para 1: One sentence — why you're reaching out. For employers: Payday Super July 28 deadline. For freelancers: PAYG and invoicing made simple.
 Para 2: SAB Account AI handles this automatically — $9/month, 60% cheaper than Xero.
-Para 3: 60-day free trial, no credit card needed.
+Para 3: 14-day free trial, no credit card needed.
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`
 
       const emailRaw = await callClaude({
