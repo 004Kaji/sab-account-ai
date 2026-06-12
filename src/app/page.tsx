@@ -200,8 +200,7 @@ export default function HomePage() {
         </h1>
 
         <p style={{ fontSize: '1.0625rem', color: 'var(--text2)', maxWidth: '520px', margin: '0 auto 2.5rem', lineHeight: 1.65 }}>
-          Create tax invoices with AI, process ATO-compliant payslips,
-          and track GST — all designed for Australian freelancers and small businesses.
+          Create ATO-compliant invoices and payslips your way — fill them in manually or let AI do it for you. You stay in control. No accounting knowledge needed.
         </p>
 
         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -314,6 +313,82 @@ export default function HomePage() {
             <div style={{ background: 'var(--ember-p)', borderRadius: '6px', padding: '0.625rem 1rem', fontSize: '0.75rem', color: 'var(--ember)', textAlign: 'center', fontWeight: 500 }}>
               ✓ ATO-compliant tax invoice · GST registered · NAT 1004 verified
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Manual or AI — your choice ─────────────────────────── */}
+      <section style={{ padding: '0 1.5rem 4rem', maxWidth: '860px', margin: '0 auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <h2 className="font-display" style={{ fontSize: '1.75rem', color: 'var(--char)', letterSpacing: '-0.02em', marginBottom: '0.5rem' }}>
+            Your way — manual or AI
+          </h2>
+          <p style={{ color: 'var(--text2)', fontSize: '0.9375rem', lineHeight: 1.6, maxWidth: '480px', margin: '0 auto' }}>
+            Not comfortable with AI doing your invoices? No problem. You can fill everything in yourself. AI is just an option, not a requirement.
+          </p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
+          {/* Manual */}
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--r2)', padding: '2rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+              <div style={{ width: '2.5rem', height: '2.5rem', borderRadius: 'var(--r)', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#475569" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+                </svg>
+              </div>
+              <div>
+                <p style={{ fontWeight: 700, color: 'var(--char)', fontSize: '1rem' }}>Fill it in yourself</p>
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text3)' }}>Full manual control</p>
+              </div>
+            </div>
+            <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+              {[
+                'Type client name, job description, amounts',
+                'GST calculated automatically from ATO rules',
+                'Professional PDF with your ABN and business details',
+                'You decide every field — nothing is assumed',
+              ].map(item => (
+                <li key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--text2)' }}>
+                  <span style={{ color: '#4A7055', flexShrink: 0, marginTop: '0.1rem' }}>✓</span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* AI */}
+          <div style={{ background: '#fff', border: '2px solid var(--ember)', borderRadius: 'var(--r2)', padding: '2rem', position: 'relative' }}>
+            <div style={{ position: 'absolute', top: '-0.75rem', left: '1.5rem', background: 'var(--ember)', color: '#fff', fontSize: '0.6875rem', fontWeight: 700, padding: '0.2rem 0.625rem', borderRadius: '999px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Faster
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+              <div style={{ width: '2.5rem', height: '2.5rem', borderRadius: 'var(--r)', background: 'var(--ember-p)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="var(--ember)" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                </svg>
+              </div>
+              <div>
+                <p style={{ fontWeight: 700, color: 'var(--char)', fontSize: '1rem' }}>Let AI draft it</p>
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text3)' }}>You always review before sending</p>
+              </div>
+            </div>
+            <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+              {[
+                'Describe the job in plain English',
+                'AI fills in line items, GST, and client details',
+                'You review and edit anything before saving',
+                'Same ATO-compliant PDF — just takes 30 seconds',
+              ].map(item => (
+                <li key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--text2)' }}>
+                  <span style={{ color: 'var(--ember)', flexShrink: 0, marginTop: '0.1rem' }}>✓</span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <p style={{ marginTop: '1.25rem', fontSize: '0.8125rem', color: 'var(--text3)', lineHeight: 1.5 }}>
+              AI is a shortcut, not a replacement. It never lodges anything with the ATO — you do.
+            </p>
           </div>
         </div>
       </section>
