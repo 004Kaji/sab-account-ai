@@ -118,8 +118,7 @@ const ORG_SCHEMA = {
 }
 
 export default function HomePage() {
-  const daysToPaydaySuper = Math.ceil((new Date('2026-07-28').getTime() - Date.now()) / 86400000)
-  const showPaydayBanner = daysToPaydaySuper > 0 && daysToPaydaySuper <= 60
+  const showPaydayBanner = Date.now() < new Date('2026-07-28').getTime()
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--cream)' }}>
@@ -139,7 +138,7 @@ export default function HomePage() {
             fontWeight: 500,
             letterSpacing: '0.01em',
           }}>
-            ⚡ Payday Super starts <strong>July 28</strong> — {daysToPaydaySuper} days left. Every employer must pay super on every payday. <span style={{ textDecoration: 'underline' }}>Is your business ready? →</span>
+            ⚡ Payday Super starts <strong>July 28, 2026</strong> — Every employer must pay super on every payday. <span style={{ textDecoration: 'underline' }}>Is your business ready? →</span>
           </div>
         </a>
       )}
@@ -376,7 +375,7 @@ export default function HomePage() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                 <span style={{ background: 'var(--ember)', color: '#fff', fontSize: '0.6875rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '999px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {daysToPaydaySuper} days left
+                  July 28, 2026
                 </span>
                 <span style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.6)', fontWeight: 500 }}>Payday Super — July 28, 2026</span>
               </div>
