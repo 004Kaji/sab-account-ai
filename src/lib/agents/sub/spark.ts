@@ -191,13 +191,16 @@ Return ONLY valid JSON:
 
 // ── Find accountants in a location + add to outreach queue ────────────
 
-function buildEmailHtml(body: string, ctaText: string): string {
+function buildEmailHtml(body: string, ctaText: string, includePartnerLink = false): string {
   const htmlBody = body
     .split('\n\n')
     .filter(p => p.trim())
     .map(p => `<p style="margin:0 0 16px 0;">${p.trim().replace(/\n/g, '<br>')}</p>`)
     .join('')
-  return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:580px;margin:0 auto;padding:24px;color:#222;line-height:1.6;">${htmlBody}<p style="margin:28px 0 0 0;"><a href="https://sabaccountai.com" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 28px;text-decoration:none;border-radius:6px;font-weight:600;font-size:15px;">${ctaText}</a></p><p style="margin-top:28px;color:#666;font-size:13px;border-top:1px solid #eee;padding-top:16px;line-height:1.8;">Sanjog Basnet<br>Founder, SAB Account AI<br>0415 304 090 · basnet@sabaccountai.com · sabaccountai.com</p></body></html>`
+  const partnerLine = includePartnerLink
+    ? `<p style="margin-top:12px;font-size:13px;color:#666;">Interested in earning 20% monthly commission? <a href="https://sabaccountai.com/partners" style="color:#2563eb;text-decoration:none;">View the partner program →</a></p>`
+    : ''
+  return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:580px;margin:0 auto;padding:24px;color:#222;line-height:1.6;">${htmlBody}<p style="margin:28px 0 0 0;"><a href="https://sabaccountai.com" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 28px;text-decoration:none;border-radius:6px;font-weight:600;font-size:15px;">${ctaText}</a></p>${partnerLine}<p style="margin-top:28px;color:#666;font-size:13px;border-top:1px solid #eee;padding-top:16px;line-height:1.8;">Sanjog Basnet<br>Founder, SAB Account AI<br>0415 304 090 · basnet@sabaccountai.com · sabaccountai.com</p></body></html>`
 }
 
 async function tavilyExtractEmail(url: string): Promise<string | null> {
@@ -310,9 +313,10 @@ ABOUT SAB ACCOUNT AI:
 - Key features: PAYG withholding (ATO-compliant), super tracking, BAS, Payday Super compliance
 
 THE REFERRAL DEAL YOU ARE OFFERING:
-- 20% referral commission on the first year of every paying client referred
+- 20% ongoing monthly commission for every paying client referred — no cap, no expiry
 - Free 14-day trial for any client they refer — no credit card needed
 - No lock-in contract for their clients
+- Partner sign-up page: sabaccountai.com/partners
 
 PAYDAY SUPER (urgent, timely):
 - Payday Super starts July 28, 2026 — all employers must pay super on every payday, not quarterly
@@ -438,6 +442,7 @@ Return ONLY valid JSON: { "subject": "string", "body": "string" }`
         html:    buildEmailHtml(
           emailJSON.body,
           accountant.isFollowUp ? 'Start free trial → sabaccountai.com' : 'Try it free → sabaccountai.com',
+          true,
         ),
       })
 
