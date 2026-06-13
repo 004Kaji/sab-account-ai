@@ -26,8 +26,11 @@ export const AGENT_KEYWORDS: Record<QuestionClass, string[]> = {
     'law change', 'payday super', 'pricing', 'what are competitors',
   ],
   SAB_PRODUCT: [
-    'error', 'bug', 'build', 'stripe webhook', 'supabase', 'sentry',
-    'deploy', 'code', 'payg', 'test', 'rls', 'ssl', 'security',
+    'error', 'bug', 'build failed', 'build error', 'build broke',
+    'stripe webhook', 'supabase', 'sentry',
+    'deploy failed', 'deployment failed', 'deploy error',
+    'code', 'payg', 'test endpoint', 'test failing', 'run test',
+    'rls', 'ssl', 'security breach', 'security issue',
   ],
   SAB_MARKETING: [
     'tiktok', 'blog', 'post', 'content', 'what to write', 'topic',
@@ -64,6 +67,10 @@ export const AGENT_KEYWORDS: Record<QuestionClass, string[]> = {
     'mrr dropped', 'churn is high', 'signups down', 'revenue down',
     'what should basnet', 'what should spark', 'what should atlas',
     'full picture', 'everything', 'overview', 'all agents',
+    'build trust', 'build relationship', 'build community', 'build audience',
+    'survive', 'future of', 'in 5 years', 'long term', 'competitive advantage',
+    'how can i grow', 'how do i grow', 'how to grow',
+    'differentiate', 'stand out', 'unique', 'positioning',
   ],
   GENERAL: [],
 }
