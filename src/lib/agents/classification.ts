@@ -11,6 +11,10 @@ export type QuestionClass =
   | 'MAC'
   | 'STRATEGY'
   | 'AGENT_STATUS'
+  | 'BROWSER'
+  | 'EXEC'
+  | 'APP'
+  | 'BUILD'
   | 'GENERAL'
 
 export const AGENT_KEYWORDS: Record<QuestionClass, string[]> = {
@@ -73,6 +77,40 @@ export const AGENT_KEYWORDS: Record<QuestionClass, string[]> = {
     'how can i grow', 'how do i grow', 'how to grow',
     'differentiate', 'stand out', 'unique', 'positioning',
   ],
+  BROWSER: [
+    'open facebook', 'check facebook', 'open instagram', 'check instagram',
+    'open linkedin', 'check linkedin', 'open twitter', 'check twitter',
+    'open tiktok', 'check tiktok', 'open stripe', 'check stripe',
+    'open gmail', 'check gmail', 'open email', 'check email',
+    'open youtube', 'open reddit', 'browse to', 'go to website',
+    'open browser', 'check the website', 'open the website',
+    'search google', 'google for', 'look up online', 'find online',
+    'what is on', 'what\'s on', "what's happening on",
+  ],
+  EXEC: [
+    'run command', 'run script', 'run this', 'execute', 'terminal', 'shell',
+    'git status', 'git pull', 'git push', 'git commit', 'git log',
+    'npm install', 'npm run', 'npx', 'node ', 'python3 ',
+    'list files', 'show files', 'ls ', 'find files',
+    'what processes', 'kill process', 'restart server',
+    'run git', 'run npm', 'check git',
+  ],
+  APP: [
+    'open vs code', 'open vscode', 'open xcode', 'open terminal', 'open finder',
+    'open safari', 'open chrome', 'open slack', 'open zoom', 'open spotify',
+    'open notes', 'open calendar', 'open messages', 'open mail',
+    'close vs code', 'close chrome', 'close slack', 'close app', 'quit app',
+    'what apps are open', 'what is running', 'running apps', 'open app',
+  ],
+  BUILD: [
+    'build me', 'build a', 'create a website', 'make a website', 'create a landing page',
+    'make a landing page', 'create a game', 'make a game', 'build a game',
+    'create an app', 'make an app', 'build an app', 'write a script',
+    'create a new agent', 'make a new agent', 'build an agent', 'add an agent',
+    'delete agent', 'remove agent', 'create agent', 'new agent called',
+    'deploy code', 'ship this', 'push to github', 'deploy to vercel',
+    'write code for', 'generate code', 'scaffold', 'create new',
+  ],
   AGENT_STATUS: [
     'did you send', 'have you sent', 'did spark send', 'did spark run',
     'did you run', 'have you run', 'did basnet', 'did the agent',
@@ -80,13 +118,16 @@ export const AGENT_KEYWORDS: Record<QuestionClass, string[]> = {
     'did you email', 'how many emails', 'emails sent', 'emails you sent',
     'what did you do', 'what have you done', 'what did spark',
     'when did you last', 'last time you', 'did you check',
+    'tell me about', 'explain the', 'what is basnet', 'what are your agents',
+    'sub agents', 'sub-agents', 'your system', 'basnet system', 'basnet ai',
+    'how does basnet', 'what do you do', 'introduce yourself',
   ],
   GENERAL: [],
 }
 
 // AGENT_STATUS and STRATEGY checked first — beats all other routing
 const PRIORITY_ORDER: QuestionClass[] = [
-  'MAC', 'AGENT_STATUS', 'STRATEGY', 'QUALITY', 'RETENTION', 'MARKET', 'SAB_PRODUCT', 'SAB_MARKETING', 'PERSONAL',
+  'BUILD', 'EXEC', 'APP', 'BROWSER', 'MAC', 'AGENT_STATUS', 'STRATEGY', 'QUALITY', 'RETENTION', 'MARKET', 'SAB_PRODUCT', 'SAB_MARKETING', 'PERSONAL',
 ]
 
 export function classifyQuestion(question: string): QuestionClass {
