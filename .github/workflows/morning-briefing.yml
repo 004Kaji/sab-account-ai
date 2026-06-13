@@ -1,0 +1,21 @@
+name: Morning Briefing
+
+on:
+  schedule:
+    - cron: '0 21 * * *'  # 7am AEST (UTC+10) every day
+  workflow_dispatch:
+
+jobs:
+  morning-briefing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Basnet morning briefing
+        run: |
+          curl -s -X POST "https://sabaccountai.com/api/agents/basnet" \
+            -H "Content-Type: application/json" \
+            -H "x-agent-secret: ${{ secrets.AGENT_WEBHOOK_SECRET }}" \
+            -d '{"trigger":"morning_briefing"}' | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          print('Briefing sent:', d.get('success', False))
+          "
