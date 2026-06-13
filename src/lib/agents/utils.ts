@@ -203,6 +203,14 @@ export async function sendAlert(
   const fullSubject = `${emoji} ${subject}`
   const timestamp = aestTimestamp()
 
+  // Push to Telegram immediately — non-blocking, non-fatal
+  const CHAT_ID = process.env.TELEGRAM_CHAT_ID
+  if (CHAT_ID) {
+    const agent = agentName ? ` [${agentName}]` : ''
+    const telegramText = `${fullSubject}${agent}\n\n${body.slice(0, 800)}${body.length > 800 ? '…' : ''}`
+    sendTelegramDirect(CHAT_ID, telegramText).catch(() => {})
+  }
+
   const html = `
     <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;padding:24px">
       <div style="border-left:4px solid ${color};padding:16px 20px;background:${urgency === 'urgent' ? '#fff5f5' : urgency === 'warning' ? '#fffbeb' : '#eff6ff'};border-radius:0 6px 6px 0;margin-bottom:20px">
@@ -235,13 +243,45 @@ export async function sendAlert(
   }
 }
 
-// Keep sendTelegram as alias so existing agents don't break
+// Send a raw message to Telegram (exported for use by the telegram route)
+export async function sendTelegramDirect(chatId: string | number, text: string): Promise<void> {
+  const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
+  if (!BOT_TOKEN) return
+  const chunks: string[] = []
+  let remaining = text
+  while (remaining.length > 0) {
+    const cut = remaining.length <= 3800 ? remaining.length : (remaining.lastIndexOf('\n', 3800) > 1900 ? remaining.lastIndexOf('\n', 3800) : 3800)
+    chunks.push(remaining.slice(0, cut))
+    remaining = remaining.slice(cut).trimStart()
+  }
+  for (const chunk of chunks) {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: chunk, parse_mode: 'Markdown' }),
+    }).catch(() =>
+      fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: chunk }),
+      })
+    )
+  }
+}
+
+// Send to Telegram + email alert fallback
 export async function sendTelegram(
   message: string,
   urgency: 'info' | 'warning' | 'urgent' = 'info',
 ): Promise<void> {
-  const prefix = urgency === 'urgent' ? '🚨 Alert' : urgency === 'warning' ? '⚠️ Warning' : 'ℹ️ Update'
-  await sendAlert(prefix, message, urgency)
+  const CHAT_ID = process.env.TELEGRAM_CHAT_ID
+  const prefix  = urgency === 'urgent' ? '🚨' : urgency === 'warning' ? '⚠️' : 'ℹ️'
+
+  if (CHAT_ID) {
+    await sendTelegramDirect(CHAT_ID, `${prefix} ${message}`).catch(() => {})
+  }
+
+  // Always also send email so nothing is lost if Telegram is down
+  const label = urgency === 'urgent' ? '🚨 Alert' : urgency === 'warning' ? '⚠️ Warning' : 'ℹ️ Update'
+  await sendAlert(label, message, urgency)
 }
 
 // ── 3. Daily digest ────────────────────────────────────────────────────
