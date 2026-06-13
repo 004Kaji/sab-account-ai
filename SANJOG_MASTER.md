@@ -1,7 +1,7 @@
 # SANJOG MASTER CONTEXT FILE
 # The Basnet Agent reads this file before every action.
 # Update this file when anything changes. This is the single source of truth.
-# Last updated: 2026-06-08
+# Last updated: 2026-06-13
 
 ---
 
@@ -71,10 +71,11 @@ I was an international student doing casual work, freelancing, and trying to und
 - Overdue reminders
 - Client and employee management
 - PDF export
-- Referral system for accountants
+- Referral system for existing users
+- Partner program for accountants/bookkeepers (20% ongoing monthly commission, auto referral code on apply)
 
 ### Current domain
-sabaccountai.com.au
+sabaccountai.com
 
 ### Email
 sanjog@sabaccountai.com.au
@@ -222,23 +223,36 @@ Under SAB Agents, these sub-agents run automatically:
 ### L1 BRANCH: Personal Agent (life operations)
 - **Relay** — personal ops: answers questions, tracks visa, monitors goals, manages day-to-day life decisions
 
-### AUTOMATION (n8n workflows — all active)
-- Every 5 minutes: watcher checks Stripe, Supabase, PAYG tests
-- 7am AEST daily: morning briefing email
-- Monday 6am AEST: weekly brief with Atlas market intel
-- Friday 7am AEST: Spark sends accountant emails
-- 2am AEST daily: Scout product scan
-- 3am AEST daily: Lift churn scan
-- Sunday 8pm AEST: self-learning loop
+### AUTOMATION (Vercel cron jobs — all active)
+There is NO n8n. All automation runs as Vercel cron jobs hitting API routes.
+
+- **1am UTC daily** — overdue invoice reminders (`/api/cron/overdue`)
+- **2am UTC daily** — recurring invoice generation (`/api/cron/recurring`)
+- **3am UTC daily** — onboarding email sequences (`/api/cron/onboarding-emails`)
+- **6pm UTC daily (4am AEST)** — agent events processing (`/api/cron/agent-events`)
+- **9pm UTC daily (7am AEST)** — morning briefing: all sub-agents run in parallel, world state updated, briefing sent (`/api/cron/morning`)
+- **1pm UTC daily (11pm AEST)** — watcher cycle: checks revenue, signups, PAYG, visa — alerts only on changes (`/api/cron/watch`)
+- **Sunday 11am UTC** — Lift weekly churn scan (`/api/cron/lift`)
+- **Sunday 9pm UTC** — Atlas weekly market intel + compliance watch + accountant/business prospecting (`/api/cron/atlas`)
+- **Tuesday 11pm UTC** — Spark weekly content brief + social post drafts (`/api/cron/spark`)
+
+### RECOVERY — if a sub-agent fails
+Sub-agents are Vercel serverless functions — there are no local processes, no plist files, no launchctl.
+- If a sub-agent errors: check Vercel logs at vercel.com/basnet-s-projects/sab-account-ai-project/logs
+- To fix: push a code fix to GitHub → Vercel auto-deploys in ~1-2 minutes
+- To roll back: go to Vercel Deployments → click `...` on a previous deployment → "Redeploy"
+- Sanjog must execute all fixes — Basnet cannot access Vercel, GitHub, or any external system directly
 
 ### CURRENT STATUS (as of June 2026)
-- ALL 6 SUB-AGENTS ARE BUILT, DEPLOYED AND RUNNING RIGHT NOW at sabaccountai.com
-- Flux, Scout, Spark, Atlas, Lift, Relay — all live in production
-- n8n running 7 automated workflows on Mac
-- Voice interface active via basnet_voice.py
-- 15 total users, 1 paid user
-- Morning briefing delivered daily at 7am AEST to sanjog.basnet02@gmail.com
+- ALL 6 SUB-AGENTS ARE BUILT, DEPLOYED AND RUNNING at sabaccountai.com
+- Flux, Scout, Spark, Atlas, Lift, Relay — all live as Vercel serverless functions
+- 9 Vercel cron jobs running (see AUTOMATION section above)
+- Voice interface active via basnet_voice2.py on Sanjog's Mac
+- Morning briefing auto-runs daily at 7am AEST via Vercel cron — no voice trigger needed
+- Partner program live at sabaccountai.com/partners — auto-generates referral code on apply
+- Partner dashboard at sabaccountai.com/dashboard/partner
 - DO NOT say agents don't exist — they are all built and running
+- DO NOT mention n8n — it is not used in this system
 
 ---
 
