@@ -260,14 +260,13 @@ export async function sparkFindAccountants(location = 'Darwin, Australia'): Prom
   // Extract city name for directory searches (e.g. "Darwin, Australia" → "Darwin")
   const city = location.split(',')[0].trim()
 
-  // Target Yellow Pages AU and True Local — Australian directories that list
-  // real business emails, far more reliable than generic web search results.
+  // Direct searches for accounting firm websites — site: directory searches return category pages without emails
   const searches = await Promise.allSettled([
-    tavilySearch(`site:yellowpages.com.au accountant ${city}`,          { maxResults: 6, includeAnswer: false }),
-    tavilySearch(`site:yellowpages.com.au bookkeeper ${city}`,          { maxResults: 6, includeAnswer: false }),
-    tavilySearch(`site:yellowpages.com.au "tax agent" ${city}`,         { maxResults: 5, includeAnswer: false }),
-    tavilySearch(`site:truelocal.com.au accountant ${city} email`,      { maxResults: 5, includeAnswer: false }),
-    tavilySearch(`accountant ${city} Australia email "@" contact`,      { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`accountant ${city} Australia contact email`,              { maxResults: 6, includeAnswer: false }),
+    tavilySearch(`bookkeeper ${city} Australia email contact`,              { maxResults: 6, includeAnswer: false }),
+    tavilySearch(`tax agent ${city} Australia email contact`,               { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`accounting firm ${city} Australia email`,                 { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`CPA chartered accountant ${city} Australia email`,        { maxResults: 5, includeAnswer: false }),
   ])
 
   type Candidate = { name: string; url: string; practiceType: string; snippetEmail: string | null }
@@ -1191,12 +1190,13 @@ export async function sparkFindBusinesses(location = 'Darwin, Australia'): Promi
   const supabase = createServiceClient()
   const city = location.split(',')[0].trim()
 
+  // Use direct business website searches — site: directory searches return category pages without emails
   const searches = await Promise.allSettled([
-    tavilySearch(`site:yellowpages.com.au plumber electrician carpenter ${city}`, { maxResults: 6, includeAnswer: false }),
-    tavilySearch(`site:yellowpages.com.au cafe restaurant bakery ${city}`,        { maxResults: 6, includeAnswer: false }),
-    tavilySearch(`site:yellowpages.com.au hair salon beauty fitness ${city}`,     { maxResults: 5, includeAnswer: false }),
-    tavilySearch(`site:truelocal.com.au small business ${city} email`,            { maxResults: 5, includeAnswer: false }),
-    tavilySearch(`freelancer consultant ${city} Australia email "@" contact`,     { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`plumber electrician tradie ${city} Australia contact email`,              { maxResults: 6, includeAnswer: false }),
+    tavilySearch(`cafe restaurant food small business ${city} Australia email contact`,     { maxResults: 6, includeAnswer: false }),
+    tavilySearch(`hair salon beauty gym fitness ${city} Australia email`,                   { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`cleaning landscaping gardening ${city} Australia small business email`,   { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`freelancer bookkeeper consultant ${city} Australia email contact`,        { maxResults: 5, includeAnswer: false }),
   ])
 
   type Candidate = { name: string; url: string; businessType: string; snippetEmail: string | null }
