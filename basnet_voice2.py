@@ -235,7 +235,7 @@ EXEC_QUERY_WORDS = [
     "run command", "run script", "run this", "execute", "run git",
     "git status", "git pull", "git push", "git commit", "git log",
     "npm install", "npm run", "npx ", "run npm",
-    "list files", "ls ", "find files", "kill process",
+    "list files", "run ls", "find files", "kill process",
     "restart server", "run python", "run node",
 ]
 

@@ -284,7 +284,8 @@ Master context: ${masterContext.slice(0, 800)}`
       let response = ''
       let strategyUrl: string | null = null
       try {
-        const parsed = JSON.parse(raw) as { response?: string; url?: string | null }
+        const clean = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+        const parsed = JSON.parse(clean) as { response?: string; url?: string | null }
         response = stripMarkdown(applyPersonality(parsed.response ?? raw))
         strategyUrl = parsed.url ?? null
       } catch {
