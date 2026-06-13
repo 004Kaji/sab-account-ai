@@ -120,7 +120,8 @@ async function handleMessage(text: string, history: ConvHistory[] = []): Promise
           userMessage: text,
           maxTokens: 60,
         })
-        const parsed = JSON.parse(parseRaw.trim()) as { action: string; name?: string }
+        const cleanParsed = parseRaw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+        const parsed = JSON.parse(cleanParsed) as { action: string; name?: string }
         const res = await fetch(`${localUrl}/app`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-agent-secret': secret },
