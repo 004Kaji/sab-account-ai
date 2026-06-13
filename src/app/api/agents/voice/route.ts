@@ -235,6 +235,17 @@ Rules:
 - If multiple things need attention, prioritise by urgency
 - Sound like a smart co-founder, not a report
 
+Return ONLY valid JSON with two fields:
+- "response": your spoken answer (plain English, no markdown)
+- "url": the single most relevant page URL from this list, or null if none apply:
+  * https://sabaccountai.com/clients — if advice involves contacting or reviewing clients
+  * https://sabaccountai.com/invoices — if advice involves invoices or payments
+  * https://sabaccountai.com/blog — if advice involves content or blog posts
+  * https://sabaccountai.com/dashboard — if advice involves general metrics or dashboard
+  * https://sabaccountai.com/settings — if advice involves settings or billing
+  * https://sabaccountai.com/partners — if advice involves accountant partners or referrals
+  * null — if the advice is general and no specific page applies
+
 Master context: ${masterContext.slice(0, 800)}`
 
       const strategyMessage = [
@@ -245,7 +256,16 @@ Master context: ${masterContext.slice(0, 800)}`
       ].filter(Boolean).join('\n\n')
 
       const raw = await callFable5Strategy(strategyPrompt, strategyMessage)
-      const response = stripMarkdown(applyPersonality(raw))
+
+      let response = ''
+      let strategyUrl: string | null = null
+      try {
+        const parsed = JSON.parse(raw) as { response?: string; url?: string | null }
+        response = stripMarkdown(applyPersonality(parsed.response ?? raw))
+        strategyUrl = parsed.url ?? null
+      } catch {
+        response = stripMarkdown(applyPersonality(raw))
+      }
 
       const supabase = createServiceClient()
       await supabase.from('agent_conversations').insert({
@@ -265,7 +285,7 @@ Master context: ${masterContext.slice(0, 800)}`
         response,
         agentUsed: 'basnet',
         classification: 'STRATEGY',
-        url: `${appUrl}/dashboard/agent`,
+        url: strategyUrl,
         warning: null,
         topic: 'business strategy',
         is_complete: false,
