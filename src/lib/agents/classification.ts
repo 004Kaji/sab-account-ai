@@ -110,6 +110,10 @@ export const AGENT_KEYWORDS: Record<QuestionClass, string[]> = {
     'delete agent', 'remove agent', 'create agent', 'new agent called',
     'deploy code', 'ship this', 'push to github', 'deploy to vercel',
     'write code for', 'generate code', 'scaffold', 'create new',
+    'list what you built', 'show what you built', 'what have you built',
+    'list apps', 'list agents', 'show agents', 'show apps', 'what apps',
+    'what did you build', 'check all apps', 'show built', 'what did you make',
+    'delete the app', 'delete the game', 'delete the page', 'remove the app',
   ],
   AGENT_STATUS: [
     'did you send', 'have you sent', 'did spark send', 'did spark run',

@@ -45,6 +45,7 @@ WEBHOOK_SECRET  = os.environ.get("AGENT_WEBHOOK_SECRET", "")
 ELEVENLABS_KEY  = os.environ.get("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE = os.environ.get("ELEVENLABS_VOICE_ID", "")
 OPENAI_KEY      = os.environ.get("OPENAI_API_KEY", "")
+LOCAL_AGENT_URL = os.environ.get("LOCAL_AGENT_URL", "http://127.0.0.1:3099")
 
 # Colours
 CYAN    = "\033[96m"
@@ -203,6 +204,100 @@ def fix_names(text: str) -> str:
     return text
 
 
+# ── Local Mac agent ───────────────────────────────────────────────────
+# Called directly (no Vercel hop) for file/computer/system questions.
+# Falls back to Vercel voice route if local agent is down.
+
+LOCAL_QUERY_WORDS = [
+    "my files", "my folder", "my desktop", "my documents", "my downloads",
+    "open file", "read file", "check file", "find file",
+    "my computer", "my mac", "computer access", "file access",
+    "disk space", "storage space", "ram", "memory", "cpu", "battery",
+    "running apps", "running processes", "system info",
+    "do you have access", "can you access", "have you got access",
+    "show me my", "what's on my",
+]
+
+BUILD_QUERY_WORDS = [
+    "build me", "build a", "create a website", "make a website",
+    "create a landing page", "make a landing page",
+    "create a game", "make a game", "build a game",
+    "create an app", "make an app", "build an app",
+    "write a script", "create a new agent", "make a new agent",
+    "build an agent", "add an agent", "delete agent", "remove agent",
+    "new agent called", "generate code", "write code for",
+    "list what you built", "show what you built", "what have you built",
+    "list apps", "list agents", "show agents", "show apps", "what apps",
+    "delete the app", "delete the game", "delete the page", "remove the app",
+]
+
+EXEC_QUERY_WORDS = [
+    "run command", "run script", "run this", "execute", "run git",
+    "git status", "git pull", "git push", "git commit", "git log",
+    "npm install", "npm run", "npx ", "run npm",
+    "list files", "ls ", "find files", "kill process",
+    "restart server", "run python", "run node",
+]
+
+APP_QUERY_WORDS = [
+    "open vs code", "open vscode", "open xcode", "open terminal",
+    "open finder", "open safari", "open chrome", "open slack",
+    "open zoom", "open spotify", "open notes", "open calendar",
+    "open messages", "open mail", "open microsoft word", "open word",
+    "close vs code", "close chrome", "close slack", "close app",
+    "quit app", "what apps are open", "what is running", "running apps",
+]
+
+CODE_QUERY_WORDS = [
+    "check code", "check the code", "check codes",
+    "review code", "review the code",
+    "sab account ai code", "sab account code",
+    "any errors", "any bugs", "typescript error", "build error",
+    "check the project", "scan the project",
+    "commit", "commit and deploy", "deploy to vercel",
+    "fix the error", "fix errors", "fix the bug",
+    "run audit", "full audit", "audit the code",
+    "check sentry", "any runtime errors",
+    "git status", "git log",
+]
+
+def is_local_query(question: str) -> bool:
+    q = question.lower()
+    return any(w in q for w in LOCAL_QUERY_WORDS)
+
+def is_code_query(question: str) -> bool:
+    q = question.lower()
+    return any(w in q for w in CODE_QUERY_WORDS)
+
+def is_build_query(question: str) -> bool:
+    q = question.lower()
+    return any(w in q for w in BUILD_QUERY_WORDS)
+
+def is_exec_query(question: str) -> bool:
+    q = question.lower()
+    return any(w in q for w in EXEC_QUERY_WORDS)
+
+def is_app_query(question: str) -> bool:
+    q = question.lower()
+    return any(w in q for w in APP_QUERY_WORDS)
+
+async def call_local_agent(question: str, endpoint: str = "/ask") -> str | None:
+    """Call the local Mac agent directly — no Vercel hop needed."""
+    try:
+        async with httpx.AsyncClient(timeout=120) as c:
+            r = await c.post(
+                f"{LOCAL_AGENT_URL}{endpoint}",
+                headers={"x-agent-secret": WEBHOOK_SECRET} if WEBHOOK_SECRET else {},
+                json={"question": question},
+            )
+            if r.status_code == 200:
+                data = r.json()
+                return data.get("answer") or data.get("response")
+    except Exception:
+        pass
+    return None
+
+
 # ── API calls ─────────────────────────────────────────────────────────
 
 async def call_voice(question: str, history: list, current_topic: str | None) -> dict:
@@ -282,6 +377,7 @@ async def main():
     history: list       = []
     current_topic: str | None = None
     last_url: str | None = None
+    last_built_url: str | None = None
 
     while True:
         try:
@@ -390,6 +486,137 @@ async def main():
                         await speak(response)
                         history.append({"q": question, "a": response})
                 continue
+
+            # ── "Open that/it in browser" follow-up ──────────────────────
+            q_lower = question.lower()
+            if any(p in q_lower for p in ["open that", "open it", "open in browser", "show me that", "show that"]):
+                target_url = last_built_url or last_url
+                if target_url:
+                    open_chrome(target_url)
+                    response = f"Opening {target_url}."
+                    print(f"\n  {GREEN}[APP]{RESET}")
+                    print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+                    await speak(response)
+                    history.append({"q": question, "a": response})
+                    continue
+                # No URL to open — fall through to normal routing
+
+            # ── Build / create (websites, apps, games, agents) ────────────
+            if is_build_query(question):
+                print(f"{DIM}[Building...]{RESET}")
+                await speak("On it. Give me a moment.")
+                try:
+                    async with httpx.AsyncClient(timeout=300) as c:
+                        r = await c.post(
+                            f"{LOCAL_AGENT_URL}/build",
+                            headers={"x-agent-secret": WEBHOOK_SECRET} if WEBHOOK_SECRET else {},
+                            json={"task": question},
+                        )
+                        d = r.json()
+                        response = d.get("answer") or "Build complete."
+                        url_built = d.get("url")
+                except Exception as e:
+                    response = f"Build failed: {e}"
+                    url_built = None
+                if url_built:
+                    last_built_url = url_built
+                else:
+                    # local file — build a localhost URL
+                    file_path = d.get("filePath", "")
+                    if file_path.startswith("public/"):
+                        last_built_url = f"http://localhost:3000/{file_path.replace('public/', '')}"
+                    else:
+                        last_built_url = None
+                print(f"\n  {GREEN}[BUILD]{RESET}")
+                print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+                await speak(response)
+                if last_built_url:
+                    open_chrome(last_built_url)
+                    await speak("Opening in browser now.")
+                history.append({"q": question, "a": response})
+                continue
+
+            # ── Shell command execution ───────────────────────────────────
+            elif is_exec_query(question):
+                print(f"{DIM}[Running command...]{RESET}")
+                try:
+                    async with httpx.AsyncClient(timeout=60) as c:
+                        r = await c.post(
+                            f"{LOCAL_AGENT_URL}/exec",
+                            headers={"x-agent-secret": WEBHOOK_SECRET} if WEBHOOK_SECRET else {},
+                            json={"command": question,
+                                  "cwd": str(Path.home() / "Desktop" / "sab-account-ai-project")},
+                        )
+                        d = r.json()
+                        out = (d.get("stdout") or d.get("stderr") or "(no output)").strip()
+                        response = out[:500] + ("..." if len(out) > 500 else "")
+                        if d.get("exitCode", 0) != 0:
+                            response = f"Exit code {d['exitCode']}. " + response
+                except Exception as e:
+                    response = f"Command failed: {e}"
+                print(f"\n  {GREEN}[EXEC]{RESET}")
+                print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+                await speak(response[:200])
+                history.append({"q": question, "a": response})
+                continue
+
+            # ── App open/close ────────────────────────────────────────────
+            elif is_app_query(question):
+                print(f"{DIM}[App control...]{RESET}")
+                q_lower = question.lower()
+                if any(w in q_lower for w in ["what apps", "what is running", "running apps"]):
+                    action_body = {"action": "list"}
+                elif any(w in q_lower for w in ["close", "quit"]):
+                    name = question.replace("close", "").replace("quit", "").replace("app", "").strip()
+                    action_body = {"action": "close", "name": name}
+                else:
+                    name = re.sub(r"(?i)open\s+", "", question).strip()
+                    action_body = {"action": "open", "name": name}
+                try:
+                    async with httpx.AsyncClient(timeout=15) as c:
+                        r = await c.post(
+                            f"{LOCAL_AGENT_URL}/app",
+                            headers={"x-agent-secret": WEBHOOK_SECRET} if WEBHOOK_SECRET else {},
+                            json=action_body,
+                        )
+                        d = r.json()
+                        if d.get("apps"):
+                            response = "Running: " + ", ".join(d["apps"][:10])
+                        elif d.get("opened"):
+                            response = f"Opened {d['opened']}."
+                        elif d.get("closed"):
+                            response = f"Closed {d['closed']}."
+                        else:
+                            response = "Done."
+                except Exception as e:
+                    response = f"App control failed: {e}"
+                print(f"\n  {GREEN}[APP]{RESET}")
+                print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+                await speak(response)
+                history.append({"q": question, "a": response})
+                continue
+
+            # ── Local Mac agent (file/computer/code queries bypass Vercel) ──
+            elif is_code_query(question):
+                print(f"{DIM}[Asking Flux (local)...]{RESET}")
+                local_answer = await call_local_agent(question, "/technical")
+                if local_answer:
+                    print(f"\n  {GREEN}[FLUX — LOCAL]{RESET}")
+                    print(f"\n{GREEN}{BOLD}Basnet:{RESET} {local_answer}\n")
+                    await speak(local_answer)
+                    history.append({"q": question, "a": local_answer})
+                    continue
+                print(f"{DIM}[Local Flux unavailable — falling back to Vercel]{RESET}")
+
+            if is_local_query(question):
+                print(f"{DIM}[Asking local agent...]{RESET}")
+                local_answer = await call_local_agent(question)
+                if local_answer:
+                    print(f"\n{GREEN}{BOLD}Basnet:{RESET} {local_answer}\n")
+                    await speak(local_answer)
+                    history.append({"q": question, "a": local_answer})
+                    continue
+                print(f"{DIM}[Local agent unavailable — falling back to Basnet]{RESET}")
 
             # ── Standard voice route ─────────────────────────────────────
             print(f"{DIM}[Asking Basnet...]{RESET}")

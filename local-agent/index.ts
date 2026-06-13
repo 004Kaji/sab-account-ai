@@ -1,7 +1,9 @@
 import './env' // must be first — loads .env.local before any agent module initializes
 import http from 'http'
 import os from 'os'
-import { listDirectory, readFile, writeFile, fileExists, getSystemInfo } from './mac-toolkit'
+import { listDirectory, readFile, writeFile, fileExists, getSystemInfo, execCommand, openApp, openUrl, closeApp, listRunningApps } from './mac-toolkit'
+import { runBrowserTask, extractPageText, resolveTaskToUrl } from './browser-toolkit'
+import { runBuildTask, listBuiltItems, deleteBuiltItem } from './build-toolkit'
 import { handlePersonal } from './agents/personal'
 import { handleMarketing } from './agents/marketing'
 import { handleIntel } from './agents/intel'
@@ -136,6 +138,60 @@ const server = http.createServer(async (req, res) => {
         nextAction: out.nextAction,
       }) + '\n')
       res.end()
+
+    // ── Shell command execution ───────────────────────────────────────
+    } else if (req.url === '/exec') {
+      const { command, cwd } = body as { command?: string; cwd?: string }
+      if (!command) throw new Error('command required')
+      const result = execCommand(command, cwd)
+      json(res, 200, { success: true, ...result })
+
+    // ── App control ───────────────────────────────────────────────────
+    } else if (req.url === '/app') {
+      const { action, name, url } = body as { action?: string; name?: string; url?: string }
+      if (!action) throw new Error('action required')
+      if (action === 'open' && name)  { openApp(name);  json(res, 200, { success: true, opened: name }) }
+      else if (action === 'open' && url)  { openUrl(url);  json(res, 200, { success: true, opened: url }) }
+      else if (action === 'close' && name) { closeApp(name); json(res, 200, { success: true, closed: name }) }
+      else if (action === 'list')          { json(res, 200, { success: true, apps: listRunningApps() }) }
+      else throw new Error('action must be open/close/list + name or url')
+
+    // ── Code build + deploy ───────────────────────────────────────────
+    } else if (req.url === '/build') {
+      const { task } = body as { task?: string }
+      if (!task) throw new Error('task required')
+      const result = await runBuildTask(task)
+      json(res, 200, { success: true, ...result })
+
+    } else if (req.url === '/build/list') {
+      json(res, 200, { success: true, items: listBuiltItems() })
+
+    } else if (req.url === '/build/delete') {
+      const { name } = body as { name?: string }
+      if (!name) throw new Error('name required')
+      const result = deleteBuiltItem(name)
+      json(res, 200, { success: true, ...result })
+
+    // ── Browser automation ────────────────────────────────────────────
+    } else if (req.url === '/browse') {
+      const { task, url } = body as { task?: string; url?: string }
+      if (!task) throw new Error('task required')
+      const startUrl = url ?? resolveTaskToUrl(task)
+      const result = await runBrowserTask(task, startUrl)
+      json(res, 200, { success: true, answer: result })
+
+    // ── Routed single-agent dispatch (used by n8n orchestrator) ──────
+    } else if (req.url === '/route') {
+      const { question: q, route: r } = body as { question?: string; route?: string }
+      if (!q) throw new Error('question required')
+      const noop = () => {}
+      let result: { answer: string; url?: string; webSearchUsed?: boolean }
+      if      (r === 'technical')    result = await handleTechnical(q, noop)
+      else if (r === 'health')       result = await handleHealth(q, noop)
+      else if (r === 'intel')        result = await handleIntel(q, noop)
+      else if (r === 'marketing')    result = await handleMarketing(q, noop)
+      else                           result = await handlePersonal(q, noop, filePaths)
+      json(res, 200, { success: true, answer: result.answer, url: result.url })
 
     // ── Agent routes (non-streaming fallback) ─────────────────────────
     } else if (req.url === '/ask') {
