@@ -3,7 +3,7 @@ import path from 'path'
 import Stripe from 'stripe'
 import { calculatePAYG } from '@/lib/ato'
 import { createServiceClient } from '@/lib/supabase'
-import { callClaude, sendAlert, logAgentAction } from '@/lib/agents/utils'
+import { callClaude, sendAlert, sendTelegramDirect, logAgentAction } from '@/lib/agents/utils'
 import { BASNET_PERSONALITY } from '@/lib/agents/personality'
 
 // ── WatcherReport ──────────────────────────────────────────────────────
@@ -320,7 +320,7 @@ export async function evaluateAndAlert(
   return alertsSent
 }
 
-// ── Proactive insight (once per hour) ─────────────────────────────────
+// ── Proactive insight (twice per day, Telegram only) ──────────────────
 
 export async function proactiveInsight(report: WatcherReport): Promise<void> {
   try {
@@ -339,7 +339,14 @@ export async function proactiveInsight(report: WatcherReport): Promise<void> {
     })
 
     if (insight.trim().toUpperCase() === 'NULL') return
-    await sendAlert('Basnet insight', insight, 'info', 'watcher')
+
+    // Telegram only — no email
+    const chatId = process.env.TELEGRAM_CHAT_ID
+    if (chatId) await sendTelegramDirect(chatId, `💡 Basnet: ${insight}`)
+
+    // Save with a stable key so getLastProactiveInsightTime can find it
+    const supabase = createServiceClient()
+    await supabase.from('alert_history').insert({ alert_key: 'basnet_proactive_insight', subject: 'Basnet insight', urgency: 'info' })
   } catch { /* non-fatal */ }
 }
 
@@ -375,7 +382,7 @@ export async function getLastProactiveInsightTime(): Promise<Date | null> {
   try {
     const supabase = createServiceClient()
     const { data } = await supabase.from('alert_history').select('created_at')
-      .eq('alert_key', 'basnet_insight').order('created_at', { ascending: false }).limit(1).maybeSingle()
+      .eq('alert_key', 'basnet_proactive_insight').order('created_at', { ascending: false }).limit(1).maybeSingle()
     return data ? new Date(data.created_at as string) : null
   } catch { return null }
 }

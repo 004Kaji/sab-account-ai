@@ -33,10 +33,10 @@ export async function POST(req: NextRequest) {
     // Alert only on changes vs previous
     const alertsSent = await evaluateAndAlert(report, previous)
 
-    // Once per hour: generate proactive insight
+    // Twice per day: generate proactive insight (12-hour gap)
     const lastInsight = await getLastProactiveInsightTime()
-    const hourAgo = new Date(Date.now() - 60 * 60 * 1000)
-    if (!lastInsight || lastInsight < hourAgo) {
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000)
+    if (!lastInsight || lastInsight < twelveHoursAgo) {
       await proactiveInsight(report).catch(() => null)
     }
 
