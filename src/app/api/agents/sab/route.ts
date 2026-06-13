@@ -8,7 +8,7 @@ import {
 } from '@/lib/agents/toolkits/sab-tech-toolkit'
 import { BASNET_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 import { runFlux, fluxDiagnose } from '@/lib/agents/sub/flux'
-import { sparkWeeklyBrief, sparkSendAccountantEmails, sparkWriteBlogPost, sparkDraftSocialPosts, sparkFindBusinessProspects } from '@/lib/agents/sub/spark'
+import { sparkWeeklyBrief, sparkSendAccountantEmails, sparkSendBusinessEmails, sparkFindBusinesses, sparkFindAccountants, sparkWriteBlogPost, sparkDraftSocialPosts, sparkFindBusinessProspects } from '@/lib/agents/sub/spark'
 import { runScout } from '@/lib/agents/sub/scout'
 import { runLift } from '@/lib/agents/sub/lift'
 import { atlasWeeklyIntel, atlasComplianceWatch } from '@/lib/agents/sub/atlas'
@@ -41,6 +41,23 @@ export async function POST(req: NextRequest) {
       const report = await runFlux()
       await logAgentAction({ agentName: 'sab', triggerType: trigger, outcome: report.overall, durationMs: Date.now() - start })
       return NextResponse.json({ success: true, report })
+    }
+
+    // ── TRIGGER: daily_outreach — 2 accountant + 2 business emails ────
+    if (trigger === 'daily_outreach') {
+      const [accountants, businesses] = await Promise.allSettled([
+        sparkSendAccountantEmails(),
+        sparkSendBusinessEmails(),
+      ])
+      const a = accountants.status === 'fulfilled' ? accountants.value : { sent: 0, names: [] }
+      const b = businesses.status  === 'fulfilled' ? businesses.value  : { sent: 0, names: [] }
+      const totalSent = a.sent + b.sent
+      await logAgentAction({
+        agentName: 'sab', triggerType: trigger,
+        actionsTaken: { accountantsSent: a.sent, businessesSent: b.sent, names: [...a.names, ...b.names] },
+        durationMs: Date.now() - start,
+      })
+      return NextResponse.json({ success: true, accountants: a, businesses: b, totalSent })
     }
 
     // ── TRIGGER: marketing_run ─────────────────────────────────────────
@@ -83,6 +100,26 @@ export async function POST(req: NextRequest) {
         })
         await logAgentAction({ agentName: 'sab', triggerType: trigger, decision: result.post.title, durationMs: Date.now() - start })
         return NextResponse.json({ success: true, slug: result.post.slug, title: result.post.title, saved: result.saved, post: result.post })
+      }
+
+      if (marketingTrigger === 'business_emails') {
+        const result = await sparkSendBusinessEmails()
+        await logAgentAction({ agentName: 'sab', triggerType: trigger, actionsTaken: { sent: result.sent }, durationMs: Date.now() - start })
+        return NextResponse.json({ success: true, ...result })
+      }
+
+      if (marketingTrigger === 'find_businesses') {
+        const location = (body.data?.location as string | undefined) ?? 'Darwin, Australia'
+        const result = await sparkFindBusinesses(location)
+        await logAgentAction({ agentName: 'sab', triggerType: trigger, actionsTaken: { found: result.found, added: result.added }, durationMs: Date.now() - start })
+        return NextResponse.json({ success: true, ...result })
+      }
+
+      if (marketingTrigger === 'find_accountants') {
+        const location = (body.data?.location as string | undefined) ?? 'Darwin, Australia'
+        const result = await sparkFindAccountants(location)
+        await logAgentAction({ agentName: 'sab', triggerType: trigger, actionsTaken: { found: result.found, added: result.added }, durationMs: Date.now() - start })
+        return NextResponse.json({ success: true, ...result })
       }
 
       if (marketingTrigger === 'find_prospects') {
