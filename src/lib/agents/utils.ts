@@ -488,6 +488,68 @@ export function getBaseUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 }
 
+// ── 11b. Spark email status — answers "did you send emails?" ──────────
+// Checks agent_logs for last Spark run + accountant/business outreach tables.
+
+export async function getSparkEmailStatus(): Promise<string> {
+  try {
+    const supabase = createServiceClient()
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+    const [accR, bizR, logR] = await Promise.allSettled([
+      supabase.from('accountant_outreach')
+        .select('name, emailed_at')
+        .not('emailed_at', 'is', null)
+        .gte('emailed_at', since)
+        .order('emailed_at', { ascending: false })
+        .limit(5),
+      supabase.from('business_outreach')
+        .select('name, emailed_at')
+        .not('emailed_at', 'is', null)
+        .gte('emailed_at', since)
+        .order('emailed_at', { ascending: false })
+        .limit(5),
+      supabase.from('agent_logs')
+        .select('created_at, actions_taken')
+        .eq('agent_name', 'cron')
+        .eq('trigger_type', 'spark_weekly')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
+
+    const accountants = accR.status === 'fulfilled' ? (accR.value.data ?? []) : []
+    const businesses  = bizR.status === 'fulfilled' ? (bizR.value.data ?? []) : []
+    const lastSparkRun = logR.status === 'fulfilled' ? logR.value.data : null
+
+    const fmt = (d: string) => new Date(d).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })
+
+    const parts: string[] = []
+
+    if (accountants.length > 0) {
+      const names = accountants.map((a: { name: string; emailed_at: string }) => `${a.name} (${fmt(a.emailed_at)})`).join(', ')
+      parts.push(`Accountant emails sent this week: ${names}`)
+    } else {
+      parts.push('No accountant emails sent in the last 7 days')
+    }
+
+    if (businesses.length > 0) {
+      const names = businesses.map((b: { name: string; emailed_at: string }) => `${b.name} (${fmt(b.emailed_at)})`).join(', ')
+      parts.push(`Business emails sent this week: ${names}`)
+    } else {
+      parts.push('No business emails sent in the last 7 days')
+    }
+
+    if (lastSparkRun) {
+      parts.push(`Last Spark cron ran: ${fmt(lastSparkRun.created_at)}`)
+    }
+
+    return parts.join('. ')
+  } catch {
+    return 'Could not check email logs right now'
+  }
+}
+
 // ── 12. Agentic tool-use loop ──────────────────────────────────────────
 // Claude calls tools, sees results, decides next step — up to maxIterations.
 

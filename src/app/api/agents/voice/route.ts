@@ -14,14 +14,16 @@ import { sparkFindBusinessProspects } from '@/lib/agents/sub/spark'
 import { getWorldState, getRecentSignals } from '@/lib/agents/world-state'
 
 import { classifyQuestion } from '@/lib/agents/classification'
+import { getSparkEmailStatus } from '@/lib/agents/utils'
 
 type ConversationRow = { question: string; answer: string; created_at: string }
 type HistoryEntry = { q: string; a: string }
 
 // Map shared classes to voice route handling groups
-function classify(question: string): 'PERSONAL' | 'MAC' | 'ENGINEERING' | 'USER_HEALTH' | 'MARKET_INTEL' | 'STRATEGY' | 'GENERAL' {
+function classify(question: string): 'PERSONAL' | 'MAC' | 'ENGINEERING' | 'USER_HEALTH' | 'MARKET_INTEL' | 'STRATEGY' | 'AGENT_STATUS' | 'GENERAL' {
   const cls = classifyQuestion(question)
   if (cls === 'MAC')                                   return 'MAC'
+  if (cls === 'AGENT_STATUS')                          return 'AGENT_STATUS'
   if (cls === 'STRATEGY')                              return 'STRATEGY'
   if (cls === 'PERSONAL')                              return 'PERSONAL'
   if (cls === 'SAB_PRODUCT' || cls === 'QUALITY')      return 'ENGINEERING'
@@ -189,6 +191,28 @@ export async function POST(req: NextRequest) {
         topic:           meta.topic,
         is_complete:     meta.isComplete && history.length >= 2,
         next_suggestion: meta.nextSuggestion,
+      })
+    }
+
+    // ── AGENT_STATUS: check logs and answer "did you send/run X?" ────────
+    if (classification === 'AGENT_STATUS') {
+      const status = await getSparkEmailStatus()
+      const response = stripMarkdown(applyPersonality(
+        await callClaude({
+          systemPrompt: `${VOICE_PERSONALITY}\nAnswer in 2 sentences max. Plain English, spoken out loud. Use the log data to give a direct factual answer.`,
+          userMessage: `Log data: ${status}\n\nSanjog's question: ${question}`,
+          maxTokens: 120,
+        })
+      ))
+      await logAgentAction({
+        agentName: 'voice', triggerType: mode,
+        inputContext: { question, classification: 'AGENT_STATUS' },
+        decision: 'spark_status', outcome: 'answered', durationMs: Date.now() - start,
+      })
+      return NextResponse.json({
+        response, agentUsed: 'spark', classification,
+        url: null, warning: null, topic: 'agent status',
+        is_complete: true, next_suggestion: null,
       })
     }
 

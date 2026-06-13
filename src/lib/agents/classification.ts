@@ -10,6 +10,7 @@ export type QuestionClass =
   | 'PERSONAL'
   | 'MAC'
   | 'STRATEGY'
+  | 'AGENT_STATUS'
   | 'GENERAL'
 
 export const AGENT_KEYWORDS: Record<QuestionClass, string[]> = {
@@ -72,12 +73,20 @@ export const AGENT_KEYWORDS: Record<QuestionClass, string[]> = {
     'how can i grow', 'how do i grow', 'how to grow',
     'differentiate', 'stand out', 'unique', 'positioning',
   ],
+  AGENT_STATUS: [
+    'did you send', 'have you sent', 'did spark send', 'did spark run',
+    'did you run', 'have you run', 'did basnet', 'did the agent',
+    'did atlas run', 'did lift run', 'did flux run', 'did scout run',
+    'did you email', 'how many emails', 'emails sent', 'emails you sent',
+    'what did you do', 'what have you done', 'what did spark',
+    'when did you last', 'last time you', 'did you check',
+  ],
   GENERAL: [],
 }
 
-// STRATEGY checked first — multi-signal questions beat single-agent routing
+// AGENT_STATUS and STRATEGY checked first — beats all other routing
 const PRIORITY_ORDER: QuestionClass[] = [
-  'MAC', 'STRATEGY', 'QUALITY', 'RETENTION', 'MARKET', 'SAB_PRODUCT', 'SAB_MARKETING', 'PERSONAL',
+  'MAC', 'AGENT_STATUS', 'STRATEGY', 'QUALITY', 'RETENTION', 'MARKET', 'SAB_PRODUCT', 'SAB_MARKETING', 'PERSONAL',
 ]
 
 export function classifyQuestion(question: string): QuestionClass {
