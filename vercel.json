@@ -33,6 +33,10 @@
       "schedule": "0 21 * * *"
     },
     {
+      "path": "/api/cron/daily-outreach",
+      "schedule": "0 21 * * *"
+    },
+    {
       "path": "/api/cron/watch",
       "schedule": "0 13 * * *"
     }
