@@ -34,9 +34,9 @@ export async function GET(req: NextRequest) {
   const sentSet = new Set((sent ?? []).map((r) => `${r.user_id}:${r.email_type}`))
 
   const SCHEDULE: { type: 'day1' | 'day3' | 'day7'; minDays: number; maxDays: number }[] = [
-    { type: 'day1', minDays: 0, maxDays: 2 },
-    { type: 'day3', minDays: 2, maxDays: 5 },
-    { type: 'day7', minDays: 6, maxDays: 10 },
+    { type: 'day1', minDays: 0, maxDays: 1 },
+    { type: 'day3', minDays: 2, maxDays: 4 },
+    { type: 'day7', minDays: 5, maxDays: 9 },
   ]
 
   let sent_count = 0

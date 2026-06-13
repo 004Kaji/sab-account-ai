@@ -365,9 +365,7 @@ export async function atlasResearch(query: string): Promise<string> {
 
 async function autoTriggerSpark(brief: AtlasSparkBrief): Promise<void> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : 'https://sabaccountai.com'
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
 
     // Fire both triggers without awaiting — separate Vercel function invocations
     fetch(`${baseUrl}/api/agents/sab`, {
@@ -382,7 +380,7 @@ async function autoTriggerSpark(brief: AtlasSparkBrief): Promise<void> {
           atlasBrief: true,
         },
       }),
-    }).catch(() => {})
+    }).catch((err) => { console.error('[atlas] auto-trigger blog post failed:', err) })
 
     fetch(`${baseUrl}/api/agents/sab`, {
       method: 'POST',
@@ -396,7 +394,7 @@ async function autoTriggerSpark(brief: AtlasSparkBrief): Promise<void> {
           atlasBrief: true,
         },
       }),
-    }).catch(() => {})
+    }).catch((err) => { console.error('[atlas] auto-trigger social posts failed:', err) })
 
     await sendAlert(
       'Atlas auto-triggered Spark',

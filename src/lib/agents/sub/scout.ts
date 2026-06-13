@@ -127,9 +127,8 @@ async function testStripeWebhookHealth(): Promise<ScoutTestResult> {
   try {
     const supabase = createServiceClient()
     const { data } = await supabase
-      .from('agent_logs')
+      .from('stripe_events')
       .select('created_at')
-      .or('trigger_type.ilike.%stripe%,trigger_type.ilike.%webhook%')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()

@@ -374,14 +374,17 @@ export async function POST(req: NextRequest) {
       const payload  = body.payload ?? {}
       const eventType = payload.type as string | undefined
 
+      // Stripe event data lives at payload.data.object (standard webhook shape)
+      const obj = (payload.data as Record<string, unknown> | undefined)?.object as Record<string, unknown> | undefined ?? payload
       if (eventType === 'checkout.session.completed') {
-        const plan = (payload.plan as string | undefined) ?? 'unknown'
-        await sendAlert(`New paid user — ${plan}`, `User upgraded to ${plan}. MRR is growing.`, 'info', 'basnet')
+        const plan = (obj.metadata as Record<string,string> | undefined)?.plan ?? (obj.plan as string | undefined) ?? 'unknown'
+        const email = (obj.customer_email as string | undefined) ?? (obj.customer_details as Record<string,string> | undefined)?.email ?? 'unknown'
+        await sendAlert(`New paid user — ${plan}`, `${email} upgraded to ${plan}. MRR is growing.`, 'info', 'basnet')
       } else if (eventType === 'invoice.payment_failed') {
-        const email = (payload.customer_email as string | undefined) ?? 'unknown'
+        const email = (obj.customer_email as string | undefined) ?? (obj.billing_details as Record<string,string> | undefined)?.email ?? 'unknown'
         await sendAlert(`Payment failed — ${email}`, `Failed payment for ${email}. Check Stripe for retry.`, 'urgent', 'basnet')
       } else if (eventType === 'customer.subscription.deleted') {
-        const plan = (payload.plan as string | undefined) ?? 'unknown'
+        const plan = (obj.plan as Record<string,string> | undefined)?.nickname ?? (obj.metadata as Record<string,string> | undefined)?.plan ?? 'unknown'
         await sendAlert(`User churned — ${plan}`, `${plan} subscription cancelled. Check Stripe for reason.`, 'warning', 'basnet')
       }
 

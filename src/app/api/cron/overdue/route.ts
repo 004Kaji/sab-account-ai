@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
       })
       await supabase.from('invoices').update({ overdue_reminder_sent_at: new Date().toISOString() }).eq('id', inv.id)
       remindersQueued++
-    } catch { /* non-fatal — continue to next invoice */ }
+    } catch (err) { console.error('[overdue] reminder failed for invoice', inv.id, err) }
   }
 
   return NextResponse.json({
