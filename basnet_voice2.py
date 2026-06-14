@@ -136,7 +136,8 @@ async def transcribe(audio_path: str) -> str:
             client = openai.OpenAI(api_key=OPENAI_KEY)
             with open(audio_path, "rb") as f:
                 result = client.audio.transcriptions.create(
-                    model="whisper-1", file=f, language="en"
+                    model="whisper-1", file=f, language="en",
+                    prompt="SAB Account AI, Basnet, Xero, MYOB, Reckon, QuickBooks, Supabase, Vercel, Stripe, GST, ABN, ATO, Spark, Flux, Atlas"
                 )
             return result.text.strip()
         except Exception as e:
@@ -196,12 +197,25 @@ NAME_FIXES = {
     "spark": "Spark", "sparks": "Spark",
     "versa": "Vercel", "vessel": "Vercel",
     "chord": "code", "cord": "code",
+    # Accounting software names Whisper often mishears
+    "jaro": "Xero", "gyro": "Xero", "hero accounting": "Xero accounting",
+    "zero alternative": "Xero alternative", "zero accounting": "Xero accounting",
+    "myob": "MYOB", "my ob": "MYOB",
 }
 
 def fix_names(text: str) -> str:
     for wrong, right in NAME_FIXES.items():
         text = re.sub(rf"\b{wrong}\b", right, text, flags=re.IGNORECASE)
     return text
+
+
+def extract_blog_topic(question: str) -> str | None:
+    """Extract topic from phrases like 'write blog post on Xero alternatives'."""
+    m = re.search(
+        r"(?:write|spark|generate|new|create)\s+(?:a\s+)?blog\s+(?:post\s+)?(?:on|about|regarding|for|called)\s+(.+)",
+        question, re.IGNORECASE,
+    )
+    return m.group(1).strip() if m else None
 
 
 # ── Local Mac agent ───────────────────────────────────────────────────
@@ -300,22 +314,45 @@ async def call_local_agent(question: str, endpoint: str = "/ask") -> str | None:
 
 # ── API calls ─────────────────────────────────────────────────────────
 
+def _thinking_label(question: str) -> str:
+    """Return a short label shown while waiting for Basnet to respond."""
+    q = question.lower()
+    if any(w in q for w in ["strategy", "what should i", "what do i focus", "big picture", "advice"]):
+        return "Thinking strategically..."
+    if any(w in q for w in ["code", "error", "bug", "check code", "typescript"]):
+        return "Checking code..."
+    if any(w in q for w in ["user", "churn", "mrr", "revenue", "paid"]):
+        return "Checking user health..."
+    if any(w in q for w in ["blog", "social", "email", "marketing", "write"]):
+        return "Asking Spark..."
+    if any(w in q for w in ["competitor", "xero", "myob", "market", "ato update"]):
+        return "Asking Atlas..."
+    if any(w in q for w in ["did you", "have you", "what did", "emails sent"]):
+        return "Checking agent logs..."
+    if " and " in q and any(w in q for w in ["check", "write", "send", "run", "fix"]):
+        return "Breaking into tasks..."
+    return "Thinking..."
+
+
 async def call_voice(question: str, history: list, current_topic: str | None) -> dict:
     """Route question to /api/agents/voice — handles all classification internally."""
+    print(f"{DIM}[{_thinking_label(question)}]{RESET}", end="", flush=True)
     try:
-        async with httpx.AsyncClient(timeout=45) as c:
+        async with httpx.AsyncClient(timeout=60) as c:
             r = await c.post(
                 f"{VERCEL_URL}/api/agents/voice",
                 json={
                     "secret":        WEBHOOK_SECRET,
                     "input":         question,
                     "mode":          "voice",
-                    "history":       history[-5:],
+                    "history":       history[-10:],
                     "current_topic": current_topic,
                 },
             )
+            print()  # newline after thinking label
             return r.json()
     except Exception as e:
+        print()
         return {"response": f"Basnet unreachable: {e}", "warning": None,
                 "topic": current_topic, "is_complete": False, "next_suggestion": None}
 
@@ -409,8 +446,11 @@ async def main():
                 print(f"{CYAN}[TRIGGER → {label}]{RESET}")
 
                 if is_blog:
+                    blog_topic = extract_blog_topic(question)
                     await speak("On it. Writing the post now — give me a minute.")
                     body_sent = {**t_body, "secret": WEBHOOK_SECRET}
+                    if blog_topic:
+                        body_sent = {**body_sent, "data": {**(t_body.get("data") or {}), "topic": blog_topic}}
                     try:
                         async with httpx.AsyncClient(timeout=180) as _c:
                             _r = await _c.post(t_url, json=body_sent)
@@ -650,8 +690,8 @@ async def main():
             # Update state
             current_topic = topic
             history.append({"q": question, "a": response})
-            if len(history) > 6:
-                history = history[-6:]
+            if len(history) > 10:
+                history = history[-10:]
 
             # Offer to open URLs from Basnet
             if url and any(d in url for d in OPEN_DOMAINS):
