@@ -547,6 +547,231 @@ ${(ps.help_repayment as number) > 0 ? `<tr><td style="padding:6px 0;color:#57534
         return { topic, rules }
       }
 
+      // ── process_payroll ─────────────────────────────────────────
+      case 'process_payroll': {
+        const overrideStart = input.pay_period_start as string | undefined
+        const overrideEnd   = input.pay_period_end   as string | undefined
+        const filterIds     = (input.employee_ids as string[] | undefined) ?? []
+
+        const { data: biz } = await supabase
+          .from('business_profiles')
+          .select('business_name, abn, super_rate_new')
+          .eq('id', userId)
+          .single()
+
+        let query = supabase.from('employees').select('*').eq('user_id', userId).order('name')
+        if (filterIds.length > 0) query = query.in('id', filterIds)
+        const { data: employees } = await query
+
+        if (!employees || employees.length === 0) return { error: 'No employees found.' }
+
+        const todayStr = new Date().toISOString().slice(0, 10)
+        const results: Array<{
+          employee_name: string
+          employee_email: string | null
+          payslip_id: string
+          payslip_number: string
+          gross_pay: number
+          net_pay: number
+          super_sg: number
+          pay_period: string
+          error?: string
+        }> = []
+
+        for (const emp of employees) {
+          try {
+            const payCycleStr = (emp.pay_cycle as string | null) || 'fortnightly'
+            const payBasis    = (emp.pay_basis  as string | null) || 'salary'
+            const payCycle    = payCycleStr === 'weekly' ? 'weekly' : payCycleStr === 'monthly' ? 'monthly' : 'fortnightly'
+
+            // Compute gross pay
+            let grossPay: number
+            if (payBasis === 'hourly') {
+              const rate  = emp.hourly_rate   as number | null
+              const hours = emp.ordinary_hours as number | null
+              if (!rate || !hours) { results.push({ employee_name: emp.name as string, employee_email: emp.email as string | null, payslip_id: '', payslip_number: '', gross_pay: 0, net_pay: 0, super_sg: 0, pay_period: '', error: 'No hourly rate/hours on file — skipped' }); continue }
+              grossPay = Math.round(rate * hours * 100) / 100
+            } else {
+              const annual = emp.annual_salary as number | null
+              if (!annual) { results.push({ employee_name: emp.name as string, employee_email: emp.email as string | null, payslip_id: '', payslip_number: '', gross_pay: 0, net_pay: 0, super_sg: 0, pay_period: '', error: 'No annual salary on file — skipped' }); continue }
+              const divisor = payCycle === 'weekly' ? 52 : payCycle === 'monthly' ? 12 : 26
+              grossPay = Math.round((annual / divisor) * 100) / 100
+            }
+
+            // Compute pay period
+            let periodEnd   = overrideEnd   || todayStr
+            let periodStart = overrideStart
+            if (!periodStart) {
+              const endDate = new Date(periodEnd)
+              if (payCycle === 'weekly') {
+                const s = new Date(endDate); s.setDate(s.getDate() - 6); periodStart = s.toISOString().slice(0, 10)
+              } else if (payCycle === 'monthly') {
+                periodStart = new Date(endDate.getFullYear(), endDate.getMonth(), 1).toISOString().slice(0, 10)
+                periodEnd   = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0).toISOString().slice(0, 10)
+              } else {
+                const s = new Date(endDate); s.setDate(s.getDate() - 13); periodStart = s.toISOString().slice(0, 10)
+              }
+            }
+
+            const annualSalary = (emp.annual_salary as number | null) ?? (grossPay * (payCycle === 'weekly' ? 52 : payCycle === 'monthly' ? 12 : 26))
+            const residencyStatus = (emp.residency_status as 'citizen_pr' | 'student' | 'temp_work' | 'whm' | 'partner' | 'other_temp') ?? 'citizen_pr'
+            const useNewSuperRate = (biz?.super_rate_new as boolean | null) ?? true
+
+            const numbers = calculatePayslip({
+              annualSalary,
+              salarySacrifice:       0,
+              overtimeHours:         0,
+              overtimeRate:          0,
+              payCycle,
+              claimingThreshold:     true,
+              hasHELP:               false,
+              medicareLevyExemption: false,
+              useNewSuperRate,
+              residencyStatus,
+            })
+
+            const payslipNumber = await nextPayslipNumber(userId, supabase)
+
+            const { data: ps, error: psErr } = await supabase.from('payslips').insert({
+              user_id:          userId,
+              payslip_number:   payslipNumber,
+              employee_name:    emp.name as string,
+              employment_type:  (emp.employment_type as string) || 'casual',
+              pay_cycle:        payCycle,
+              super_fund_name:  (emp.super_fund_name  as string | null) ?? null,
+              member_number:    (emp.member_number    as string | null) ?? null,
+              employer_name:    (biz?.business_name   as string) || '',
+              employer_abn:     (biz?.abn             as string | null) ?? null,
+              pay_period_start: periodStart,
+              pay_period_end:   periodEnd,
+              payment_date:     periodEnd,
+              gross_pay:        numbers.grossPay,
+              salary_sacrifice: numbers.salarySacrifice,
+              taxable_gross:    numbers.taxableGross,
+              income_tax:       numbers.incomeTax,
+              medicare_levy:    numbers.medicareLevy,
+              help_repayment:   numbers.helpRepayment,
+              net_pay:          numbers.netPay,
+              super_sg:         numbers.superSG,
+              super_sal_sac:    numbers.superSalSac,
+            }).select('id').single()
+
+            if (psErr) throw new Error(psErr.message)
+
+            results.push({
+              employee_name:  emp.name as string,
+              employee_email: (emp.email as string | null) ?? null,
+              payslip_id:     ps.id,
+              payslip_number: payslipNumber,
+              gross_pay:      numbers.grossPay,
+              net_pay:        numbers.netPay,
+              super_sg:       numbers.superSG,
+              pay_period:     `${periodStart} to ${periodEnd}`,
+            })
+          } catch (empErr) {
+            results.push({ employee_name: emp.name as string, employee_email: emp.email as string | null, payslip_id: '', payslip_number: '', gross_pay: 0, net_pay: 0, super_sg: 0, pay_period: '', error: empErr instanceof Error ? empErr.message : 'Failed' })
+          }
+        }
+
+        const successful = results.filter(r => !r.error)
+        const failed     = results.filter(r => r.error)
+        const totalNet   = successful.reduce((s, r) => s + r.net_pay, 0)
+        const totalSuper = successful.reduce((s, r) => s + r.super_sg, 0)
+
+        return {
+          processed:   successful.length,
+          failed:      failed.length,
+          failed_list: failed.map(r => `${r.employee_name}: ${r.error}`),
+          total_net:   fmt(totalNet),
+          total_super: fmt(totalSuper),
+          payslips:    successful.map(r => ({
+            payslip_id:     r.payslip_id,
+            payslip_number: r.payslip_number,
+            employee_name:  r.employee_name,
+            employee_email: r.employee_email,
+            net_pay:        fmt(r.net_pay),
+            gross_pay:      fmt(r.gross_pay),
+            super_sg:       fmt(r.super_sg),
+            pay_period:     r.pay_period,
+          })),
+          rows: [
+            ...successful.map(r => [r.employee_name, `Net ${fmt(r.net_pay)} | Super ${fmt(r.super_sg)}`]),
+            ['─────────────', '─────────────────────'],
+            ['Total Net Pay', fmt(totalNet)],
+            ['Total Super',   fmt(totalSuper)],
+          ],
+        }
+      }
+
+      // ── send_all_payslips ───────────────────────────────────────
+      case 'send_all_payslips': {
+        const payslips = input.payslips as Array<{ payslip_id: string; employee_email: string; employee_name?: string }>
+        const resend   = new Resend(process.env.RESEND_API_KEY)
+
+        const { data: biz } = await supabase
+          .from('business_profiles')
+          .select('business_name')
+          .eq('id', userId)
+          .single()
+
+        const sentResults: Array<{ name: string; email: string; ok: boolean; error?: string }> = []
+
+        for (const item of payslips) {
+          if (!item.employee_email) {
+            sentResults.push({ name: item.employee_name || 'Unknown', email: '', ok: false, error: 'No email address on file' })
+            continue
+          }
+
+          const { data: ps, error: fetchErr } = await supabase
+            .from('payslips')
+            .select('*')
+            .eq('id', item.payslip_id)
+            .eq('user_id', userId)
+            .single()
+
+          if (fetchErr || !ps) { sentResults.push({ name: item.employee_name || 'Unknown', email: item.employee_email, ok: false, error: 'Payslip not found' }); continue }
+
+          const payPeriod = `${ps.pay_period_start as string} to ${ps.pay_period_end as string}`
+          const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;background:#F5F0E8;margin:0;padding:40px 0">
+<table width="560" align="center" style="background:#fff;border-radius:10px;overflow:hidden">
+<tr><td style="background:#1C1917;padding:28px 36px"><p style="margin:0;color:#fff;font-size:18px;font-weight:700">${ps.employer_name as string}</p><p style="margin:6px 0 0;color:#A09590;font-size:13px">Payslip ${ps.payslip_number as string}</p></td></tr>
+<tr><td style="padding:36px">
+<p style="color:#1C1917;font-size:15px">Hi ${ps.employee_name as string},</p>
+<p style="color:#57534E;font-size:14px">Your payslip for <strong>${payPeriod}</strong> is ready.</p>
+<table width="100%" style="background:#F5F0E8;border-radius:8px;margin:20px 0"><tr><td style="padding:20px 24px">
+<table width="100%">
+<tr><td style="padding:6px 0;color:#57534E;font-size:13px">Gross Pay</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${fmt(ps.gross_pay as number)}</td></tr>
+<tr><td style="padding:6px 0;color:#57534E;font-size:13px">Income Tax</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">-${fmt(ps.income_tax as number)}</td></tr>
+<tr><td style="padding:6px 0;color:#57534E;font-size:13px">Medicare Levy</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">-${fmt(ps.medicare_levy as number)}</td></tr>
+${(ps.help_repayment as number) > 0 ? `<tr><td style="padding:6px 0;color:#57534E;font-size:13px">HELP Repayment</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">-${fmt(ps.help_repayment as number)}</td></tr>` : ''}
+<tr><td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Net Pay</td><td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${fmt(ps.net_pay as number)}</td></tr>
+<tr><td style="padding:6px 0;color:#57534E;font-size:12px">Super (12%)</td><td align="right" style="padding:6px 0;color:#57534E;font-size:12px">${fmt(ps.super_sg as number)}</td></tr>
+</table></td></tr></table>
+<p style="color:#A09590;font-size:11px;text-align:center;margin-top:24px">Generated by SAB Account AI · ATO-compliant PAYG withholding</p>
+</td></tr></table></body></html>`
+
+          const { error: sendErr } = await resend.emails.send({
+            from:    process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+            to:      [item.employee_email],
+            subject: `Your payslip ${ps.payslip_number as string} from ${ps.employer_name as string}`,
+            html,
+          })
+
+          sentResults.push({ name: ps.employee_name as string, email: item.employee_email, ok: !sendErr, error: sendErr ? (sendErr as { message?: string }).message : undefined })
+        }
+
+        const sent   = sentResults.filter(r => r.ok)
+        const failed = sentResults.filter(r => !r.ok)
+
+        return {
+          sent:       sent.length,
+          failed:     failed.length,
+          sent_to:    sent.map(r => `${r.name} <${r.email}>`),
+          failed_list: failed.map(r => `${r.name}: ${r.error}`),
+          message:    `Sent ${sent.length} payslip${sent.length !== 1 ? 's' : ''}${failed.length > 0 ? `, ${failed.length} failed (no email on file)` : ''}`,
+        }
+      }
+
       // ── send_bas_to_accountant ──────────────────────────────────
       case 'send_bas_to_accountant': {
         const fy             = input.financial_year as string

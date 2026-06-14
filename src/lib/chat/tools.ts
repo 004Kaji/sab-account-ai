@@ -137,6 +137,42 @@ export const SAB_CHAT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'process_payroll',
+    description: 'Create payslips for ALL employees (or a specific subset) in one batch. Use when the user says "process payroll", "pay all staff", "send payslips to everyone", or similar. Auto-computes gross pay and pay period from each employee\'s stored rate and pay cycle. Returns a batch confirm card listing every employee — user confirms once, then call send_all_payslips.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        employee_ids:     { type: 'array', items: { type: 'string' }, description: 'List of employee UUIDs to process. Omit or pass empty array to process ALL employees.' },
+        pay_period_start: { type: 'string', description: 'Override start date YYYY-MM-DD. Omit to auto-calculate from each employee\'s pay cycle.' },
+        pay_period_end:   { type: 'string', description: 'Override end date YYYY-MM-DD. Omit to use today.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'send_all_payslips',
+    description: 'Send payslips to all employees after user confirms the batch confirm card from process_payroll. Takes the list of payslip IDs and emails them all. ONLY call after user clicks confirm.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        payslips: {
+          type: 'array',
+          description: 'Array of payslip IDs and emails to send',
+          items: {
+            type: 'object',
+            properties: {
+              payslip_id:     { type: 'string' },
+              employee_email: { type: 'string' },
+              employee_name:  { type: 'string' },
+            },
+            required: ['payslip_id', 'employee_email'],
+          },
+        },
+      },
+      required: ['payslips'],
+    },
+  },
+  {
     name: 'send_bas_to_accountant',
     description: 'Calculate the BAS position for a quarter and send a summary email to the accountant. Use when the user asks to send, email, or share the BAS with their accountant.',
     input_schema: {
