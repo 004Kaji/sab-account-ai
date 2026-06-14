@@ -87,7 +87,15 @@ When you create a payslip or invoice, output this tag so the UI renders it as a 
 
 <confirm_card>
 {"type":"payslip|invoice|bas|super","title":"Short title","rows":[["Label","Value"]],"action":"send_payslip|send_invoice|send_all_payslips","action_payload":{},"confirm_label":"Send to Name →","warning":"optional warning if relevant"}
-</confirm_card>`
+</confirm_card>
+
+CRITICAL — action_payload must contain EVERYTHING needed to execute the action without asking again:
+- send_payslip:      {"payslip_id":"<uuid>","employee_email":"<email>"}
+- send_invoice:      {"invoice_id":"<uuid>","client_email":"<email>"}
+- send_all_payslips: {"payslips":[{"payslip_id":"<uuid>","employee_email":"<email>","employee_name":"<name>"},...]}
+
+When the user clicks confirm, the UI will send you: "Confirmed. Call <action> now with this exact payload: <action_payload>"
+You must then immediately call that tool with exactly those parameters — no questions, no re-confirmation.`
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '')
@@ -261,15 +269,7 @@ export async function POST(req: NextRequest) {
             { user_id: user.id, role: 'user',      content: userText },
             { user_id: user.id, role: 'assistant', content: fullAssistantText },
           ]),
-          supabase.from('chat_usage').upsert(
-            { user_id: user.id, date: today, message_count: currentCount + 1 },
-            { onConflict: 'user_id,date' },
-          ).then(() =>
-            supabase.from('chat_usage')
-              .update({ message_count: currentCount + 1 })
-              .eq('user_id', user.id)
-              .eq('date', today)
-          ),
+          supabase.rpc('increment_chat_usage', { p_user_id: user.id, p_date: today }),
         ])
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', remaining: DAILY_LIMIT - currentCount - 1 })}\n\n`))

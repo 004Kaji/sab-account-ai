@@ -224,7 +224,7 @@ export async function executeToolCall(
           .from('clients')
           .select('id, business_name')
           .eq('user_id', userId)
-          .ilike('business_name', `%${input.business_name as string}%`)
+          .ilike('business_name', (input.business_name as string).trim())
           .limit(1)
           .single()
 
