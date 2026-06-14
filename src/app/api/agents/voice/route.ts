@@ -80,7 +80,7 @@ async function analyseResponse(params: {
 }): Promise<ResponseMeta> {
   const { question, answer, currentTopic, masterContext, history } = params
 
-  const historyText = history.slice(-3).map(h => `Q: ${h.q}\nA: ${h.a}`).join('\n')
+  const historyText = history.slice(-10).map(h => `Q: ${h.q}\nA: ${h.a}`).join('\n')
 
   try {
     const raw = await callClaude({
@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
     if (!question) return NextResponse.json({ error: 'input is required' }, { status: 400 })
 
     const mode         = body.mode ?? 'voice'
-    const history      = (body.history ?? []).slice(-5)
+    const history      = (body.history ?? []).slice(-10)
     const currentTopic = body.current_topic ?? null
     const classification = classify(question)
 
@@ -199,7 +199,7 @@ export async function POST(req: NextRequest) {
       const status = await getSparkEmailStatus()
       const response = stripMarkdown(applyPersonality(
         await callClaude({
-          systemPrompt: `${VOICE_PERSONALITY}\nAnswer in 2 sentences max. Plain English, spoken out loud. Use the log data to give a direct factual answer.`,
+          systemPrompt: `${VOICE_PERSONALITY}\nUse the log data to give a direct factual answer. Plain English, spoken out loud.`,
           userMessage: `Log data: ${status}\n\nSanjog's question: ${question}`,
           maxTokens: 120,
         })
@@ -246,7 +246,7 @@ export async function POST(req: NextRequest) {
         liftSignal  ? `LIFT ALERT: ${liftSignal.summary}` : '',
       ].filter(Boolean).join('\n')
 
-      const historyText = history.slice(-3).map(h => `Q: ${h.q}\nA: ${h.a}`).join('\n')
+      const historyText = history.slice(-10).map(h => `Q: ${h.q}\nA: ${h.a}`).join('\n')
 
       const strategyPrompt = `You are Basnet — Sanjog's sharp, direct co-founder AI for SAB Account AI.
 
@@ -368,18 +368,18 @@ Master context: ${masterContext.slice(0, 800)}`
       }
     }
 
-    const historyText = history.slice(-3).map(h => `Q: ${h.q}\nA: ${h.a}`).join('\n')
+    const historyText = history.slice(-10).map(h => `Q: ${h.q}\nA: ${h.a}`).join('\n')
 
     const systemPrompt = `${VOICE_PERSONALITY}
 
 Context: ${masterContext.slice(0, 1200)}
 
 You must return ONLY valid JSON with these fields:
-- "response": your spoken answer (2 sentences max, plain English, no markdown)
+- "response": your spoken answer in natural conversational English. 2-5 sentences — match the length to what the question needs. If the question is unclear or missing a key detail, ask ONE short clarifying question instead of guessing. Use the conversation history — reference what was said earlier in the conversation when relevant.
 - "warning": one sentence if the answer involves visa risk, PR risk, or working over 48h/fortnight — null if safe
 - "topic": 3-4 words for the current topic (e.g. "Darwin part-time jobs")
-- "is_complete": true only if the topic is fully resolved AND at least 2 exchanges have happened — false otherwise
-- "next_suggestion": if is_complete is true, one sentence on what to discuss next — null otherwise`
+- "is_complete": true only if the topic is fully resolved AND Sanjog has what he needs — false if there are follow-up questions or next steps still open
+- "next_suggestion": if is_complete is true, one natural sentence on what to talk about next — null otherwise`
 
     const userMessage = [
       subAgentContext     ? `Live data: ${subAgentContext}` : '',
