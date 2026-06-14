@@ -235,6 +235,23 @@ function buildEmailHtml(body: string, ctaText: string, includePartnerLink = fals
   return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:580px;margin:0 auto;padding:24px;color:#222;line-height:1.6;">${htmlBody}<p style="margin:28px 0 0 0;"><a href="https://sabaccountai.com" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 28px;text-decoration:none;border-radius:6px;font-weight:600;font-size:15px;">${ctaText}</a></p>${partnerLine}<p style="margin-top:28px;color:#666;font-size:13px;border-top:1px solid #eee;padding-top:16px;line-height:1.8;">Sanjog Basnet<br>Founder, SAB Account AI<br>0415 304 090 · basnet@sabaccountai.com · sabaccountai.com</p></body></html>`
 }
 
+// Third-party platform emails that appear in page scripts/embeds — never the real contact
+const PLATFORM_EMAIL = /cloudflare|disqus|mailchimp|sentry|google|facebook|twitter|instagram|wordpress|wix|squarespace|shopify|hubspot|intercom|zendesk|stripe/i
+
+// Returns true if the URL looks like an unknown directory/listing page
+// (deep paths like /listing/123 or /business/name are directories, not business sites)
+function looksLikeDirectory(url: string): boolean {
+  try {
+    const { pathname } = new URL(url)
+    const segments = pathname.split('/').filter(Boolean)
+    // More than 2 path segments AND numeric IDs = likely a directory listing
+    if (segments.length > 2 && /\d{4,}/.test(segments[segments.length - 1])) return true
+    // Common directory path patterns
+    if (/\/(listing|business|company|profile|member|directory|find|search|results)\//i.test(pathname)) return true
+    return false
+  } catch { return false }
+}
+
 async function tavilyExtractEmail(url: string): Promise<string | null> {
   const apiKey = process.env.TAVILY_API_KEY
   if (!apiKey) return null
@@ -248,8 +265,22 @@ async function tavilyExtractEmail(url: string): Promise<string | null> {
     type ExtractRes = { results?: Array<{ raw_content?: string }> }
     const data = await res.json() as ExtractRes
     const content = data.results?.[0]?.raw_content ?? ''
-    const match = content.match(/[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/i)
-    return match ? match[0].toLowerCase() : null
+
+    const EMAIL_RE = /[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/gi
+    const allEmails = [...new Set((content.match(EMAIL_RE) ?? []).map(e => e.toLowerCase()))]
+      .filter(e => !GENERIC_EMAIL.test(e) && !PLATFORM_EMAIL.test(e) && !e.includes('example') && !e.includes('noreply'))
+
+    if (allEmails.length === 0) return null
+
+    // Prefer email whose domain matches the website's own domain — most likely the real contact
+    try {
+      const siteDomain = new URL(url).hostname.replace(/^www\./, '')
+      const domainMatch = allEmails.find(e => e.endsWith(`@${siteDomain}`))
+      if (domainMatch) return domainMatch
+    } catch { /* ignore */ }
+
+    // Fall back to any surviving non-platform, non-generic email
+    return allEmails[0] ?? null
   } catch { return null }
 }
 
@@ -280,8 +311,8 @@ export async function sparkFindAccountants(location = 'Darwin, Australia'): Prom
     const practiceType = searchGroups[i].type
     for (const result of r.value.results) {
       if (seenUrls.has(result.url)) continue
-      // Skip directories — they don't have individual accountant emails
       if (DIRECTORY_DOMAINS.test(result.url)) continue
+      if (looksLikeDirectory(result.url)) continue
       if (/\.gov\.au/i.test(result.url)) continue
       seenUrls.add(result.url)
 
@@ -1213,8 +1244,8 @@ export async function sparkFindBusinesses(location = 'Darwin, Australia'): Promi
     const businessType = searchGroups[i].type
     for (const result of r.value.results) {
       if (seenUrls.has(result.url)) continue
-      // Skip directories — they have no individual business emails
       if (DIRECTORY_DOMAINS.test(result.url)) continue
+      if (looksLikeDirectory(result.url)) continue
       if (/\.gov\.au/i.test(result.url)) continue
       seenUrls.add(result.url)
 
@@ -1401,12 +1432,15 @@ export async function sparkFindFreelancers(location = 'Sydney, Australia'): Prom
   // Target personal portfolio sites — add "portfolio" and "hire me" to surface real freelancer sites
   // Include "@" in searches to increase chance of email appearing in snippet
   const searchGroups: Array<{ query: string; type: string }> = [
-    { query: `freelance graphic designer ${city} portfolio "hire me" email`,           type: 'designer' },
-    { query: `freelance photographer ${city} portfolio contact "@" site:com.au`,       type: 'photographer' },
-    { query: `freelance web developer ${city} ABN "available for work" email`,         type: 'developer' },
-    { query: `freelance copywriter content writer ${city} "hire me" portfolio email`,  type: 'writer' },
-    { query: `sole trader consultant ${city} Australia ABN portfolio contact email`,   type: 'consultant' },
-    { query: `freelance videographer ${city} portfolio contact email`,                 type: 'videographer' },
+    // Portfolio platform searches — these profiles often show real contact emails
+    { query: `site:behance.net designer Australia ${city} "available for work"`,       type: 'designer' },
+    { query: `site:dribbble.com designer "Australia" ${city} "hire me"`,              type: 'designer' },
+    // Personal portfolio site searches — target .com.au to prefer Australian sites
+    { query: `freelance photographer ${city} com.au portfolio contact email`,          type: 'photographer' },
+    { query: `freelance web developer ${city} com.au ABN "available" email`,           type: 'developer' },
+    { query: `freelance copywriter content writer ${city} Australia portfolio email`,  type: 'writer' },
+    { query: `sole trader consultant ${city} Australia ABN contact email`,             type: 'consultant' },
+    { query: `freelance videographer ${city} com.au contact email`,                    type: 'videographer' },
     { query: `freelance bookkeeper ${city} Australia ABN contact email`,               type: 'bookkeeper' },
   ]
 
@@ -1419,13 +1453,18 @@ export async function sparkFindFreelancers(location = 'Sydney, Australia'): Prom
   const seenUrls = new Set<string>()
   const EMAIL_RE = /[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/gi
 
+  // Portfolio platforms — individual profile pages ARE valid (not directories)
+  const PORTFOLIO_PLATFORMS = /behance\.net|dribbble\.com|cargo\.site/i
+
   searches.forEach((r, i) => {
     if (r.status !== 'fulfilled') return
     const freelancerType = searchGroups[i].type
     for (const result of r.value.results) {
       if (seenUrls.has(result.url)) continue
-      // Skip directory/platform URLs — they don't have individual emails
-      if (DIRECTORY_DOMAINS.test(result.url)) continue
+      const isPortfolioPlatform = PORTFOLIO_PLATFORMS.test(result.url)
+      // Skip non-portfolio directories but allow individual portfolio platform profiles
+      if (!isPortfolioPlatform && DIRECTORY_DOMAINS.test(result.url)) continue
+      if (!isPortfolioPlatform && looksLikeDirectory(result.url)) continue
       if (/\.gov\.au/i.test(result.url)) continue
       seenUrls.add(result.url)
 
