@@ -24,11 +24,16 @@ export const AGENT_KEYWORDS: Record<QuestionClass, string[]> = {
   ],
   RETENTION: [
     'churn', 'at risk', 'inactive', 'retention', 'not using',
-    'upgrade', 'conversion', 'lost user', 'user', 'signup', 'mrr', 'revenue', 'paid users',
+    'upgrade signals', 'conversion rate', 'lost user', 'how many users',
+    'how many signups', 'current mrr', 'monthly revenue', 'paid users',
+    'who is at risk', 'users at risk', 'who might cancel',
   ],
   MARKET: [
-    'competitor', 'xero', 'myob', 'market', 'news', 'ato update',
-    'law change', 'payday super', 'pricing', 'what are competitors',
+    'competitor', 'xero', 'myob', 'market intel', 'market news', 'market research',
+    'ato update', 'ato news', 'ato deadline', 'law change', 'regulation change',
+    'payday super', 'what are competitors', 'competitor pricing',
+    'what does xero charge', 'what does myob charge', 'industry news',
+    'accounting software market', 'market trend',
   ],
   SAB_PRODUCT: [
     'error', 'bug', 'build failed', 'build error', 'build broke',
