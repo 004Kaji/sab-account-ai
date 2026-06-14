@@ -126,9 +126,6 @@ export async function POST(req: NextRequest) {
     .single()
 
   const currentCount = (usage?.message_count as number) ?? 0
-  if (currentCount >= DAILY_LIMIT) {
-    return NextResponse.json({ error: `Daily limit reached (${DAILY_LIMIT} messages). Resets at midnight.` }, { status: 429 })
-  }
 
   const { messages } = await req.json() as { messages: Anthropic.MessageParam[] }
 

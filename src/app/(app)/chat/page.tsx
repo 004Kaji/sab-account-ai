@@ -326,11 +326,6 @@ export default function ChatPage() {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {remaining !== null && (
-            <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>
-              {remaining} messages left today
-            </span>
-          )}
           {messages.length > 0 && (
             <button
               onClick={clearHistory}
