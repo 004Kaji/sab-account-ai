@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
         trial_period_days: 14,
         metadata: { userId: user.id, plan },
       },
+      payment_method_collection: 'always',
       success_url: `${origin}/settings?success=true&plan=${plan}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url:  `${origin}/settings?tab=subscription`,
     }
