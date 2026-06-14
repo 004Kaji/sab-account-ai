@@ -256,62 +256,61 @@ async function tavilyExtractEmail(url: string): Promise<string | null> {
 export async function sparkFindAccountants(location = 'Darwin, Australia'): Promise<{ found: number; added: number }> {
   const start = Date.now()
   const supabase = createServiceClient()
-
-  // Extract city name for directory searches (e.g. "Darwin, Australia" → "Darwin")
   const city = location.split(',')[0].trim()
 
-  // Direct searches for accounting firm websites — site: directory searches return category pages without emails
-  const searches = await Promise.allSettled([
-    tavilySearch(`accountant ${city} Australia contact email`,              { maxResults: 6, includeAnswer: false }),
-    tavilySearch(`bookkeeper ${city} Australia email contact`,              { maxResults: 6, includeAnswer: false }),
-    tavilySearch(`tax agent ${city} Australia email contact`,               { maxResults: 5, includeAnswer: false }),
-    tavilySearch(`accounting firm ${city} Australia email`,                 { maxResults: 5, includeAnswer: false }),
-    tavilySearch(`CPA chartered accountant ${city} Australia email`,        { maxResults: 5, includeAnswer: false }),
-  ])
+  const searchGroups: Array<{ query: string; type: string }> = [
+    { query: `accountant ${city} Australia "contact us" email`,            type: 'accounting firm' },
+    { query: `bookkeeper ${city} Australia small business email contact`,  type: 'bookkeeper' },
+    { query: `tax agent ${city} Australia email contact`,                  type: 'tax agent' },
+    { query: `CPA chartered accountant ${city} Australia email`,           type: 'accounting firm' },
+    { query: `BAS agent registered agent ${city} Australia email`,         type: 'BAS agent' },
+  ]
+
+  const searches = await Promise.allSettled(
+    searchGroups.map(({ query }) => tavilySearch(query, { maxResults: 6, includeAnswer: false }))
+  )
 
   type Candidate = { name: string; url: string; practiceType: string; snippetEmail: string | null }
   const candidates: Candidate[] = []
   const seenUrls = new Set<string>()
   const EMAIL_RE = /[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/gi
-  const typeLabels = ['accounting firm', 'bookkeeper', 'tax agent', 'accounting firm', 'accounting firm']
 
   searches.forEach((r, i) => {
     if (r.status !== 'fulfilled') return
+    const practiceType = searchGroups[i].type
     for (const result of r.value.results) {
       if (seenUrls.has(result.url)) continue
+      // Skip directories — they don't have individual accountant emails
+      if (DIRECTORY_DOMAINS.test(result.url)) continue
+      if (/\.gov\.au/i.test(result.url)) continue
       seenUrls.add(result.url)
 
-      // Pull any email visible directly in the Tavily snippet
       const emailsInSnippet = (result.content + ' ' + result.title).match(EMAIL_RE) ?? []
       const snippetEmail = emailsInSnippet
-        .find(e => !e.includes('example') && !e.includes('noreply') && !e.includes('no-reply'))
-        ?.toLowerCase() ?? null
+        .map(e => e.toLowerCase())
+        .find(e => !GENERIC_EMAIL.test(e) && !e.includes('example') && !e.includes('noreply'))
+        ?? null
 
       const name = result.title
-        .replace(/\s*[-|–]\s*(Yellow Pages|True Local|Accounting|Bookkeeping).*$/i, '')
+        .replace(/\s*[-|–]\s*(Yellow Pages|True Local|Bark|ServiceSeeking|AccountantsList|Accounting|Bookkeeping).*$/i, '')
+        .replace(/\s*[-|–]\s*\w+\.com.*$/i, '')
         .trim()
 
-      candidates.push({ name, url: result.url, practiceType: typeLabels[i], snippetEmail })
+      if (/government|authority|council|department|ato\.gov/i.test(name)) continue
+      candidates.push({ name, url: result.url, practiceType, snippetEmail })
     }
   })
 
   let added = 0
-
-  for (const candidate of candidates.slice(0, 15)) {
-    // Determine best email: snippet first, then crawl the listing/website
+  for (const candidate of candidates.slice(0, 25)) {
     let email = candidate.snippetEmail
-
     if (!email) {
-      // Crawl the listing page (Yellow Pages / True Local / firm's own site)
-      email = await tavilyExtractEmail(candidate.url)
+      const raw = await tavilyExtractEmail(candidate.url)
+      if (raw && !GENERIC_EMAIL.test(raw)) email = raw
     }
+    if (!email) continue
+    if (GENERIC_EMAIL.test(email)) continue
 
-    if (!email) continue  // skip if we genuinely can't find an email
-
-    // Skip internal/system emails
-    if (/noreply|no-reply|example|test@|admin@|info@yellowpages|info@truelocal/.test(email)) continue
-
-    // Deduplicate — skip if this email is already in the pipeline
     const { count } = await supabase
       .from('accountant_outreach')
       .select('id', { count: 'exact', head: true })
@@ -345,7 +344,7 @@ ABOUT SAB ACCOUNT AI:
 
 THE REFERRAL DEAL YOU ARE OFFERING:
 - 20% ongoing monthly commission for every paying client referred — no cap, no expiry
-- Free 14-day trial for any client they refer — no credit card needed
+- Free 14-day trial for any client they refer — cancel anytime before it ends
 - No lock-in contract for their clients
 - Partner sign-up page: sabaccountai.com/partners
 
