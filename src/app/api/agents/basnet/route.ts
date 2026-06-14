@@ -10,7 +10,7 @@ import {
 } from '@/lib/agents/toolkits/basnet-toolkit'
 import { BASNET_PERSONALITY, EMAIL_PERSONALITY, applyPersonality } from '@/lib/agents/personality'
 import { runFlux, fluxDiagnose } from '@/lib/agents/sub/flux'
-import { sparkWeeklyBrief, sparkSendAccountantEmails } from '@/lib/agents/sub/spark'
+import { sparkWeeklyBrief, sparkSendAccountantEmails, sparkWriteBlogPost, sparkDraftSocialPosts, sparkSendBusinessEmails } from '@/lib/agents/sub/spark'
 import { relayAnswer, relayVisaCheck, relayGoalCheck } from '@/lib/agents/sub/relay'
 import { runScout } from '@/lib/agents/sub/scout'
 import { runLift } from '@/lib/agents/sub/lift'
@@ -318,12 +318,41 @@ export async function POST(req: NextRequest) {
         answer = await fluxDiagnose(question)
         agentUsed = 'flux'
       } else if (cls === 'SAB_MARKETING') {
-        answer = await callClaude({
-          systemPrompt: `${BASNET_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1500)}${learningsCtx}`,
-          userMessage: question,
-          maxTokens: 400,
-        })
-        agentUsed = 'spark'
+        const wantsBlog    = /write.*blog|blog.*post|new blog|generate blog/i.test(question)
+        const wantsSocial  = /social post|draft.*post|tiktok|linkedin|facebook/i.test(question)
+        const wantsEmails  = /send.*email|accountant email|email.*accountant/i.test(question)
+        const wantsBizMail = /business email|send.*business/i.test(question)
+
+        if (wantsBlog) {
+          const result = await sparkWriteBlogPost(undefined, {})
+          answer = result.saved
+            ? `Blog post published: "${result.post.title}". It's live on sabaccountai.com/blog/${result.post.slug}.`
+            : `Blog post written but failed to save to database: "${result.post.title}". Check Supabase logs.`
+          agentUsed = 'spark'
+        } else if (wantsSocial) {
+          const result = await sparkDraftSocialPosts()
+          answer = `Drafted ${result.drafts.length} social posts for ${result.drafts.map(d => d.platform).join(', ')}. Check the agent dashboard to approve and publish.`
+          agentUsed = 'spark'
+        } else if (wantsEmails) {
+          const result = await sparkSendAccountantEmails()
+          answer = result.sent === 0
+            ? 'No new accountants to email right now — either all contacted recently or none in the queue.'
+            : `Sent ${result.sent} accountant email${result.sent === 1 ? '' : 's'} to: ${result.names.join(', ')}.`
+          agentUsed = 'spark'
+        } else if (wantsBizMail) {
+          const result = await sparkSendBusinessEmails()
+          answer = result.sent === 0
+            ? 'No new business emails sent — queue empty or all contacted recently.'
+            : `Sent ${result.sent} business email${result.sent === 1 ? '' : 's'} to: ${result.names.join(', ')}.`
+          agentUsed = 'spark'
+        } else {
+          answer = await callClaude({
+            systemPrompt: `${BASNET_PERSONALITY}\n\nContext: ${masterContext.slice(0, 1500)}${learningsCtx}`,
+            userMessage: question,
+            maxTokens: 400,
+          })
+          agentUsed = 'spark'
+        }
       } else if (cls === 'MAC') {
         answer = (await relayAnswer(question, 'local')).answer
         agentUsed = 'relay'

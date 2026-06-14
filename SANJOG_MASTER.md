@@ -55,10 +55,14 @@ I was an international student doing casual work, freelancing, and trying to und
 ### The story (this is the pitch)
 "I built this to solve my own problem. As an international student on a student visa in Sydney, managing PAYG withholding, HELP repayments, and superannuation was a nightmare. I couldn't afford Xero. I built SAB Account AI instead. Now it helps other sole traders and small businesses do the same."
 
-### Pricing
-- **Free:** Up to 3 invoices/month
-- **Starter:** $9/month — unlimited invoices, AI, PDF export
-- **Pro:** $19/month — everything + PAYG payslips + BAS + ATO compliance features
+### Pricing (AUD, all plans billed monthly)
+- **Free:** $0 — up to 3 invoices/month, basic features
+- **Starter:** $9/month — unlimited invoices, AI invoice generation, PDF export
+- **Pro:** $19/month — everything in Starter + PAYG payslips + BAS + ATO compliance features
+- **Autopilot:** $49/month — everything in Pro + SAB Chat AI assistant (conversational AI for their business)
+
+Competitors for context: Xero $50-70/mo, MYOB $30-50/mo. SAB Account AI is the affordable, ATO-compliant alternative.
+14-day free trial on all paid plans.
 
 ### Key features
 - AI invoice generation (describe the job, AI drafts the invoice)
