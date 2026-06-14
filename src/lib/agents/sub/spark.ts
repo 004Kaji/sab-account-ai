@@ -1268,10 +1268,12 @@ export async function sparkSendBusinessEmails(): Promise<{ sent: number; names: 
     supabase.from('business_outreach')
       .select('id, name, email, business_type, location, email_subject')
       .eq('status', 'pending').is('emailed_at', null)
+      .neq('business_type', 'freelancer')
       .order('created_at', { ascending: true }).limit(2),
     supabase.from('business_outreach')
       .select('id, name, email, business_type, location, email_subject')
       .eq('status', 'emailed').eq('replied', false)
+      .neq('business_type', 'freelancer')
       .lte('follow_up_due', today)
       .order('follow_up_due', { ascending: true }).limit(2),
   ])
@@ -1305,7 +1307,7 @@ Location: ${business.location ?? 'Australia'}
 
 Para 1: One sentence — why you're reaching out. For employers: Payday Super July 28 deadline. For freelancers: PAYG and invoicing made simple.
 Para 2: SAB Account AI handles this automatically — $9/month, 60% cheaper than Xero.
-Para 3: 14-day free trial, no credit card needed.
+Para 3: 14-day free trial, cancel anytime before it ends.
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`
 
       const emailRaw = await callClaude({
@@ -1358,5 +1360,174 @@ Return ONLY valid JSON: { "subject": "string", "body": "string" }`
   }
 
   await logSubAgent('spark', 'business_emails', '', `Sent: ${names.join(', ')}`, Date.now() - start, names.length > 0)
+  return { sent: names.length, names }
+}
+
+export async function sparkFindFreelancers(location = 'Australia'): Promise<{ found: number; added: number }> {
+  const start = Date.now()
+  const supabase = createServiceClient()
+  const city = location.split(',')[0].trim()
+
+  const searches = await Promise.allSettled([
+    tavilySearch(`freelance graphic designer ${city} contact email website`,         { maxResults: 6, includeAnswer: false }),
+    tavilySearch(`freelance photographer videographer ${city} email contact`,        { maxResults: 6, includeAnswer: false }),
+    tavilySearch(`freelance web developer software developer ${city} ABN email`,     { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`freelance copywriter content writer ${city} Australia email`,      { maxResults: 5, includeAnswer: false }),
+    tavilySearch(`independent consultant sole trader ${city} Australia email contact`, { maxResults: 5, includeAnswer: false }),
+  ])
+
+  type Candidate = { name: string; url: string; snippetEmail: string | null }
+  const candidates: Candidate[] = []
+  const seenUrls = new Set<string>()
+  const EMAIL_RE = /[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/gi
+
+  searches.forEach(r => {
+    if (r.status !== 'fulfilled') return
+    for (const result of r.value.results) {
+      if (seenUrls.has(result.url)) continue
+      seenUrls.add(result.url)
+      const emailsInSnippet = (result.content + ' ' + result.title).match(EMAIL_RE) ?? []
+      const snippetEmail = emailsInSnippet
+        .find(e => !e.includes('example') && !e.includes('noreply') && !e.includes('no-reply'))
+        ?.toLowerCase() ?? null
+      const name = result.title.replace(/\s*[-|–]\s*(LinkedIn|Upwork|Freelancer\.com).*$/i, '').trim()
+      candidates.push({ name, url: result.url, snippetEmail })
+    }
+  })
+
+  let added = 0
+  for (const candidate of candidates.slice(0, 20)) {
+    let email = candidate.snippetEmail
+    if (!email) email = await tavilyExtractEmail(candidate.url)
+    if (!email) continue
+    if (/noreply|no-reply|example|test@|admin@/.test(email)) continue
+    if (/\.gov\.au/i.test(candidate.url)) continue
+
+    const { count } = await supabase
+      .from('business_outreach')
+      .select('id', { count: 'exact', head: true })
+      .eq('email', email)
+    if ((count ?? 0) > 0) continue
+
+    await supabase.from('business_outreach').insert({
+      name:          candidate.name,
+      email,
+      business_type: 'freelancer',
+      location,
+      status:        'pending',
+    })
+    added++
+  }
+
+  await logSubAgent('spark', 'find_freelancers', location, `Candidates: ${candidates.length}, added: ${added}`, Date.now() - start, added > 0)
+  return { found: candidates.length, added }
+}
+
+const FREELANCER_EMAIL_SYSTEM = `You write short, personal cold emails to Australian freelancers on behalf of Sanjog Basnet, founder of SAB Account AI (sabaccountai.com). SAB Account AI is an invoicing and payslip tool built specifically for Australian freelancers and sole traders — $9/month, 60% cheaper than Xero. Tone: friendly, peer-to-peer, not corporate. No buzzwords. Short sentences.`
+
+export async function sparkSendFreelancerEmails(): Promise<{ sent: number; names: string[] }> {
+  const start = Date.now()
+  const supabase = createServiceClient()
+  const today = new Date().toISOString().split('T')[0]
+
+  if (!process.env.RESEND_API_KEY) return { sent: 0, names: [] }
+
+  type FreelancerRow = {
+    id: string; name: string; email: string
+    location: string | null; email_subject: string | null; isFollowUp: boolean
+  }
+
+  const [pendingR, followUpsR] = await Promise.all([
+    supabase.from('business_outreach')
+      .select('id, name, email, location, email_subject')
+      .eq('status', 'pending').is('emailed_at', null)
+      .eq('business_type', 'freelancer')
+      .order('created_at', { ascending: true }).limit(5),
+    supabase.from('business_outreach')
+      .select('id, name, email, location, email_subject')
+      .eq('status', 'emailed').eq('replied', false)
+      .eq('business_type', 'freelancer')
+      .lte('follow_up_due', today)
+      .order('follow_up_due', { ascending: true }).limit(5),
+  ])
+
+  const followUps = (followUpsR.data ?? []).map(r => ({ ...r, isFollowUp: true  }))
+  const pending   = (pendingR.data   ?? []).map(r => ({ ...r, isFollowUp: false }))
+  const targets = ([...followUps, ...pending] as FreelancerRow[]).slice(0, 5)
+  if (targets.length === 0) return { sent: 0, names: [] }
+
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  const names: string[] = []
+
+  for (const freelancer of targets) {
+    try {
+      const userMessage = freelancer.isFollowUp
+        ? `Write a SHORT FOLLOW-UP email (max 50 words) to an Australian freelancer who didn't reply 7 days ago.
+
+Freelancer: ${freelancer.name}
+Previous subject: "${freelancer.email_subject ?? 'SAB Account AI'}"
+
+Angle: Still invoicing manually? Takes 30 seconds with SAB Account AI — $9/month, built for Australian freelancers.
+Do NOT include a sign-off or signature.
+Return ONLY valid JSON: { "subject": "string", "body": "string" }`
+
+        : `Write an INITIAL cold email (max 80 words, casual and personal) to an Australian freelancer.
+
+Freelancer: ${freelancer.name}
+Location: ${freelancer.location ?? 'Australia'}
+
+Para 1: Ask if they're still invoicing in Word or Excel — many freelancers are.
+Para 2: SAB Account AI does it in 30 seconds — unlimited invoices, payslips, AI help, $9/month. Built for Australian freelancers with ABNs. 60% cheaper than Xero.
+Para 3: 14-day free trial, cancel anytime before it ends. Link: sabaccountai.com
+Do NOT include a sign-off or signature.
+Return ONLY valid JSON: { "subject": "string", "body": "string" }`
+
+      const emailRaw = await callClaude({
+        systemPrompt: FREELANCER_EMAIL_SYSTEM,
+        userMessage,
+        maxTokens: 400,
+        expectJson: true,
+      })
+
+      type EmailJSON = { subject: string; body: string }
+      let emailJSON: EmailJSON
+      try {
+        emailJSON = JSON.parse(emailRaw) as EmailJSON
+      } catch { continue }
+
+      if (!emailJSON.subject?.trim() || !emailJSON.body?.trim()) continue
+
+      await resend.emails.send({
+        from:    'Sanjog Basnet <basnet@sabaccountai.com>',
+        to:      freelancer.email,
+        subject: emailJSON.subject,
+        text:    emailJSON.body,
+        html:    buildEmailHtml(emailJSON.body, 'Start free trial → sabaccountai.com'),
+      })
+
+      if (freelancer.isFollowUp) {
+        await supabase.from('business_outreach').update({
+          emailed_at: new Date().toISOString(),
+          status:     'followed_up',
+        }).eq('id', freelancer.id)
+      } else {
+        const followUpDate = new Date()
+        followUpDate.setDate(followUpDate.getDate() + 7)
+        await supabase.from('business_outreach').update({
+          emailed_at:    new Date().toISOString(),
+          status:        'emailed',
+          follow_up_due: followUpDate.toISOString().split('T')[0],
+          email_subject: emailJSON.subject,
+          email_body:    emailJSON.body,
+        }).eq('id', freelancer.id)
+      }
+
+      names.push(`${freelancer.name}${freelancer.isFollowUp ? ' (follow-up)' : ''}`)
+    } catch (err) {
+      console.error('[spark] freelancer email failed for', freelancer.name, err)
+    }
+  }
+
+  await logSubAgent('spark', 'freelancer_emails', '', `Sent: ${names.join(', ')}`, Date.now() - start, names.length > 0)
   return { sent: names.length, names }
 }

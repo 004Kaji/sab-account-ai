@@ -7,7 +7,7 @@ export const maxDuration = 300
 
 import { NextRequest, NextResponse } from 'next/server'
 import { atlasWeeklyIntel, atlasComplianceWatch } from '@/lib/agents/sub/atlas'
-import { sparkFindAccountants, sparkFindBusinesses } from '@/lib/agents/sub/spark'
+import { sparkFindAccountants, sparkFindBusinesses, sparkFindFreelancers } from '@/lib/agents/sub/spark'
 import { logAgentAction } from '@/lib/agents/utils'
 
 export async function GET(req: NextRequest) {
@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
     compliance:   { ok: false, findings: 0, error: '' },
     accountants:  { ok: false, added: 0,    error: '' },
     businesses:   { ok: false, added: 0,    error: '' },
+    freelancers:  { ok: false, added: 0,    error: '' },
   }
 
   // Weekly market intel — also publishes Spark brief + auto-triggers blog
@@ -54,17 +55,21 @@ export async function GET(req: NextRequest) {
     'Hobart, Australia',
   ]
   let totalAccountants = 0
-  let totalBusinesses = 0
+  let totalBusinesses  = 0
+  let totalFreelancers = 0
   for (const city of cities) {
-    const [accR, bizR] = await Promise.allSettled([
+    const [accR, bizR, freeR] = await Promise.allSettled([
       sparkFindAccountants(city),
       sparkFindBusinesses(city),
+      sparkFindFreelancers(city),
     ])
-    if (accR.status === 'fulfilled') totalAccountants += accR.value.added
-    if (bizR.status === 'fulfilled') totalBusinesses  += bizR.value.added
+    if (accR.status  === 'fulfilled') totalAccountants += accR.value.added
+    if (bizR.status  === 'fulfilled') totalBusinesses  += bizR.value.added
+    if (freeR.status === 'fulfilled') totalFreelancers += freeR.value.added
   }
   results.accountants = { ok: true, added: totalAccountants, error: '' }
   results.businesses  = { ok: true, added: totalBusinesses,  error: '' }
+  results.freelancers = { ok: true, added: totalFreelancers, error: '' }
 
   await logAgentAction({
     agentName:    'cron',
