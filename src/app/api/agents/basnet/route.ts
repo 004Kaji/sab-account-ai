@@ -108,14 +108,24 @@ export async function POST(req: NextRequest) {
       const churnRisk = lift ? Math.min(10, lift.atRiskUsers.length * 2) : 0
       const july1Countdown = Math.max(0, Math.ceil((new Date('2026-07-01').getTime() - Date.now()) / 86400000))
 
-      // Signups today: count from Supabase
+      // Signups today + accountant outreach sent this week: query live from DB
       const supabase = createServiceClient()
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
-      const signupsTodayResult = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', todayStart.toISOString())
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+      const [signupsTodayResult, accountantEmailsResult] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true })
+          .gte('created_at', todayStart.toISOString()),
+        supabase
+          .from('accountant_outreach')
+          .select('*', { count: 'exact', head: true })
+          .not('emailed_at', 'is', null)
+          .gte('emailed_at', weekAgo),
+      ])
       const signupsToday = signupsTodayResult.count
+      const accountantEmailsThisWeek = accountantEmailsResult.count ?? 0
 
       await updateWorldState({
         mrr_current: Math.round(stripe.mrr),
@@ -168,8 +178,9 @@ export async function POST(req: NextRequest) {
         lift_outcome_summary: ws.lift_outcome_summary || 'no data yet',
         spark_last_topic: ws.spark_last_topic || 'not set',
         approval_queue_depth: ws.approval_queue_depth,
-        accountant_emails_sent: ws.accountant_emails_sent,
+        accountant_emails_sent: accountantEmailsThisWeek,
         spark_winning_subject: ws.spark_winning_subject || 'not tracked yet',
+        published_blog_posts: 'payday-super-2026',
         visa_days_remaining: ws.visa_days_remaining,
         relay_current_goal: ws.relay_current_goal || 'not set',
         july1_countdown: ws.july1_countdown,
