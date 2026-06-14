@@ -1190,46 +1190,60 @@ export async function sparkFindBusinesses(location = 'Darwin, Australia'): Promi
   const supabase = createServiceClient()
   const city = location.split(',')[0].trim()
 
-  // Use direct business website searches — site: directory searches return category pages without emails
-  const searches = await Promise.allSettled([
-    tavilySearch(`plumber electrician tradie ${city} Australia contact email`,              { maxResults: 6, includeAnswer: false }),
-    tavilySearch(`cafe restaurant food small business ${city} Australia email contact`,     { maxResults: 6, includeAnswer: false }),
-    tavilySearch(`hair salon beauty gym fitness ${city} Australia email`,                   { maxResults: 5, includeAnswer: false }),
-    tavilySearch(`cleaning landscaping gardening ${city} Australia small business email`,   { maxResults: 5, includeAnswer: false }),
-    tavilySearch(`freelancer bookkeeper consultant ${city} Australia email contact`,        { maxResults: 5, includeAnswer: false }),
-  ])
+  const searchGroups: Array<{ query: string; type: string }> = [
+    { query: `plumber electrician sparky tradie ${city} Australia contact email`,          type: 'tradie' },
+    { query: `builder carpenter concreter ${city} Australia small business email`,         type: 'tradie' },
+    { query: `cafe restaurant food truck ${city} Australia email contact`,                 type: 'hospitality' },
+    { query: `hair salon barber beauty ${city} Australia contact email`,                   type: 'beauty/wellness' },
+    { query: `gym personal trainer fitness ${city} Australia email contact`,               type: 'beauty/wellness' },
+    { query: `cleaning lawn mowing gardening ${city} Australia small business email`,      type: 'small business' },
+    { query: `mechanic auto repair panel beater ${city} Australia contact email`,          type: 'tradie' },
+  ]
+
+  const searches = await Promise.allSettled(
+    searchGroups.map(({ query }) => tavilySearch(query, { maxResults: 6, includeAnswer: false }))
+  )
 
   type Candidate = { name: string; url: string; businessType: string; snippetEmail: string | null }
   const candidates: Candidate[] = []
   const seenUrls = new Set<string>()
   const EMAIL_RE = /[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/gi
-  const typeLabels = ['tradie', 'hospitality', 'beauty/wellness', 'small business', 'freelancer']
 
   searches.forEach((r, i) => {
     if (r.status !== 'fulfilled') return
+    const businessType = searchGroups[i].type
     for (const result of r.value.results) {
       if (seenUrls.has(result.url)) continue
+      // Skip directories — they have no individual business emails
+      if (DIRECTORY_DOMAINS.test(result.url)) continue
+      if (/\.gov\.au/i.test(result.url)) continue
       seenUrls.add(result.url)
+
       const emailsInSnippet = (result.content + ' ' + result.title).match(EMAIL_RE) ?? []
       const snippetEmail = emailsInSnippet
-        .find(e => !e.includes('example') && !e.includes('noreply') && !e.includes('no-reply'))
-        ?.toLowerCase() ?? null
+        .map(e => e.toLowerCase())
+        .find(e => !GENERIC_EMAIL.test(e) && !e.includes('example') && !e.includes('noreply'))
+        ?? null
+
       const name = result.title
-        .replace(/\s*[-|–]\s*(Yellow Pages|True Local|Yelp|Hipages).*$/i, '')
+        .replace(/\s*[-|–]\s*(Yellow Pages|True Local|Yelp|Hipages|Bark|ServiceSeeking|OneFlare|Airtasker).*$/i, '')
+        .replace(/\s*[-|–]\s*\w+\.com.*$/i, '')
         .trim()
-      candidates.push({ name, url: result.url, businessType: typeLabels[i], snippetEmail })
+
+      if (/government|authority|council|department|ministry|shire|tribunal|commission/i.test(name)) continue
+      candidates.push({ name, url: result.url, businessType, snippetEmail })
     }
   })
 
   let added = 0
-
-  for (const candidate of candidates.slice(0, 15)) {
+  for (const candidate of candidates.slice(0, 25)) {
     let email = candidate.snippetEmail
-    if (!email) email = await tavilyExtractEmail(candidate.url)
+    if (!email) {
+      const raw = await tavilyExtractEmail(candidate.url)
+      if (raw && !GENERIC_EMAIL.test(raw)) email = raw
+    }
     if (!email) continue
-    if (/noreply|no-reply|example|test@|admin@|info@yellowpages|info@truelocal/.test(email)) continue
-    if (/\.gov\.au/i.test(candidate.url)) continue
-    if (/government|authority|council|department|ministry|shire|tribunal|commission/i.test(candidate.name)) continue
+    if (GENERIC_EMAIL.test(email)) continue
 
     const { count } = await supabase
       .from('business_outreach')
@@ -1288,26 +1302,37 @@ export async function sparkSendBusinessEmails(): Promise<{ sent: number; names: 
 
   for (const business of targets) {
     try {
+      const btype = business.business_type ?? 'small business'
+      const angle = btype === 'tradie'
+        ? 'Payday Super is mandatory from July 28 — super must be paid on every payday, not quarterly. Most tradies don\'t know this yet.'
+        : btype === 'hospitality'
+        ? 'Managing staff payslips and invoices manually is a time sink. SAB Account AI automates both — payslips in seconds, invoices sent instantly.'
+        : btype === 'beauty/wellness'
+        ? 'Client invoices, staff payslips, super compliance — SAB Account AI handles all of it for $9/month so you can focus on your clients.'
+        : 'Payday Super hits July 28 — super must be paid every payday from that date. SAB Account AI keeps you compliant automatically.'
+
       const userMessage = business.isFollowUp
         ? `Write a SHORT FOLLOW-UP email (max 60 words). This business owner did not reply 7 days ago.
 
 Business: ${business.name}
-Type: ${business.business_type ?? 'small business'}
+Type: ${btype}
 Location: ${business.location ?? 'Australia'}
 Previous subject: "${business.email_subject ?? 'SAB Account AI'}"
 
-Angle: July 28 Payday Super deadline is coming fast. Offer 14-day free trial — no credit card, no lock-in.
+Angle: ${angle} 14-day free trial, cancel anytime.
+Do NOT include a sign-off or signature.
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`
 
         : `Write an INITIAL cold email (max 100 words, casual tone, 3 short paragraphs).
 
 Business: ${business.name}
-Type: ${business.business_type ?? 'small business'}
+Type: ${btype}
 Location: ${business.location ?? 'Australia'}
 
-Para 1: One sentence — why you're reaching out. For employers: Payday Super July 28 deadline. For freelancers: PAYG and invoicing made simple.
-Para 2: SAB Account AI handles this automatically — $9/month, 60% cheaper than Xero.
-Para 3: 14-day free trial, cancel anytime before it ends.
+Para 1: ${angle}
+Para 2: SAB Account AI handles this automatically — $9/month, 60% cheaper than Xero, built for Australian small businesses.
+Para 3: 14-day free trial, cancel anytime. sabaccountai.com
+Do NOT include a sign-off or signature.
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`
 
       const emailRaw = await callClaude({
