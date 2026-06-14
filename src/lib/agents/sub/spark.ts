@@ -1268,12 +1268,12 @@ export async function sparkSendBusinessEmails(): Promise<{ sent: number; names: 
     supabase.from('business_outreach')
       .select('id, name, email, business_type, location, email_subject')
       .eq('status', 'pending').is('emailed_at', null)
-      .neq('business_type', 'freelancer')
+      .not('business_type', 'like', 'freelancer%')
       .order('created_at', { ascending: true }).limit(2),
     supabase.from('business_outreach')
       .select('id, name, email, business_type, location, email_subject')
       .eq('status', 'emailed').eq('replied', false)
-      .neq('business_type', 'freelancer')
+      .not('business_type', 'like', 'freelancer%')
       .lte('follow_up_due', today)
       .order('follow_up_due', { ascending: true }).limit(2),
   ])
@@ -1363,45 +1363,75 @@ Return ONLY valid JSON: { "subject": "string", "body": "string" }`
   return { sent: names.length, names }
 }
 
-export async function sparkFindFreelancers(location = 'Australia'): Promise<{ found: number; added: number }> {
+// Domains that are platforms/directories — never have individual freelancer emails
+const DIRECTORY_DOMAINS = /upwork\.com|freelancer\.com|airtasker\.com|hipages\.com|seek\.com|yellowpages\.com\.au|truelocal\.com|bark\.com|oneflare\.com|serviceseeking\.com\.au|linkedin\.com|instagram\.com|facebook\.com|twitter\.com|fiverr\.com/i
+
+// Generic company inboxes — not personal freelancer contacts
+const GENERIC_EMAIL = /^(info|hello|contact|support|enquiries|enquiry|admin|noreply|no-reply|sales|team|office|mail|webmaster|postmaster)@/i
+
+export async function sparkFindFreelancers(location = 'Sydney, Australia'): Promise<{ found: number; added: number }> {
   const start = Date.now()
   const supabase = createServiceClient()
   const city = location.split(',')[0].trim()
 
-  const searches = await Promise.allSettled([
-    tavilySearch(`freelance graphic designer ${city} contact email website`,         { maxResults: 6, includeAnswer: false }),
-    tavilySearch(`freelance photographer videographer ${city} email contact`,        { maxResults: 6, includeAnswer: false }),
-    tavilySearch(`freelance web developer software developer ${city} ABN email`,     { maxResults: 5, includeAnswer: false }),
-    tavilySearch(`freelance copywriter content writer ${city} Australia email`,      { maxResults: 5, includeAnswer: false }),
-    tavilySearch(`independent consultant sole trader ${city} Australia email contact`, { maxResults: 5, includeAnswer: false }),
-  ])
+  // Target personal portfolio sites — add "portfolio" and "hire me" to surface real freelancer sites
+  // Include "@" in searches to increase chance of email appearing in snippet
+  const searchGroups: Array<{ query: string; type: string }> = [
+    { query: `freelance graphic designer ${city} portfolio "hire me" email`,           type: 'designer' },
+    { query: `freelance photographer ${city} portfolio contact "@" site:com.au`,       type: 'photographer' },
+    { query: `freelance web developer ${city} ABN "available for work" email`,         type: 'developer' },
+    { query: `freelance copywriter content writer ${city} "hire me" portfolio email`,  type: 'writer' },
+    { query: `sole trader consultant ${city} Australia ABN portfolio contact email`,   type: 'consultant' },
+    { query: `freelance videographer ${city} portfolio contact email`,                 type: 'videographer' },
+    { query: `freelance bookkeeper ${city} Australia ABN contact email`,               type: 'bookkeeper' },
+  ]
 
-  type Candidate = { name: string; url: string; snippetEmail: string | null }
+  const searches = await Promise.allSettled(
+    searchGroups.map(({ query }) => tavilySearch(query, { maxResults: 6, includeAnswer: false }))
+  )
+
+  type Candidate = { name: string; url: string; freelancerType: string; snippetEmail: string | null }
   const candidates: Candidate[] = []
   const seenUrls = new Set<string>()
   const EMAIL_RE = /[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/gi
 
-  searches.forEach(r => {
+  searches.forEach((r, i) => {
     if (r.status !== 'fulfilled') return
+    const freelancerType = searchGroups[i].type
     for (const result of r.value.results) {
       if (seenUrls.has(result.url)) continue
+      // Skip directory/platform URLs — they don't have individual emails
+      if (DIRECTORY_DOMAINS.test(result.url)) continue
+      if (/\.gov\.au/i.test(result.url)) continue
       seenUrls.add(result.url)
-      const emailsInSnippet = (result.content + ' ' + result.title).match(EMAIL_RE) ?? []
+
+      const text = result.content + ' ' + result.title
+      const emailsInSnippet = text.match(EMAIL_RE) ?? []
+      // Prefer personal-domain emails over generic ones — skip info@, contact@, etc.
       const snippetEmail = emailsInSnippet
-        .find(e => !e.includes('example') && !e.includes('noreply') && !e.includes('no-reply'))
-        ?.toLowerCase() ?? null
-      const name = result.title.replace(/\s*[-|–]\s*(LinkedIn|Upwork|Freelancer\.com).*$/i, '').trim()
-      candidates.push({ name, url: result.url, snippetEmail })
+        .map(e => e.toLowerCase())
+        .find(e => !GENERIC_EMAIL.test(e) && !e.includes('example') && !e.includes('noreply'))
+        ?? null
+
+      const name = result.title
+        .replace(/\s*[-|–]\s*(Portfolio|Hire Me|Contact|Services|About).*$/i, '')
+        .replace(/\s*[-|–]\s*\w+\.com.*$/i, '')
+        .trim()
+
+      candidates.push({ name, url: result.url, freelancerType, snippetEmail })
     }
   })
 
   let added = 0
-  for (const candidate of candidates.slice(0, 20)) {
+  for (const candidate of candidates.slice(0, 25)) {
     let email = candidate.snippetEmail
-    if (!email) email = await tavilyExtractEmail(candidate.url)
+    if (!email) {
+      // Visit the page and find ALL emails, then pick the best one
+      const raw = await tavilyExtractEmail(candidate.url)
+      if (raw && !GENERIC_EMAIL.test(raw)) email = raw
+    }
     if (!email) continue
-    if (/noreply|no-reply|example|test@|admin@/.test(email)) continue
-    if (/\.gov\.au/i.test(candidate.url)) continue
+    if (GENERIC_EMAIL.test(email)) continue
 
     const { count } = await supabase
       .from('business_outreach')
@@ -1409,10 +1439,11 @@ export async function sparkFindFreelancers(location = 'Australia'): Promise<{ fo
       .eq('email', email)
     if ((count ?? 0) > 0) continue
 
+    // Store freelancer type in business_type field for email personalisation
     await supabase.from('business_outreach').insert({
       name:          candidate.name,
       email,
-      business_type: 'freelancer',
+      business_type: `freelancer_${candidate.freelancerType}`,
       location,
       status:        'pending',
     })
@@ -1434,19 +1465,20 @@ export async function sparkSendFreelancerEmails(): Promise<{ sent: number; names
 
   type FreelancerRow = {
     id: string; name: string; email: string
-    location: string | null; email_subject: string | null; isFollowUp: boolean
+    business_type: string | null; location: string | null
+    email_subject: string | null; isFollowUp: boolean
   }
 
   const [pendingR, followUpsR] = await Promise.all([
     supabase.from('business_outreach')
-      .select('id, name, email, location, email_subject')
+      .select('id, name, email, business_type, location, email_subject')
       .eq('status', 'pending').is('emailed_at', null)
-      .eq('business_type', 'freelancer')
+      .like('business_type', 'freelancer%')
       .order('created_at', { ascending: true }).limit(5),
     supabase.from('business_outreach')
-      .select('id, name, email, location, email_subject')
+      .select('id, name, email, business_type, location, email_subject')
       .eq('status', 'emailed').eq('replied', false)
-      .eq('business_type', 'freelancer')
+      .like('business_type', 'freelancer%')
       .lte('follow_up_due', today)
       .order('follow_up_due', { ascending: true }).limit(5),
   ])
@@ -1461,24 +1493,26 @@ export async function sparkSendFreelancerEmails(): Promise<{ sent: number; names
 
   for (const freelancer of targets) {
     try {
-      const userMessage = freelancer.isFollowUp
-        ? `Write a SHORT FOLLOW-UP email (max 50 words) to an Australian freelancer who didn't reply 7 days ago.
+      const freelancerType = (freelancer.business_type ?? '').replace('freelancer_', '') || 'freelancer'
 
-Freelancer: ${freelancer.name}
+      const userMessage = freelancer.isFollowUp
+        ? `Write a SHORT FOLLOW-UP email (max 50 words) to an Australian ${freelancerType} who didn't reply 7 days ago.
+
+Name: ${freelancer.name}
 Previous subject: "${freelancer.email_subject ?? 'SAB Account AI'}"
 
 Angle: Still invoicing manually? Takes 30 seconds with SAB Account AI — $9/month, built for Australian freelancers.
 Do NOT include a sign-off or signature.
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`
 
-        : `Write an INITIAL cold email (max 80 words, casual and personal) to an Australian freelancer.
+        : `Write an INITIAL cold email (max 80 words, casual and personal) to an Australian ${freelancerType}.
 
-Freelancer: ${freelancer.name}
+Name: ${freelancer.name}
 Location: ${freelancer.location ?? 'Australia'}
 
-Para 1: Ask if they're still invoicing in Word or Excel — many freelancers are.
-Para 2: SAB Account AI does it in 30 seconds — unlimited invoices, payslips, AI help, $9/month. Built for Australian freelancers with ABNs. 60% cheaper than Xero.
-Para 3: 14-day free trial, cancel anytime before it ends. Link: sabaccountai.com
+Para 1: Reference that they're a ${freelancerType} — ask if they're still invoicing in Word/Excel or chasing clients manually for payment.
+Para 2: SAB Account AI handles it in 30 seconds — unlimited invoices, payslips, built for Australian ABN holders. $9/month, 60% cheaper than Xero.
+Para 3: 14-day free trial, cancel anytime. sabaccountai.com
 Do NOT include a sign-off or signature.
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`
 
