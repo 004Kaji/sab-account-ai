@@ -95,7 +95,6 @@ export async function POST(req: NextRequest) {
 
   const fmtAUD = (n: number) => `$${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
   const thisMonth = new Date().toISOString().slice(0, 7) + '-01'
-  const today     = new Date().toISOString().slice(0, 10)
 
   // Load full business context in parallel
   const [
