@@ -45,16 +45,23 @@ export async function POST(req: NextRequest) {
     const rawOrigin = req.headers.get('origin') ?? ''
     const origin = ALLOWED_ORIGINS.includes(rawOrigin) ? rawOrigin : 'https://sabaccountai.com'
 
+    // Only give a trial if the user has never had one before
+    const { data: profileRow } = await supabase
+      .from('profiles')
+      .select('trial_ends_at')
+      .eq('id', user.id)
+      .maybeSingle()
+    const hasHadTrial = !!profileRow?.trial_ends_at || profile?.subscription_status === 'cancelled'
+
     const checkoutParams = {
       mode: 'subscription' as const,
       payment_method_types: ['card'] as ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
       metadata: { userId: user.id, plan },
-      subscription_data: {
-        trial_period_days: 14,
-        metadata: { userId: user.id, plan },
-      },
-      payment_method_collection: 'always',
+      subscription_data: hasHadTrial
+        ? { metadata: { userId: user.id, plan } }
+        : { trial_period_days: 14, metadata: { userId: user.id, plan } },
+      payment_method_collection: 'always' as const,
       success_url: `${origin}/settings?success=true&plan=${plan}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url:  `${origin}/settings?tab=subscription`,
     }
