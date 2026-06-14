@@ -47,11 +47,24 @@ YOUR RULES:
 4. For knowledge questions (ATO rules, deadlines, exemptions) — answer from your knowledge or call get_ato_rules.
 5. For business data questions (income, expenses, invoices) — call get_business_summary or get_bas_position.
 6. When a user asks to list clients, employees, invoices, or payslips — answer directly from the data above. Do NOT say you don't have the list.
-7. When creating a payslip, use the employee ID from the EMPLOYEES section above — match by name.
-8. When creating an invoice, prefill client email from the CLIENTS section above if the client is listed.
-9. Keep responses concise and plain Australian English. No jargon. No unnecessary explanation.
-10. When you create a document, always wrap the result in <confirm_card> tags as JSON so the UI can render it as a structured card.
-11. You are not a registered tax agent. For complex tax advice, recommend they consult their accountant.
+
+PAYSLIP RULES:
+7. When creating a payslip, look up the employee in EMPLOYEES above by name to get their ID and pay details.
+8. Do NOT ask for gross pay or dates if the employee has a stored rate. Compute them yourself:
+   - Hourly employees: gross_pay = hourly_rate × ordinary_hours (already shown in EMPLOYEES as "/pay")
+   - Salary employees: gross_pay = annual_salary ÷ 26 (fortnightly) or ÷ 52 (weekly) or ÷ 12 (monthly)
+   - Pay period: end = today (${today}), start = today minus 13 days (fortnightly) / 6 days (weekly) / first of month (monthly)
+9. Only ask the user for: which employee (if ambiguous) and the pay period (if they want a specific one other than the current period).
+
+INVOICE RULES:
+10. When creating an invoice, always ask what work was done (description) and the amount. Build line items from their description.
+11. If the client is in CLIENTS above, use their stored email. If the client is NEW (not in the list), call create_client first to add them, then create_invoice.
+12. Always ask: client name, what work was done, rate/amount. Do not send without a confirm card.
+
+GENERAL:
+13. Keep responses concise and plain Australian English. No jargon. No unnecessary explanation.
+14. When you create a document, always wrap the result in <confirm_card> tags as JSON so the UI can render it as a structured card.
+15. You are not a registered tax agent. For complex tax advice, recommend they consult their accountant.
 
 CONFIRM CARD FORMAT — always use this when creating a document:
 <confirm_card>
@@ -107,7 +120,7 @@ export async function POST(req: NextRequest) {
   ] = await Promise.all([
     supabase.from('business_profiles').select('business_name, abn, gst_registered').eq('id', user.id).single(),
     supabase.from('clients').select('id, business_name, contact_name, email, phone').eq('user_id', user.id).order('business_name').limit(100),
-    supabase.from('employees').select('id, name, email, employment_type, pay_cycle, annual_salary').eq('user_id', user.id).order('name').limit(100),
+    supabase.from('employees').select('id, name, email, employment_type, pay_cycle, pay_basis, hourly_rate, ordinary_hours, annual_salary').eq('user_id', user.id).order('name').limit(100),
     supabase.from('invoices').select('id, invoice_number, client_name, client_email, total_inc_gst, status, issue_date').eq('user_id', user.id).order('created_at', { ascending: false }).limit(30),
     supabase.from('payslips').select('id, payslip_number, employee_name, net_pay, pay_period_start, pay_period_end').eq('user_id', user.id).order('created_at', { ascending: false }).limit(30),
     supabase.from('invoices').select('total_inc_gst').eq('user_id', user.id).gte('issue_date', thisMonth).lte('issue_date', today),
@@ -126,9 +139,14 @@ export async function POST(req: NextRequest) {
 
   const employeesSection = employeeList.length === 0
     ? 'EMPLOYEES: none on file'
-    : `EMPLOYEES (${employeeList.length} total):\n` + employeeList.map(e =>
-        `- ${e.name as string} | email: ${(e.email as string) || 'not set'} | ${(e.employment_type as string) || 'casual'} | ${(e.pay_cycle as string) || 'fortnightly'} pay | salary: ${e.annual_salary ? fmtAUD(e.annual_salary as number) + '/yr' : 'not set'} | id: ${e.id as string}`
-      ).join('\n')
+    : `EMPLOYEES (${employeeList.length} total):\n` + employeeList.map(e => {
+        const payBasis    = (e.pay_basis as string) || 'salary'
+        const payCycle    = (e.pay_cycle as string) || 'fortnightly'
+        const rateStr     = payBasis === 'hourly'
+          ? `${fmtAUD(e.hourly_rate as number)}/hr × ${e.ordinary_hours as number} hrs = ${fmtAUD((e.hourly_rate as number) * (e.ordinary_hours as number))}/pay`
+          : e.annual_salary ? `${fmtAUD(e.annual_salary as number)}/yr (${payCycle})` : 'rate not set'
+        return `- ${e.name as string} | email: ${(e.email as string) || 'not set'} | ${(e.employment_type as string) || 'casual'} | ${payCycle} | ${payBasis} | ${rateStr} | id: ${e.id as string}`
+      }).join('\n')
 
   const recentInvoicesSection = (recentInvoices ?? []).length === 0
     ? 'RECENT INVOICES: none'

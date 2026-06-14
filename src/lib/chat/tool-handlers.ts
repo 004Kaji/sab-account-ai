@@ -112,6 +112,35 @@ export async function executeToolCall(
   try {
     switch (name) {
 
+      // ── create_client ───────────────────────────────────────────
+      case 'create_client': {
+        const { data: existing } = await supabase
+          .from('clients')
+          .select('id, business_name')
+          .eq('user_id', userId)
+          .ilike('business_name', `%${input.business_name as string}%`)
+          .limit(1)
+          .single()
+
+        if (existing) {
+          return { already_exists: true, client_id: existing.id, business_name: existing.business_name, message: 'Client already exists — use this ID for the invoice.' }
+        }
+
+        const { data: client, error } = await supabase.from('clients').insert({
+          user_id:      userId,
+          business_name: input.business_name as string,
+          contact_name:  (input.contact_name as string) || null,
+          email:         (input.email as string) || null,
+          phone:         (input.phone as string) || null,
+          abn:           (input.abn as string) || null,
+          address:       (input.address as string) || null,
+        }).select('id').single()
+
+        if (error) throw new Error(error.message)
+
+        return { ok: true, client_id: client.id, business_name: input.business_name, message: 'Client created. Now create the invoice.' }
+      }
+
       // ── create_invoice ──────────────────────────────────────────
       case 'create_invoice': {
         const items = input.items as Array<{ label: string; amount: number }>
@@ -227,10 +256,7 @@ ${inv.has_gst ? `<tr><td style="padding:6px 0;color:#57534E;font-size:13px;borde
 
       // ── create_payslip ──────────────────────────────────────────
       case 'create_payslip': {
-        const employeeId    = input.employee_id as string
-        const grossPay      = input.gross_pay as number
-        const periodStart   = input.pay_period_start as string
-        const periodEnd     = input.pay_period_end as string
+        const employeeId = input.employee_id as string
 
         const { data: emp, error: empErr } = await supabase
           .from('employees')
@@ -241,15 +267,50 @@ ${inv.has_gst ? `<tr><td style="padding:6px 0;color:#57534E;font-size:13px;borde
 
         if (empErr || !emp) return { error: 'Employee not found or access denied' }
 
+        // Auto-compute gross pay from stored employee data if not provided
+        const payCycleStr = (emp.pay_cycle as string | null) || 'fortnightly'
+        const payBasis    = (emp.pay_basis as string | null) || 'salary'
+        let grossPay      = input.gross_pay as number | undefined
+
+        if (!grossPay) {
+          if (payBasis === 'hourly') {
+            const rate  = emp.hourly_rate as number | null
+            const hours = emp.ordinary_hours as number | null
+            if (!rate || !hours) return { error: `Cannot auto-compute pay: ${emp.name as string} has no hourly rate or ordinary hours on file. Please provide gross_pay or update the employee record.` }
+            grossPay = Math.round(rate * hours * 100) / 100
+          } else {
+            const annual = emp.annual_salary as number | null
+            if (!annual) return { error: `Cannot auto-compute pay: ${emp.name as string} has no annual salary on file. Please provide gross_pay or update the employee record.` }
+            const divisor = payCycleStr === 'weekly' ? 52 : payCycleStr === 'monthly' ? 12 : 26
+            grossPay = Math.round((annual / divisor) * 100) / 100
+          }
+        }
+
+        // Auto-compute pay period if not provided
+        const todayDate = new Date()
+        const todayStr  = todayDate.toISOString().slice(0, 10)
+        let periodEnd   = (input.pay_period_end as string) || todayStr
+        let periodStart = input.pay_period_start as string | undefined
+        if (!periodStart) {
+          const endDate = new Date(periodEnd)
+          if (payCycleStr === 'weekly') {
+            endDate.setDate(endDate.getDate() - 6)
+          } else if (payCycleStr === 'monthly') {
+            periodStart = new Date(endDate.getFullYear(), endDate.getMonth(), 1).toISOString().slice(0, 10)
+            periodEnd   = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0).toISOString().slice(0, 10)
+          } else {
+            endDate.setDate(endDate.getDate() - 13)
+          }
+          if (!periodStart) periodStart = endDate.toISOString().slice(0, 10)
+        }
+
         const { data: biz } = await supabase
           .from('business_profiles')
           .select('business_name, abn, super_rate_new')
           .eq('id', userId)
           .single()
 
-        const payCycle = (emp.pay_cycle as string | null) === 'weekly' ? 'weekly'
-          : (emp.pay_cycle as string | null) === 'monthly' ? 'monthly'
-          : 'fortnightly'
+        const payCycle = payCycleStr === 'weekly' ? 'weekly' : payCycleStr === 'monthly' ? 'monthly' : 'fortnightly'
 
         const annualSalary = (emp.annual_salary as number | null) ?? (grossPay * (payCycle === 'weekly' ? 52 : payCycle === 'fortnightly' ? 26 : 12))
         const residencyStatus = (emp.residency_status as 'citizen_pr' | 'student' | 'temp_work' | 'whm' | 'partner' | 'other_temp') ?? 'citizen_pr'
@@ -281,7 +342,7 @@ ${inv.has_gst ? `<tr><td style="padding:6px 0;color:#57534E;font-size:13px;borde
           member_number:   (emp.member_number as string | null) ?? null,
           employer_name:   (biz?.business_name as string) || '',
           employer_abn:    (biz?.abn as string | null) ?? null,
-          pay_period_start: periodStart,
+          pay_period_start: periodStart!,
           pay_period_end:   periodEnd,
           payment_date:     paymentDate,
           gross_pay:        numbers.grossPay,
@@ -302,7 +363,7 @@ ${inv.has_gst ? `<tr><td style="padding:6px 0;color:#57534E;font-size:13px;borde
           payslip_number:  payslipNumber,
           employee_name:   emp.name,
           employee_email:  emp.email,
-          pay_period:      `${periodStart} to ${periodEnd}`,
+          pay_period:      `${periodStart!} to ${periodEnd}`,
           gross_pay:       fmt(numbers.grossPay),
           income_tax:      fmt(numbers.incomeTax),
           medicare_levy:   fmt(numbers.medicareLevy),
