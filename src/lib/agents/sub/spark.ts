@@ -1228,6 +1228,8 @@ export async function sparkFindBusinesses(location = 'Darwin, Australia'): Promi
     if (!email) email = await tavilyExtractEmail(candidate.url)
     if (!email) continue
     if (/noreply|no-reply|example|test@|admin@|info@yellowpages|info@truelocal/.test(email)) continue
+    if (/\.gov\.au/i.test(candidate.url)) continue
+    if (/government|authority|council|department|ministry|shire|tribunal|commission/i.test(candidate.name)) continue
 
     const { count } = await supabase
       .from('business_outreach')
