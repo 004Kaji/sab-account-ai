@@ -106,6 +106,7 @@ export async function POST(req: NextRequest) {
       const paygStatus = flux ? (flux.payg.allPassing ? 'pass' : 'fail') : 'unknown'
       const scoutStatus = scout ? (scout.criticalFail ? 'fail' : 'pass') : 'unknown'
       const churnRisk = lift ? Math.min(10, lift.atRiskUsers.length * 2) : 0
+      const inactivePaidCount = lift ? lift.atRiskUsers.filter(u => u.riskReason === 'inactive_paid').length : 0
       const july1Countdown = Math.max(0, Math.ceil((new Date('2026-07-01').getTime() - Date.now()) / 86400000))
 
       // Signups today + accountant outreach sent this week: query live from DB
@@ -113,7 +114,7 @@ export async function POST(req: NextRequest) {
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-      const [signupsTodayResult, accountantEmailsResult] = await Promise.all([
+      const [signupsTodayResult, accountantEmailsResult, businessEmailsResult] = await Promise.all([
         supabase
           .from('profiles')
           .select('*', { count: 'exact', head: true })
@@ -123,9 +124,15 @@ export async function POST(req: NextRequest) {
           .select('*', { count: 'exact', head: true })
           .not('emailed_at', 'is', null)
           .gte('emailed_at', weekAgo),
+        supabase
+          .from('business_outreach')
+          .select('*', { count: 'exact', head: true })
+          .not('emailed_at', 'is', null)
+          .gte('emailed_at', weekAgo),
       ])
       const signupsToday = signupsTodayResult.count
       const accountantEmailsThisWeek = accountantEmailsResult.count ?? 0
+      const businessEmailsThisWeek = businessEmailsResult.count ?? 0
 
       await updateWorldState({
         mrr_current: Math.round(stripe.mrr),
@@ -138,6 +145,7 @@ export async function POST(req: NextRequest) {
         sentry_open_count: flux?.sentry.newErrors.length ?? 0,
         sentry_last_error: flux?.sentry.newErrors[0]?.type ?? '',
         churn_risk_score: churnRisk,
+        inactive_paid_count: inactivePaidCount,
         upgrade_candidates: lift?.upgradeSignals ?? 0,
         onboarding_gap_count: lift?.onboardingGaps ?? 0,
         lift_outcome_summary: lift?.summary ?? '',
@@ -163,13 +171,13 @@ export async function POST(req: NextRequest) {
         signups_baseline: ws.signups_baseline,
         churn_risk_score: ws.churn_risk_score,
         failed_payments_count: ws.failed_payments_count,
-        inactive_paid_count: ws.inactive_paid_count,
+        inactive_paid_count: inactivePaidCount,
         flux_code_score: ws.flux_code_score,
         scout_last_status: ws.scout_last_status,
         sentry_open_count: ws.sentry_open_count,
         payg_test_status: ws.payg_test_status,
         sentry_last_error: ws.sentry_last_error || 'none',
-        atlas_last_finding: ws.atlas_last_finding || 'not yet collected',
+        atlas_last_finding: atlasIntel || ws.atlas_last_finding || 'not yet collected',
         atlas_last_run: ws.atlas_last_run ? new Date(ws.atlas_last_run).toLocaleDateString('en-AU') : 'never',
         brand_mentions_count: ws.brand_mentions_count,
         upgrade_candidates: ws.upgrade_candidates,
@@ -179,6 +187,7 @@ export async function POST(req: NextRequest) {
         spark_last_topic: ws.spark_last_topic || 'not set',
         approval_queue_depth: ws.approval_queue_depth,
         accountant_emails_sent: accountantEmailsThisWeek,
+        business_emails_sent: businessEmailsThisWeek,
         spark_winning_subject: ws.spark_winning_subject || 'not tracked yet',
         published_blog_posts: 'payday-super-2026',
         visa_days_remaining: ws.visa_days_remaining,

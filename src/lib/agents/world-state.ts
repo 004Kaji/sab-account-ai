@@ -251,6 +251,7 @@ Content state (from Spark):
 - Last brief topic: {{spark_last_topic}}
 - Approval queue depth: {{approval_queue_depth}}
 - Accountant emails sent this week: {{accountant_emails_sent}}
+- Business emails sent this week: {{business_emails_sent}}
 - Winning subject line pattern: {{spark_winning_subject}}
 - Published blog posts (ALREADY LIVE — do not suggest creating these): {{published_blog_posts}}
 
