@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { formatCurrency, formatDateAU, todayISO } from '@/lib/utils'
+import { AutopilotUpgradeBanner } from '@/components/ui/AutopilotUpgradeBanner'
 
 interface TopClient {
   client_name: string
@@ -710,6 +711,8 @@ export default function DashboardPage() {
 
   return (
     <div className="page-pad" style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+
+      <AutopilotUpgradeBanner plan={profile.plan} />
 
       {/* ── Header ─────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>

@@ -65,8 +65,19 @@ const PLANS = [
     desc: 'Full ATO compliance for growing businesses.',
     cta: 'Start 14-day trial',
     href: '/signup?plan=pro',
-    highlight: true,
+    highlight: false,
     features: ['Everything in Starter', 'ATO-compliant payslips', 'PAYG withholding (Scale 1 & 2)', 'Payday Super tracking', 'BAS estimates', 'Priority support'],
+  },
+  {
+    name: 'Autopilot',
+    price: '$49',
+    period: '/month',
+    desc: 'Your business runs itself. You just approve.',
+    cta: 'Start 14-day trial',
+    href: '/signup?plan=autopilot',
+    highlight: true,
+    features: ['Everything in Pro', 'SAB Chat AI assistant', 'Create payslips & invoices by message', 'ATO compliance answers instantly', 'Business summaries on demand'],
+    teaser: true,
   },
 ]
 
@@ -85,9 +96,10 @@ const SOFTWARE_SCHEMA = {
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'Web Browser',
   offers: [
-    { '@type': 'Offer', price: '0',  priceCurrency: 'AUD', name: 'Free'    },
-    { '@type': 'Offer', price: '9',  priceCurrency: 'AUD', name: 'Starter' },
-    { '@type': 'Offer', price: '19', priceCurrency: 'AUD', name: 'Pro'     },
+    { '@type': 'Offer', price: '0',  priceCurrency: 'AUD', name: 'Free'      },
+    { '@type': 'Offer', price: '9',  priceCurrency: 'AUD', name: 'Starter'   },
+    { '@type': 'Offer', price: '19', priceCurrency: 'AUD', name: 'Pro'       },
+    { '@type': 'Offer', price: '49', priceCurrency: 'AUD', name: 'Autopilot' },
   ],
   description: 'AI-powered invoicing and ATO-compliant payslips for Australian small businesses and freelancers.',
   url: 'https://sabaccountai.com',
@@ -500,6 +512,15 @@ export default function HomePage() {
                   </li>
                 ))}
               </ul>
+              {'teaser' in plan && plan.teaser && (
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem', marginBottom: '1.5rem', textAlign: 'center' }}>
+                  <p style={{ fontSize: '0.8125rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.6 }}>
+                    … <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}>One message. Everything done.</span>
+                    {' '}Something new is coming for Autopilot members.{' '}
+                    <span style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.35)' }}>Early access Q3 2026.</span>
+                  </p>
+                </div>
+              )}
               <a href={plan.href} className="btn" style={{ display: 'flex', width: '100%', justifyContent: 'center', background: plan.highlight ? 'var(--ember)' : 'transparent', color: plan.highlight ? '#fff' : 'var(--char)', border: plan.highlight ? 'none' : '1px solid var(--border)', textDecoration: 'none' }}>
                 {plan.cta}
               </a>

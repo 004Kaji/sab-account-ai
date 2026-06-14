@@ -13,9 +13,10 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 // After creating prices, add these to .env.local:
 //   STRIPE_PRICE_STARTER=price_xxxxx
 //   STRIPE_PRICE_PRO=price_xxxxx
-export const PRICE_IDS: Record<'starter' | 'pro', string> = {
-  starter: process.env.STRIPE_PRICE_STARTER ?? '',
-  pro: process.env.STRIPE_PRICE_PRO ?? '',
+export const PRICE_IDS: Record<'starter' | 'pro' | 'autopilot', string> = {
+  starter:  process.env.STRIPE_PRICE_STARTER   ?? '',
+  pro:      process.env.STRIPE_PRICE_PRO       ?? '',
+  autopilot: process.env.STRIPE_PRICE_AUTOPILOT ?? '',
 }
 
 // Plan display names and amounts (for UI reference)
@@ -34,5 +35,10 @@ export const PLAN_CONFIG = {
     label: 'Pro',
     price: 19,
     description: 'Everything + ATO payslips + BAS',
+  },
+  autopilot: {
+    label: 'Autopilot',
+    price: 49,
+    description: 'Everything in Pro + SAB Chat AI assistant',
   },
 } as const

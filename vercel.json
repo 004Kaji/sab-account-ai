@@ -43,6 +43,14 @@
     {
       "path": "/api/cron/ping",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/monthly-summary",
+      "schedule": "0 22 1 * *"
+    },
+    {
+      "path": "/api/cron/bas-reminder",
+      "schedule": "0 23 * * *"
     }
   ]
 }

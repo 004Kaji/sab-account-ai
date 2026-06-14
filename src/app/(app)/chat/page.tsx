@@ -134,17 +134,54 @@ export default function ChatPage() {
   useEffect(() => { document.title = 'SAB Chat — SAB Account AI' }, [])
 
   const profile = useProfile()
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [input, setInput]       = useState('')
-  const [loading, setLoading]   = useState(false)
+  const [messages, setMessages]     = useState<ChatMessage[]>([])
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [input, setInput]           = useState('')
+  const [loading, setLoading]       = useState(false)
   const [toolActivity, setToolActivity] = useState<string | null>(null)
-  const [remaining, setRemaining] = useState<number | null>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const [remaining, setRemaining]   = useState<number | null>(null)
+  const bottomRef   = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  // ── Load chat history from Supabase on mount ──────────────────────
+  useEffect(() => {
+    if (profile.plan !== 'autopilot') return
+    const load = async () => {
+      const supabase = createBrowserClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { setHistoryLoaded(true); return }
+      const { data } = await supabase
+        .from('chat_messages')
+        .select('id, role, content, created_at')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(20)
+      if (data && data.length > 0) {
+        const historical = [...data].reverse().map(m => ({
+          id:   m.id as string,
+          role: m.role as MessageRole,
+          text: m.content as string,
+        }))
+        setMessages(historical)
+      }
+      setHistoryLoaded(true)
+    }
+    load()
+  }, [profile.plan])
+
+  // ── Clear chat history ────────────────────────────────────────────
+  const clearHistory = useCallback(async () => {
+    if (!confirm('Clear all chat history? This cannot be undone.')) return
+    const supabase = createBrowserClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    await supabase.from('chat_messages').delete().eq('user_id', session.user.id)
+    setMessages([])
+  }, [])
 
   // ── Gate: non-autopilot users see upgrade prompt ─────────────────
   if (profile.plan !== 'autopilot') {
@@ -268,7 +305,7 @@ export default function ChatPage() {
     }
   }
 
-  const isFirstLoad = messages.length === 0 && !loading
+  const isFirstLoad = historyLoaded && messages.length === 0 && !loading
 
   return (
     <div style={{ maxWidth: '760px', margin: '0 auto', padding: '0 1.5rem', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 60px)' }}>
@@ -288,11 +325,22 @@ export default function ChatPage() {
             Ask anything about your business. Create payslips and invoices by message.
           </p>
         </div>
-        {remaining !== null && (
-          <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>
-            {remaining} messages left today
-          </span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          {remaining !== null && (
+            <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>
+              {remaining} messages left today
+            </span>
+          )}
+          {messages.length > 0 && (
+            <button
+              onClick={clearHistory}
+              style={{ fontSize: '0.75rem', color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              title="Clear chat history"
+            >
+              Clear history
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Messages ── */}

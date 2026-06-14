@@ -4,12 +4,12 @@ import Link from 'next/link'
 import { useProfile } from '@/app/(app)/profile-context'
 
 interface PlanGateProps {
-  requiredPlan: 'starter' | 'pro'
+  requiredPlan: 'starter' | 'pro' | 'autopilot'
   children: React.ReactNode
   fallback?: React.ReactNode
 }
 
-const PLAN_RANK: Record<string, number> = { free: 0, starter: 1, pro: 2 }
+const PLAN_RANK: Record<string, number> = { free: 0, starter: 1, pro: 2, autopilot: 3 }
 
 export default function PlanGate({ requiredPlan, children, fallback }: PlanGateProps) {
   const profile = useProfile()

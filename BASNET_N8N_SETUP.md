@@ -27,7 +27,7 @@ Name:    Basnet Watcher
 Trigger: Schedule — every 5 minutes
 Node:    HTTP Request
 Method:  POST
-URL:     https://sabaccountai.com.au/api/agents/watch
+URL:     https://sabaccountai.com/api/agents/watch
 Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
 Body:    {}
 ```
@@ -45,7 +45,7 @@ Trigger: Schedule — 7:00am AEST daily
          (21:00 UTC previous day)
 Node:    HTTP Request
 Method:  POST
-URL:     https://sabaccountai.com.au/api/agents/basnet
+URL:     https://sabaccountai.com/api/agents/basnet
 Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
 Body:    { "trigger": "morning" }
 ```
@@ -60,7 +60,7 @@ Trigger: Schedule — Monday 6:00am AEST
          (Sunday 20:00 UTC)
 Node:    HTTP Request
 Method:  POST
-URL:     https://sabaccountai.com.au/api/agents/basnet
+URL:     https://sabaccountai.com/api/agents/basnet
 Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
 Body:    { "trigger": "weekly" }
 ```
@@ -77,7 +77,7 @@ Trigger: Schedule — Friday 7:00am AEST
          (Thursday 21:00 UTC)
 Node:    HTTP Request
 Method:  POST
-URL:     https://sabaccountai.com.au/api/agents/sab
+URL:     https://sabaccountai.com/api/agents/sab
 Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
 Body:    { "trigger": "marketing_run",
            "data": { "marketingTrigger": "accountant_emails" } }
@@ -93,7 +93,7 @@ Trigger: Schedule — 2:00am AEST daily
          (16:00 UTC previous day)
 Node:    HTTP Request
 Method:  POST
-URL:     https://sabaccountai.com.au/api/agents/sab
+URL:     https://sabaccountai.com/api/agents/sab
 Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
 Body:    { "trigger": "scout_scan" }
 ```
@@ -110,7 +110,7 @@ Trigger: Schedule — 3:00am AEST daily
          (17:00 UTC previous day)
 Node:    HTTP Request
 Method:  POST
-URL:     https://sabaccountai.com.au/api/agents/sab
+URL:     https://sabaccountai.com/api/agents/sab
 Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
 Body:    { "trigger": "lift_scan" }
 ```
@@ -125,7 +125,7 @@ Trigger: Schedule — Sunday 8:00pm AEST
          (Sunday 10:00 UTC)
 Node:    HTTP Request
 Method:  POST
-URL:     https://sabaccountai.com.au/api/agents/learn
+URL:     https://sabaccountai.com/api/agents/learn
 Headers: { "x-agent-secret": "AGENT_WEBHOOK_SECRET" }
 Body:    {}
 ```

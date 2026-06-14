@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import fs from 'fs'
 import path from 'path'
-import { tavilySearch, getSystemInfo, readFile, fileExists } from '../mac-toolkit'
+import { tavilySearch, getSystemInfo, readFile, fileExists, listDirectory, deleteFilesMatching } from '../mac-toolkit'
+import os from 'os'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -81,6 +82,11 @@ No explanation. JSON only.`,
 // ── System info detection ─────────────────────────────────────────────
 
 const MAC_TRIGGERS = ['memory', 'ram', 'disk', 'cpu', 'battery', 'uptime', 'ssd', 'hard drive', 'my mac', 'space', 'free space']
+const DESKTOP_TRIGGERS = [
+  'desktop', 'my files', 'my folder', 'my documents', 'my downloads',
+  'access to my', 'do you have access', 'have access', 'can you access',
+  'files and folder', 'what files', 'show me my', "what's on my",
+]
 const WEB_TRIGGERS = ['visa', 'job', 'jobs', 'darwin', 'sydney', 'melbourne', 'brisbane', 'perth',
   'weather', 'price of', 'cost of', 'how much does', 'find me', 'salary', 'wage',
   'uni course', 'assignment', 'ato deadline', 'tax deadline', 'super deadline',
@@ -90,6 +96,7 @@ const WEB_TRIGGERS = ['visa', 'job', 'jobs', 'darwin', 'sydney', 'melbourne', 'b
 
 function needsSystemInfo(q: string): boolean { return MAC_TRIGGERS.some(t => q.includes(t)) }
 function needsWebSearch(q: string): boolean { return WEB_TRIGGERS.some(t => q.includes(t)) }
+function needsDesktopListing(q: string): boolean { return DESKTOP_TRIGGERS.some(t => q.includes(t)) }
 
 // ── Main handler ──────────────────────────────────────────────────────
 
@@ -115,6 +122,22 @@ export async function handlePersonal(question: string, progress: ProgressFn, fil
   if (filePaths?.length) {
     for (const p of filePaths.slice(0, 3)) {
       if (fileExists(p)) fileContext += `\n\nFile: ${p}\n${readFile(p).slice(0, 2000)}`
+    }
+  }
+
+  let desktopContext = ''
+  if (needsDesktopListing(q)) {
+    try {
+      const home = os.homedir()
+      const desktopFiles = listDirectory(`${home}/Desktop`).slice(0, 30)
+      const docFiles = listDirectory(`${home}/Documents`).slice(0, 20)
+      const dlFiles = listDirectory(`${home}/Downloads`).slice(0, 15)
+      desktopContext = `\n\nLive file listing (I can READ these files):
+Desktop (${desktopFiles.length} items): ${desktopFiles.join(', ')}
+Documents (${docFiles.length} items): ${docFiles.join(', ')}
+Downloads (${dlFiles.length} items): ${dlFiles.join(', ')}`
+    } catch (err) {
+      desktopContext = `\n\nFile access: I have read access to Desktop, Documents, Downloads but listing failed: ${err}`
     }
   }
 
@@ -150,6 +173,32 @@ export async function handlePersonal(question: string, progress: ProgressFn, fil
     }
   }
 
+  // ── Delete command — actually execute it, don't just say it ──────────
+  const isDeleteCmd = /\bdelete\b|\bremove\b|\bclean up\b|\bclear\b/i.test(question)
+  if (isDeleteCmd && needsDesktopListing(q)) {
+    const home = os.homedir()
+    const isScreenshot = (name: string) =>
+      /^Screenshot.*\.(png|jpg|jpeg)$/i.test(name) || /^Screen Shot.*\.(png|jpg|jpeg)$/i.test(name)
+    const isPhoto = (name: string) => /\.(png|jpg|jpeg|gif|heic|heif|webp)$/i.test(name) && !/^Screenshot/i.test(name)
+    const isAll = /all (files|items|everything)/i.test(question)
+
+    let deleted: string[] = []
+    if (/screenshot/i.test(question)) {
+      deleted = deleteFilesMatching(`${home}/Desktop`, isScreenshot)
+    } else if (/photo|image|picture/i.test(question)) {
+      deleted = deleteFilesMatching(`${home}/Desktop`, isPhoto)
+    } else if (isAll) {
+      deleted = deleteFilesMatching(`${home}/Desktop`, () => true)
+    }
+
+    if (deleted.length > 0) {
+      return {
+        answer: `Done. Deleted ${deleted.length} file${deleted.length === 1 ? '' : 's'} from your Desktop: ${deleted.slice(0, 5).join(', ')}${deleted.length > 5 ? ` and ${deleted.length - 5} more` : ''}.`,
+        webSearchUsed: false,
+      }
+    }
+  }
+
   // Detect open-browser intent and extract URL or app keyword
   const openTriggers: [RegExp, string][] = [
     [/n8n|workflow|automation/i,           'http://localhost:5678'],
@@ -177,6 +226,13 @@ export async function handlePersonal(question: string, progress: ProgressFn, fil
 Sanjog: Nepali international student, student visa 500, max 48h/fortnight work during semester.
 North star: Permanent Residency → million-dollar SaaS (SAB Account AI) → financial independence.
 
+MY CAPABILITIES (running on Sanjog's Mac):
+- I CAN read and delete files in Desktop, Documents, and Downloads.
+- I CAN check Mac system info (disk, RAM, CPU, battery).
+- I CAN search the web.
+- I CANNOT access outside these 3 folders.
+- IMPORTANT: Delete commands are executed in code BEFORE this prompt runs. If the user said delete, it's already done — confirm it happened, do not say "I'll do it" or "doing it now".
+
 HARD RULES:
 - 2 sentences max. Plain spoken English. No markdown, no bullet points.
 - NEVER say "paste", "copy", "type", "send me" — voice only.
@@ -185,7 +241,7 @@ HARD RULES:
 - If you don't know, say "I don't have that data right now" — don't guess.
 - If asked to open something and it's in the browser list, say "Opening it now."
 ${openUrl ? `\n- IMPORTANT: Tell Sanjog you are opening ${openUrl} right now.` : ''}
-${master ? `\n\nContext:\n${master}` : ''}${memoryContext ? `\n\nMemory + conversation:\n${memoryContext}` : ''}${fileContext}${systemContext}${webContext}`,
+${master ? `\n\nContext:\n${master}` : ''}${memoryContext ? `\n\nMemory + conversation:\n${memoryContext}` : ''}${fileContext}${desktopContext}${systemContext}${webContext}`,
     messages: [{ role: 'user', content: question }],
   })
 

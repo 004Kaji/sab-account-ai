@@ -280,8 +280,8 @@ function SubscriptionTab({ profile, successPlan, stripeLoading, handlePortal, ha
   profile: ProfileInfo
   successPlan: string | null
   stripeLoading: boolean
-  handlePortal: () => Promise<void>
-  handleUpgrade: (plan: 'starter' | 'pro') => Promise<void>
+  handlePortal: (targetPlan?: string) => Promise<void>
+  handleUpgrade: (plan: 'starter' | 'pro' | 'autopilot') => Promise<void>
 }) {
   const planStyle = PLAN_STYLES[profile.plan] ?? PLAN_STYLES.free
   const isPaid    = profile.plan !== 'free'
@@ -301,6 +301,10 @@ function SubscriptionTab({ profile, successPlan, stripeLoading, handlePortal, ha
     {
       key: 'pro', name: 'Pro', price: '$19', period: '/month',
       features: ['Everything in Starter', 'ATO-compliant payslips', 'PAYG Scale 1 & 2', 'Super at 12%', 'HELP repayment'],
+    },
+    {
+      key: 'autopilot', name: 'Autopilot', price: '$49', period: '/month',
+      features: ['Everything in Pro', 'SAB Chat AI assistant', 'Ask questions about your business', 'Create payslips & invoices by chat', 'ATO compliance answers instantly'],
       highlight: true,
     },
   ]
@@ -355,7 +359,7 @@ function SubscriptionTab({ profile, successPlan, stripeLoading, handlePortal, ha
                 We couldn&apos;t charge your card. Please update your payment method to keep your plan active.
               </p>
               <button
-                onClick={handlePortal}
+                onClick={() => handlePortal()}
                 disabled={stripeLoading}
                 className="btn btn-primary"
                 style={{ fontSize: '0.8125rem', padding: '0.375rem 0.875rem' }}
@@ -373,7 +377,7 @@ function SubscriptionTab({ profile, successPlan, stripeLoading, handlePortal, ha
         </div>
         {isPaid && (
           <button
-            onClick={handlePortal}
+            onClick={() => handlePortal()}
             disabled={stripeLoading}
             className="btn btn-outline"
             style={{ fontSize: '0.875rem' }}
@@ -428,13 +432,13 @@ function SubscriptionTab({ profile, successPlan, stripeLoading, handlePortal, ha
                 </div>
               ) : (
                 <button
-                  onClick={() => handleUpgrade(plan.key as 'starter' | 'pro')}
+                  onClick={() => isPaid ? handlePortal(plan.key) : handleUpgrade(plan.key as 'starter' | 'pro' | 'autopilot')}
                   disabled={stripeLoading}
                   className={`btn ${plan.highlight ? 'btn-ember' : 'btn-outline'}`}
                   style={{ width: '100%', fontSize: '0.875rem', padding: '0.5rem 1rem' }}
                 >
                   {stripeLoading && <span className="spinner" style={{ width: '0.875rem', height: '0.875rem', borderWidth: '2px' }} />}
-                  {profile.plan === 'pro' ? `Switch to ${plan.name}` : `Upgrade to ${plan.name}`}
+                  {isPaid ? `Switch to ${plan.name}` : `Upgrade to ${plan.name}`}
                 </button>
               )}
             </div>
@@ -1118,7 +1122,7 @@ function SettingsPageInner() {
     return data.url as string
   }
 
-  async function handleUpgrade(plan: 'starter' | 'pro') {
+  async function handleUpgrade(plan: 'starter' | 'pro' | 'autopilot') {
     setStripeLoading(true)
     try {
       const url = await stripeRequest('/api/stripe/checkout', { plan })
@@ -1129,10 +1133,10 @@ function SettingsPageInner() {
     }
   }
 
-  async function handlePortal() {
+  async function handlePortal(targetPlan?: string) {
     setStripeLoading(true)
     try {
-      const url = await stripeRequest('/api/stripe/portal', {})
+      const url = await stripeRequest('/api/stripe/portal', targetPlan ? { targetPlan } : {})
       window.location.href = url
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Could not open billing portal', 'error')

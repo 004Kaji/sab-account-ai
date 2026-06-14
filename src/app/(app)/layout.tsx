@@ -8,18 +8,21 @@ import { ProfileContext, type Profile } from './profile-context'
 import { initials, safeStorage } from '@/lib/utils'
 import { ToastProvider } from '@/components/ui/Toast'
 
+const PLAN_RANK: Record<string, number> = { free: 0, starter: 1, pro: 2, autopilot: 3 }
+
 const NAV_ITEMS = [
-  { label: 'Dashboard',       href: '/dashboard',              proOnly: false },
-  { label: 'Invoices',        href: '/invoices',               proOnly: false },
-  { label: 'New Invoice',     href: '/invoice',                proOnly: false },
-  { label: 'Payslips',        href: '/payslip-history',        proOnly: true  },
-  { label: 'New Payslip',     href: '/payslip',                proOnly: true  },
-  { label: 'ABN Pay',         href: '/abn-payments',           proOnly: true  },
-  { label: 'Records',         href: '/records',                proOnly: false },
-  { label: 'Tax & Super',     href: '/tax-super',              proOnly: true  },
-  { label: 'Clients',         href: '/clients',                proOnly: false },
-  { label: 'Employees',       href: '/employees',              proOnly: true  },
-  { label: 'Settings',        href: '/settings',               proOnly: false },
+  { label: 'Dashboard',       href: '/dashboard',              minRank: 0 },
+  { label: 'Invoices',        href: '/invoices',               minRank: 0 },
+  { label: 'New Invoice',     href: '/invoice',                minRank: 0 },
+  { label: 'Payslips',        href: '/payslip-history',        minRank: 2 },
+  { label: 'New Payslip',     href: '/payslip',                minRank: 2 },
+  { label: 'ABN Pay',         href: '/abn-payments',           minRank: 2 },
+  { label: 'Records',         href: '/records',                minRank: 0 },
+  { label: 'Tax & Super',     href: '/tax-super',              minRank: 2 },
+  { label: 'Clients',         href: '/clients',                minRank: 0 },
+  { label: 'Employees',       href: '/employees',              minRank: 2 },
+  { label: 'SAB Chat',        href: '/chat',                   minRank: 3 },
+  { label: 'Settings',        href: '/settings',               minRank: 0 },
 ]
 
 // Bottom nav limited to 5 items so they all fit on small screens
@@ -32,9 +35,10 @@ const MOBILE_NAV_ITEMS = [
 ]
 
 const PLAN_STYLES: Record<string, { bg: string; color: string; label: string }> = {
-  free:    { bg: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.7)', label: 'Free'    },
-  starter: { bg: 'rgba(201,147,58,0.25)', color: '#E8B86D',               label: 'Starter' },
-  pro:     { bg: 'rgba(200,75,47,0.3)',   color: '#E8856D',               label: 'Pro'     },
+  free:      { bg: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.7)', label: 'Free'      },
+  starter:   { bg: 'rgba(201,147,58,0.25)', color: '#E8B86D',               label: 'Starter'   },
+  pro:       { bg: 'rgba(200,75,47,0.3)',   color: '#E8856D',               label: 'Pro'       },
+  autopilot: { bg: 'rgba(100,80,200,0.3)',  color: '#B8AAFF',               label: 'Autopilot' },
 }
 
 function DocIcon() {
@@ -257,7 +261,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <nav style={{ display: 'flex', alignItems: 'center', gap: '0.125rem', flex: 1 }} className="desktop-nav">
                 {NAV_ITEMS.map((item) => {
                   const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-                  const isLocked = item.proOnly && profile.plan !== 'pro'
+                  const userRank = PLAN_RANK[profile.plan] ?? 0
+                  const isLocked = item.minRank > userRank
+                  const badge = item.minRank === 3 ? 'AUTOPILOT' : item.minRank === 2 ? 'PRO' : null
+                  const badgeColor = item.minRank === 3
+                    ? { bg: 'rgba(100,80,200,0.3)', color: '#B8AAFF' }
+                    : { bg: 'rgba(200,75,47,0.3)', color: '#E8856D' }
                   return (
                     <Link
                       key={item.href}
@@ -270,19 +279,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         borderRadius: '8px',
                         fontSize: '0.875rem',
                         fontWeight: isActive ? 500 : 400,
-                        color: isActive ? '#ffffff' : 'rgba(255,255,255,0.55)',
+                        color: isActive ? '#ffffff' : isLocked ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.55)',
                         background: isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
                         textDecoration: 'none',
                         whiteSpace: 'nowrap',
                         transition: 'color 150ms, background 150ms',
                       }}
                       onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)' }}
-                      onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.55)' }}
+                      onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.color = isLocked ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.55)' }}
                     >
                       {item.label}
-                      {isLocked && (
-                        <span style={{ fontSize: '0.625rem', background: 'rgba(200,75,47,0.3)', color: '#E8856D', padding: '0.1rem 0.375rem', borderRadius: '4px', fontWeight: 600 }}>
-                          PRO
+                      {isLocked && badge && (
+                        <span style={{ fontSize: '0.625rem', background: badgeColor.bg, color: badgeColor.color, padding: '0.1rem 0.375rem', borderRadius: '4px', fontWeight: 600 }}>
+                          {badge}
                         </span>
                       )}
                     </Link>
@@ -304,7 +313,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   {planStyle.label}
                 </span>
 
-                {profile.plan !== 'pro' && (
+                {profile.plan !== 'autopilot' && (
                   <Link
                     href="/settings?tab=subscription"
                     className="upgrade-btn"
@@ -393,7 +402,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               }} className="mobile-menu">
                 {NAV_ITEMS.map((item) => {
                   const isActive = pathname === item.href
-                  const isLocked = item.proOnly && profile.plan !== 'pro'
+                  const userRank = PLAN_RANK[profile.plan] ?? 0
+                  const isLocked = item.minRank > userRank
+                  const lockLabel = item.minRank === 3 ? 'Autopilot only' : item.minRank === 2 ? 'Pro only' : null
                   return (
                     <Link
                       key={item.href}
@@ -412,7 +423,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       }}
                     >
                       {item.label}
-                      {isLocked && <span style={{ fontSize: '0.75rem', color: '#E8856D' }}>Pro only</span>}
+                      {isLocked && lockLabel && <span style={{ fontSize: '0.75rem', color: item.minRank === 3 ? '#B8AAFF' : '#E8856D' }}>{lockLabel}</span>}
                     </Link>
                   )
                 })}

@@ -5,7 +5,7 @@
 export type DbProfile = {
   id: string
   email: string | null
-  plan: 'free' | 'starter' | 'pro'
+  plan: 'free' | 'starter' | 'pro' | 'autopilot'
   stripe_customer_id: string | null
   stripe_subscription_id: string | null
   subscription_status: 'active' | 'trialing' | 'past_due' | 'cancelled' | 'inactive' | null

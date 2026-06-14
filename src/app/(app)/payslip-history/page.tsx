@@ -6,6 +6,8 @@ import { createBrowserClient } from '@/lib/supabase'
 import { useToast } from '@/components/ui/Toast'
 import PlanGate from '@/components/ui/PlanGate'
 import { formatCurrency, formatDateAU, formatABN } from '@/lib/utils'
+import { useProfile } from '@/app/(app)/profile-context'
+import { AutopilotUpgradeBanner } from '@/components/ui/AutopilotUpgradeBanner'
 
 interface Payslip {
   id: string
@@ -34,6 +36,7 @@ interface Payslip {
 
 export default function PayslipHistoryPage() {
   const { toast } = useToast()
+  const profile = useProfile()
   useEffect(() => { document.title = 'Payslip History — SAB Account AI' }, [])
 
   const [payslips, setPayslips]           = useState<Payslip[]>([])
@@ -137,6 +140,8 @@ export default function PayslipHistoryPage() {
   return (
     <PlanGate requiredPlan="pro">
       <div className="page-pad" style={{ maxWidth: '1100px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+
+        <AutopilotUpgradeBanner plan={profile.plan} />
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>

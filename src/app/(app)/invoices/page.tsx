@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase'
 import { useToast } from '@/components/ui/Toast'
 import { formatCurrency, formatDateAU, formatABN } from '@/lib/utils'
+import { useProfile } from '@/app/(app)/profile-context'
+import { AutopilotUpgradeBanner } from '@/components/ui/AutopilotUpgradeBanner'
 
 type InvoiceStatus = 'draft' | 'pending' | 'paid' | 'overdue'
 type DocumentType  = 'invoice' | 'quote'
@@ -50,6 +52,7 @@ type FilterStatus = 'all' | InvoiceStatus | 'quote'
 
 export default function InvoicesPage() {
   const { toast } = useToast()
+  const profile = useProfile()
   useEffect(() => { document.title = 'Invoices — SAB Account AI' }, [])
 
   const [invoices, setInvoices]         = useState<Invoice[]>([])
@@ -177,6 +180,8 @@ export default function InvoicesPage() {
 
   return (
     <div className="page-pad" style={{ maxWidth: '1100px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+
+      <AutopilotUpgradeBanner plan={profile.plan} />
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>

@@ -8,7 +8,7 @@ import { createContext, useContext } from 'react'
 export type Profile = {
   id: string
   email: string
-  plan: 'free' | 'starter' | 'pro'
+  plan: 'free' | 'starter' | 'pro' | 'autopilot'
   subscription_status: string | null
   trial_ends_at: string | null
   business_name: string | null

@@ -14,8 +14,8 @@ export async function POST(req: NextRequest) {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
     if (authErr || !user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-    const { plan } = await req.json() as { plan: 'starter' | 'pro' }
-    if (plan !== 'starter' && plan !== 'pro') {
+    const { plan } = await req.json() as { plan: 'starter' | 'pro' | 'autopilot' }
+    if (plan !== 'starter' && plan !== 'pro' && plan !== 'autopilot') {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
     }
 
