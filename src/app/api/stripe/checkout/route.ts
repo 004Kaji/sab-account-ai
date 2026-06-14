@@ -30,8 +30,9 @@ export async function POST(req: NextRequest) {
     // Look up any existing Stripe customer ID and subscription status for this user
     const profile = await getProfile(user.id)
 
-    // Block checkout if user already has an active or trialing subscription
-    if (profile?.stripe_subscription_id && (profile.subscription_status === 'active' || profile.subscription_status === 'trialing')) {
+    // Block checkout if user already has a live subscription (active, trialing, or past_due)
+    const blockedStatuses = ['active', 'trialing', 'past_due', 'unpaid']
+    if (profile?.stripe_subscription_id && blockedStatuses.includes(profile.subscription_status ?? '')) {
       return NextResponse.json(
         { error: 'You already have an active subscription. Use Manage Billing to change your plan.' },
         { status: 400 },
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
       .select('trial_ends_at')
       .eq('id', user.id)
       .maybeSingle()
-    const hasHadTrial = !!profileRow?.trial_ends_at || profile?.subscription_status === 'cancelled'
+    const hasHadTrial = !!profileRow?.trial_ends_at || (profile?.subscription_status != null && profile.subscription_status !== 'trialing')
 
     const checkoutParams = {
       mode: 'subscription' as const,
