@@ -19,6 +19,7 @@ const SYSTEM_PROMPT = (ctx: {
   recentPayslipsSection: string
   invoiceCount: number
   invoiceTotal: string
+  today: string
 }) => `You are SAB, the AI business assistant for ${ctx.businessName} (ABN: ${ctx.abn || 'not set'}).
 You are embedded inside SAB Account AI — an ATO-compliant invoicing and payroll platform for Australian small businesses.
 
@@ -53,7 +54,7 @@ PAYSLIP RULES:
 8. Do NOT ask for gross pay or dates if the employee has a stored rate. Compute them yourself:
    - Hourly employees: gross_pay = hourly_rate × ordinary_hours (already shown in EMPLOYEES as "/pay")
    - Salary employees: gross_pay = annual_salary ÷ 26 (fortnightly) or ÷ 52 (weekly) or ÷ 12 (monthly)
-   - Pay period: end = today (${today}), start = today minus 13 days (fortnightly) / 6 days (weekly) / first of month (monthly)
+   - Pay period: end = today (${ctx.today}), start = today minus 13 days (fortnightly) / 6 days (weekly) / first of month (monthly)
 9. Only ask the user for: which employee (if ambiguous) and the pay period (if they want a specific one other than the current period).
 
 INVOICE RULES:
@@ -170,6 +171,7 @@ export async function POST(req: NextRequest) {
     recentPayslipsSection,
     invoiceCount:          monthInvoices?.length ?? 0,
     invoiceTotal:          fmtAUD(invoiceTotal),
+    today,
   })
 
   const encoder = new TextEncoder()
