@@ -1,6 +1,8 @@
 import { MetadataRoute } from 'next'
 import { createServiceClient } from '@/lib/supabase'
 
+export const dynamic = 'force-dynamic'
+
 const BASE = 'https://sabaccountai.com'
 
 const STATIC_ENTRIES: MetadataRoute.Sitemap = [
