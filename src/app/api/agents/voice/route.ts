@@ -146,7 +146,7 @@ async function handleSingleQuestion(params: {
     const liveData = [
       s  ? `MRR $${s.mrr.toFixed(0)}, change $${s.mrrChange >= 0 ? '+' : ''}${s.mrrChange.toFixed(0)} this week, churn ${s.churnThisWeek}` : '',
       w  ? `World state: ${w.july1_countdown} days to July 1, churn risk ${w.churn_risk_score}/10, signups today ${w.signups_today} vs baseline ${w.signups_baseline}` : '',
-      l  ? `Lift: ${l.totalAtRisk} users at churn risk, ${l.upgradeSignals} near upgrade` : '',
+      l  ? `Lift: ${l.totalAtRisk} users at churn risk` : '',
       atlasSignal ? `Atlas: ${atlasSignal.summary}` : '',
       sparkSignal ? `Spark: ${sparkSignal.summary}` : '',
       liftSignal  ? `Lift alert: ${liftSignal.summary}` : '',
