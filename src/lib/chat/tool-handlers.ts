@@ -977,6 +977,7 @@ ${(ps.help_repayment as number) > 0 ? `<tr><td style="padding:6px 0;color:#57534
           attachments: [{
             filename,
             content: pdfBuffer.toString('base64'),
+            contentType: 'application/pdf',
           }],
         })
 

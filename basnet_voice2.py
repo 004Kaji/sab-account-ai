@@ -1,11 +1,13 @@
 """
-Basnet Voice — Direct to Vercel
-Press Enter to speak. Basnet listens for 8 seconds and responds.
-No local agent server required — routes straight to sabaccountai.com
+Basnet Voice — Wake word + VAD-based conversation
+
+Say "Basnet" (or "bosnet", "hey basnet") to wake up.
+Basnet listens until you stop speaking, then responds.
+No Enter key needed. Stays awake until you say "bye Basnet".
 
 Requirements:
-  pip3 install httpx openai
-  brew install sox
+  pip3 install httpx openai sounddevice numpy
+  brew install sox  (fallback if sounddevice unavailable)
 
 Optional (better TTS):
   Set ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID in .env.local
@@ -22,7 +24,56 @@ import re
 import ssl
 import subprocess
 import tempfile
+import wave
 from pathlib import Path
+
+# ── Optional real-time audio (sounddevice + numpy) ────────────────────
+try:
+    import sounddevice as sd
+    import numpy as np
+    SD_AVAILABLE = True
+except ImportError:
+    SD_AVAILABLE = False
+
+# ── Whisper model — loaded once, stays in RAM ─────────────────────────
+_WHISPER_MODEL = None
+
+def _get_whisper() -> object:
+    global _WHISPER_MODEL
+    if _WHISPER_MODEL is None:
+        try:
+            import whisper as _w
+            print("[Loading whisper tiny model...]", flush=True)
+            _WHISPER_MODEL = _w.load_model("tiny")
+            print("[Whisper ready]", flush=True)
+        except Exception as e:
+            print(f"[Whisper load failed: {e}]", flush=True)
+    return _WHISPER_MODEL
+
+def _transcribe_np_sync(audio_int16: "np.ndarray", prompt: str = "Basnet.") -> str:
+    """Transcribe int16 numpy audio with in-memory whisper. Filters hallucinations."""
+    model = _get_whisper()
+    if model is None:
+        return ""
+    try:
+        audio_f32 = audio_int16.flatten().astype(np.float32) / 32768.0
+        result = model.transcribe(
+            audio_f32, fp16=False, language="en",
+            initial_prompt=prompt,
+            condition_on_previous_text=False,
+            temperature=0,
+            no_speech_threshold=0.5,
+        )
+        # Discard if whisper itself thinks there's no speech
+        segs = result.get("segments", [])
+        if segs:
+            avg_no_speech = sum(s.get("no_speech_prob", 0) for s in segs) / len(segs)
+            if avg_no_speech > 0.5:
+                return ""
+        return result.get("text", "").strip()
+    except Exception:
+        return ""
+
 
 # Fix SSL on Mac
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -143,16 +194,27 @@ async def transcribe(audio_path: str) -> str:
         except Exception as e:
             print(f"{DIM}[OpenAI Whisper failed: {e} — trying local]{RESET}")
 
-    # Fall back to local Whisper
+    # Fall back to in-memory whisper (fast — model already loaded)
+    try:
+        import soundfile as _sf
+        audio_data, _ = _sf.read(audio_path, dtype="int16")
+        if len(audio_data.shape) > 1:
+            audio_data = audio_data[:, 0]
+        text = _transcribe_np_sync(
+            audio_data,
+            prompt="SAB Account AI, Basnet, Xero, MYOB, Stripe, Supabase, Vercel, GST, ATO"
+        )
+        if text:
+            return text
+    except Exception:
+        pass
+
+    # Last resort: whisper CLI subprocess
     txt_path = Path("/tmp") / (Path(audio_path).stem + ".txt")
     subprocess.run(
-        ["whisper", audio_path,
-         "--model", "small.en",
-         "--language", "en",
-         "--output_format", "txt",
-         "--output_dir", "/tmp"],
-        capture_output=True,
-        env={**os.environ, "PYTHONHTTPSVERIFY": "0"},
+        ["whisper", audio_path, "--model", "tiny", "--language", "en",
+         "--output_format", "txt", "--output_dir", "/tmp"],
+        capture_output=True, timeout=30,
     )
     if txt_path.exists():
         text = txt_path.read_text().strip()
@@ -207,6 +269,223 @@ def fix_names(text: str) -> str:
     for wrong, right in NAME_FIXES.items():
         text = re.sub(rf"\b{wrong}\b", right, text, flags=re.IGNORECASE)
     return text
+
+
+# ── Wake word + VAD constants ─────────────────────────────────────────
+
+WAKE_WORDS = [
+    # core spellings (substring match catches "basnete", "bosnete", etc.)
+    "basnet", "bosnet", "basenet", "bassnet", "basnit", "bosnit",
+    # boz/baz variants
+    "boznet", "baznet", "boznete", "baznete", "boz net", "baz net",
+    # bus/bus variants
+    "bus net", "busnet", "busnete",
+    # with spaces
+    "bas net", "bos net",
+    # with "hey"
+    "hey basnet", "hey bosnet", "hey boznet",
+    # common Whisper mishears with trailing sounds
+    "basnett", "bosnett", "basnette", "bosnette",
+    # other phonetic near-misses
+    "basket", "basket net", "basnie", "boschet",
+]
+SLEEP_WORDS = [
+    "bye basnet", "goodbye basnet", "bye bye", "that's all", "stop listening",
+    "go to sleep", "sleep basnet", "thanks basnet", "thank you basnet",
+    "bye for today", "goodbye for today", "that's all for today", "good night",
+    "goodnight", "see you later", "talk later", "bye for now",
+]
+
+SAMPLE_RATE      = 16000
+SILENCE_THRESH   = 400      # RMS below this = silence (tune up if too sensitive)
+VAD_CHUNK_MS     = 30       # ms per VAD chunk
+VAD_SILENCE_SECS = 1.8      # seconds of silence to stop recording
+MAX_RECORD_SECS  = 45       # hard cap on recording length
+WAKE_CLIP_SECS   = 1.8      # length of each wake word detection clip
+
+
+# ── VAD recording (stop when user stops talking) ──────────────────────
+
+def _record_vad_sync(max_secs: float = MAX_RECORD_SECS) -> str | None:
+    """Blocking: record until silence. Returns WAV path or None if no speech."""
+    chunk_samples   = int(SAMPLE_RATE * VAD_CHUNK_MS / 1000)
+    silent_to_stop  = int(VAD_SILENCE_SECS * 1000 / VAD_CHUNK_MS)
+    min_voice_chunks = int(200 / VAD_CHUNK_MS)  # at least 200ms of speech
+
+    chunks: list    = []
+    silent_count    = 0
+    voice_count     = 0
+    has_voice       = False
+
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
+                        dtype="int16", blocksize=chunk_samples) as stream:
+        while True:
+            audio, _ = stream.read(chunk_samples)
+            chunks.append(audio.copy())
+
+            rms = float(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
+
+            if rms > SILENCE_THRESH:
+                silent_count = 0
+                voice_count += 1
+                if voice_count >= min_voice_chunks:
+                    has_voice = True
+            else:
+                if has_voice:
+                    silent_count += 1
+
+            if has_voice and silent_count >= silent_to_stop:
+                break
+            if len(chunks) * VAD_CHUNK_MS / 1000 > max_secs:
+                break
+
+    if not has_voice:
+        return None
+
+    audio_data = np.concatenate(chunks, axis=0)
+    tmp = tempfile.mktemp(suffix=".wav")
+    with wave.open(tmp, "w") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(SAMPLE_RATE)
+        wf.writeframes(audio_data.tobytes())
+    return tmp
+
+
+async def record_vad(max_secs: float = MAX_RECORD_SECS) -> str | None:
+    """Async wrapper: record until silence. Falls back to sox if sounddevice unavailable."""
+    if SD_AVAILABLE:
+        return await asyncio.to_thread(_record_vad_sync, max_secs)
+    # Fallback to fixed 8s recording
+    return await record(seconds=8)
+
+
+# ── Wake word detection ───────────────────────────────────────────────
+
+def _normalise(text: str) -> str:
+    """Lowercase, strip punctuation — so 'Bosnet.' and 'Bosnete,' both match."""
+    return re.sub(r"[^\w\s]", "", text.lower()).strip()
+
+
+def _is_wake_word(text: str) -> bool:
+    t = _normalise(text)
+    return any(w in t for w in WAKE_WORDS)
+
+
+def _is_sleep_word(text: str) -> bool:
+    t = _normalise(text)
+    # Direct match
+    if any(w in t for w in SLEEP_WORDS):
+        return True
+    # "bye/goodbye/good night" + any phonetic variant of "basnet"
+    # catches Whisper mishearing: "Bye Vasnet", "Bye Baz Net", "Bye Bosnet" etc.
+    if re.search(r'\b(bye|goodbye|good night|goodnight|see you|talk later)\b', t):
+        for word in t.split():
+            if re.match(r'^[bv][aeiou][sz]?n', word):
+                return True
+    return False
+
+
+def _audio_to_wav(audio_int16: "np.ndarray") -> str:
+    """Save int16 numpy audio to a temp WAV file. Returns path."""
+    tmp = tempfile.mktemp(suffix=".wav")
+    with wave.open(tmp, "w") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(SAMPLE_RATE)
+        wf.writeframes(audio_int16.tobytes())
+    return tmp
+
+
+def _record_and_transcribe_wake_sync() -> str:
+    """Record 2.5s + transcribe in one thread. Returns transcribed text or empty."""
+    clip_samples = int(SAMPLE_RATE * 2.5)
+    audio = sd.rec(clip_samples, samplerate=SAMPLE_RATE, channels=1, dtype="int16")
+    sd.wait()
+    rms = float(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
+    if rms < 300:
+        return ""   # background noise / silence — skip transcription
+    return _transcribe_np_sync(audio, prompt="Basnet. Hey Basnet.")
+
+
+async def _transcribe_wake(wav_path: str) -> str:
+    """Transcribe a wake word clip — OpenAI API if available, else local whisper tiny."""
+    if OPENAI_KEY:
+        try:
+            import openai
+            client = openai.OpenAI(api_key=OPENAI_KEY)
+            with open(wav_path, "rb") as f:
+                result = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=f,
+                    language="en",
+                    prompt="Basnet. Bosnet. Hey Basnet. Hey Bosnet. Basnete.",
+                    temperature=0,
+                )
+            return result.text.strip()
+        except Exception:
+            pass
+
+    # Fallback: local whisper tiny (fast, no API cost)
+    try:
+        txt_path = Path("/tmp") / (Path(wav_path).stem + ".txt")
+        subprocess.run(
+            ["whisper", wav_path, "--model", "tiny", "--language", "en",
+             "--output_format", "txt", "--output_dir", "/tmp",
+             "--initial_prompt", "Basnet. Bosnet. Hey Basnet."],
+            capture_output=True, timeout=15,
+        )
+        if txt_path.exists():
+            text = txt_path.read_text().strip()
+            txt_path.unlink(missing_ok=True)
+            return text
+    except Exception:
+        pass
+    return ""
+
+
+def _phonetic_match(text: str) -> bool:
+    """Match wake word — rejects long phrases (background TV/speech = many words)."""
+    t = _normalise(text).lower()
+    words = t.split()
+
+    # Background speech always transcribes as long sentences — reject anything > 5 words
+    if len(words) > 5:
+        return False
+
+    # Direct wake word match
+    if _is_wake_word(t):
+        return True
+
+    # Phonetic: MUST have b/v + a/o + s/z + n cluster
+    for w in words:
+        if re.match(r'^[bv][ao][sz]n', w):
+            return True
+
+    return False
+
+
+async def wait_for_wake_word() -> tuple[str, str]:
+    """
+    Record 2.5s clips, transcribe in-memory, check for wake word.
+    Returns (full_text, inline_question).
+    """
+    while True:
+        text = await asyncio.to_thread(_record_and_transcribe_wake_sync)
+        if not text:
+            continue
+
+        if not _phonetic_match(text):
+            continue   # background noise — ignore silently
+
+        print(f"[wake] heard: {text!r}", flush=True)
+
+        # Strip wake word + filler to get any trailing question
+        pattern = r'(?i)\b(?:hey\s+|ok\s+|hi\s+)?(?:' + \
+                  '|'.join(re.escape(w) for w in WAKE_WORDS) + \
+                  r')\b[,.]?\s*'
+        remaining = re.sub(pattern, '', text).strip(' ,.')
+        return text, remaining
 
 
 def extract_blog_topic(question: str) -> str | None:
@@ -397,338 +676,433 @@ OPEN_DOMAINS = ["linkedin.com","supabase.com","vercel.com","stripe.com",
 
 # ── Main loop ─────────────────────────────────────────────────────────
 
+async def _listen_reply(max_secs: float = 5.0) -> str:
+    """Record a short follow-up reply (yes/no). Uses VAD if available, else fixed 3s."""
+    if SD_AVAILABLE:
+        subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"], capture_output=True)
+        audio = await record_vad(max_secs=max_secs)
+        if not audio:
+            return ""
+    else:
+        subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"], capture_output=True)
+        audio = await record(seconds=3)
+    text = await transcribe(audio)
+    Path(audio).unlink(missing_ok=True)
+    return text or ""
+
+
+async def _conversation_loop(
+    history: list,
+    current_topic_ref: list,   # mutable [str|None]
+    last_url_ref: list,        # mutable [str|None]
+    last_built_url_ref: list,  # mutable [str|None]
+    wake_word_mode: bool,
+    prefill_question: str = "",
+) -> bool:
+    """
+    Run one conversation turn. Returns True to stay in conversation, False to go back to sleep.
+    prefill_question: skip recording and use this as the question (inline wake word question).
+    """
+    current_topic    = current_topic_ref[0]
+    last_url         = last_url_ref[0]
+    last_built_url   = last_built_url_ref[0]
+
+    # ── Record speech (or use prefilled inline question) ──────────────
+    if prefill_question:
+        question = prefill_question
+    elif wake_word_mode and SD_AVAILABLE:
+        print(f"{DIM}[Listening...]{RESET}", flush=True)
+        audio = await record_vad(max_secs=MAX_RECORD_SECS)
+        if not audio:
+            return False   # silence → back to sleep
+        print(f"{DIM}[Transcribing...]{RESET}")
+        question = await transcribe(audio)
+        Path(audio).unlink(missing_ok=True)
+    else:
+        print(f"{DIM}[Recording 8s — speak now...]{RESET}")
+        audio = await record(seconds=8)
+        print(f"{DIM}[Transcribing...]{RESET}")
+        question = await transcribe(audio)
+        Path(audio).unlink(missing_ok=True)
+
+    if not question or len(question.strip()) < 3:
+        print(f"{DIM}[Could not hear you]{RESET}")
+        if not wake_word_mode:
+            await speak("Didn't catch that. Try again.")
+        return False   # silence timeout
+
+    question = fix_names(question.strip())
+    print(f"\n{BOLD}You:{RESET}    {question}")
+
+    # ── Sleep / goodbye detection ────────────────────────────────────
+    if wake_word_mode and _is_sleep_word(question):
+        await speak("Going to sleep. Say Basnet when you need me.")
+        current_topic_ref[0] = None
+        last_url_ref[0]      = None
+        return "sleep"   # explicit sleep — skip "Still there?" and go straight to wake loop
+
+    # ── Voice triggers (morning briefing, run scout, etc.) ──────
+    trigger = match_trigger(question)
+    if trigger:
+        t_url, t_body = trigger
+        is_blog = (t_body.get("data") or {}).get("marketingTrigger") == "write_blog_post"
+        label   = t_body.get("trigger", "agent").upper()
+        print(f"{CYAN}[TRIGGER → {label}]{RESET}")
+
+        if is_blog:
+            blog_topic = extract_blog_topic(question)
+            await speak("On it. Writing the post now — give me a minute.")
+            body_sent = {**t_body, "secret": WEBHOOK_SECRET}
+            if blog_topic:
+                body_sent = {**body_sent, "data": {**(t_body.get("data") or {}), "topic": blog_topic}}
+            try:
+                async with httpx.AsyncClient(timeout=180) as _c:
+                    _r = await _c.post(t_url, json=body_sent)
+                    _d = _r.json()
+            except Exception as _e:
+                _d = {"error": str(_e)}
+
+            if _d.get("slug") and _d.get("title"):
+                post_url = f"{VERCEL_URL}/blog/{_d['slug']}"
+                response = f"Blog post written: {_d['title']}."
+                print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+                await speak(response)
+                history.append({"q": question, "a": response})
+
+                await speak("Want me to open it in your browser?")
+                _or = await _listen_reply()
+                if _or and is_yes(_or):
+                    open_chrome(post_url)
+                    await speak("Opening now.")
+
+                await speak("Want me to write another blog post?")
+                _nr = await _listen_reply()
+                if _nr and is_yes(_nr):
+                    await speak("On it. Writing the next post now.")
+                    response2 = await fire_trigger(t_url, t_body)
+                    print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response2}\n")
+                    await speak(response2)
+            else:
+                err = str(_d.get("error") or _d.get("message") or "Blog post failed.")
+                print(f"\n{RED}Basnet:{RESET} {err}\n")
+                await speak(err)
+        else:
+            is_social = (t_body.get("data") or {}).get("marketingTrigger") == "draft_social_posts"
+            await speak("On it.")
+            body_sent2 = {**t_body, "secret": WEBHOOK_SECRET}
+            try:
+                async with httpx.AsyncClient(timeout=180) as _c2:
+                    _r2 = await _c2.post(t_url, json=body_sent2)
+                    _d2 = _r2.json()
+            except Exception as _e2:
+                _d2 = {"error": str(_e2)}
+
+            if is_social and _d2.get("drafted") is not None:
+                platforms = ", ".join(_d2.get("platforms") or [])
+                response = f"Drafted {_d2['drafted']} social posts for {platforms}."
+                print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+                await speak(response)
+                history.append({"q": question, "a": response})
+
+                await speak("Want me to open the dashboard so you can review and approve them?")
+                _dr = await _listen_reply()
+                if _dr and is_yes(_dr):
+                    open_chrome(f"{VERCEL_URL}/dashboard/agent")
+                    await speak("Opening dashboard now.")
+            else:
+                response = str(
+                    _d2.get("briefing") or _d2.get("answer") or _d2.get("message") or
+                    _d2.get("result") or _d2.get("error") or "Done."
+                )[:400]
+                print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+                await speak(response)
+                history.append({"q": question, "a": response})
+        current_topic_ref[0] = current_topic
+        last_url_ref[0]      = last_url
+        last_built_url_ref[0] = last_built_url
+        return True
+
+    # ── "Open that/it in browser" follow-up ──────────────────────
+    q_lower = question.lower()
+    if any(p in q_lower for p in ["open that", "open it", "open in browser", "show me that", "show that"]):
+        target_url = last_built_url or last_url
+        if target_url:
+            open_chrome(target_url)
+            response = f"Opening {target_url}."
+            print(f"\n  {GREEN}[APP]{RESET}")
+            print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+            await speak(response)
+            history.append({"q": question, "a": response})
+            current_topic_ref[0] = current_topic
+            return True
+
+    # ── Build / create (websites, apps, games, agents) ────────────
+    if is_build_query(question):
+        print(f"{DIM}[Building...]{RESET}")
+        await speak("On it. Give me a moment.")
+        try:
+            async with httpx.AsyncClient(timeout=300) as c:
+                r = await c.post(
+                    f"{LOCAL_AGENT_URL}/build",
+                    headers={"x-agent-secret": WEBHOOK_SECRET} if WEBHOOK_SECRET else {},
+                    json={"task": question},
+                )
+                d = r.json()
+                response = d.get("answer") or "Build complete."
+                url_built = d.get("url")
+        except Exception as e:
+            response = f"Build failed: {e}"
+            url_built = None
+        if url_built:
+            last_built_url = url_built
+        else:
+            file_path = d.get("filePath", "")
+            if file_path.startswith("public/"):
+                last_built_url = f"http://localhost:3000/{file_path.replace('public/', '')}"
+            else:
+                last_built_url = None
+        print(f"\n  {GREEN}[BUILD]{RESET}")
+        print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+        await speak(response)
+        if last_built_url:
+            open_chrome(last_built_url)
+            await speak("Opening in browser now.")
+        history.append({"q": question, "a": response})
+        last_built_url_ref[0] = last_built_url
+        current_topic_ref[0]  = current_topic
+        return True
+
+    # ── Shell command execution ───────────────────────────────────
+    elif is_exec_query(question):
+        print(f"{DIM}[Running command...]{RESET}")
+        try:
+            async with httpx.AsyncClient(timeout=60) as c:
+                r = await c.post(
+                    f"{LOCAL_AGENT_URL}/exec",
+                    headers={"x-agent-secret": WEBHOOK_SECRET} if WEBHOOK_SECRET else {},
+                    json={"command": question,
+                          "cwd": str(Path.home() / "Desktop" / "sab-account-ai-project")},
+                )
+                d = r.json()
+                out = (d.get("stdout") or d.get("stderr") or "(no output)").strip()
+                response = out[:500] + ("..." if len(out) > 500 else "")
+                if d.get("exitCode", 0) != 0:
+                    response = f"Exit code {d['exitCode']}. " + response
+        except Exception as e:
+            response = f"Command failed: {e}"
+        print(f"\n  {GREEN}[EXEC]{RESET}")
+        print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+        await speak(response[:200])
+        history.append({"q": question, "a": response})
+        return True
+
+    # ── App open/close ────────────────────────────────────────────
+    elif is_app_query(question):
+        print(f"{DIM}[App control...]{RESET}")
+        if any(w in q_lower for w in ["what apps", "what is running", "running apps"]):
+            action_body = {"action": "list"}
+        elif any(w in q_lower for w in ["close", "quit"]):
+            name = question.replace("close", "").replace("quit", "").replace("app", "").strip()
+            action_body = {"action": "close", "name": name}
+        else:
+            name = re.sub(r"(?i)open\s+", "", question).strip()
+            action_body = {"action": "open", "name": name}
+        try:
+            async with httpx.AsyncClient(timeout=15) as c:
+                r = await c.post(
+                    f"{LOCAL_AGENT_URL}/app",
+                    headers={"x-agent-secret": WEBHOOK_SECRET} if WEBHOOK_SECRET else {},
+                    json=action_body,
+                )
+                d = r.json()
+                if d.get("apps"):
+                    response = "Running: " + ", ".join(d["apps"][:10])
+                elif d.get("opened"):
+                    response = f"Opened {d['opened']}."
+                elif d.get("closed"):
+                    response = f"Closed {d['closed']}."
+                else:
+                    response = "Done."
+        except Exception as e:
+            response = f"App control failed: {e}"
+        print(f"\n  {GREEN}[APP]{RESET}")
+        print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+        await speak(response)
+        history.append({"q": question, "a": response})
+        return True
+
+    # ── Local Mac agent (file/computer/code queries bypass Vercel) ──
+    elif is_code_query(question):
+        print(f"{DIM}[Asking Flux (local)...]{RESET}")
+        local_answer = await call_local_agent(question, "/technical")
+        if local_answer:
+            print(f"\n  {GREEN}[FLUX — LOCAL]{RESET}")
+            print(f"\n{GREEN}{BOLD}Basnet:{RESET} {local_answer}\n")
+            await speak(local_answer)
+            history.append({"q": question, "a": local_answer})
+            return True
+        print(f"{DIM}[Local Flux unavailable — falling back to Vercel]{RESET}")
+
+    if is_local_query(question):
+        print(f"{DIM}[Asking local agent...]{RESET}")
+        local_answer = await call_local_agent(question)
+        if local_answer:
+            print(f"\n{GREEN}{BOLD}Basnet:{RESET} {local_answer}\n")
+            await speak(local_answer)
+            history.append({"q": question, "a": local_answer})
+            return True
+        print(f"{DIM}[Local agent unavailable — falling back to Basnet]{RESET}")
+
+    # ── Standard voice route ─────────────────────────────────────
+    print(f"{DIM}[Asking Basnet...]{RESET}")
+    data = await call_voice(question, history, current_topic)
+
+    response       = data.get("response", "No response.")
+    warning        = data.get("warning")
+    topic          = data.get("topic") or current_topic
+    is_done        = data.get("is_complete", False)
+    suggestion     = data.get("next_suggestion")
+    url            = data.get("url")
+    agent_used     = data.get("agentUsed", "basnet").upper()
+    classification = data.get("classification", "")
+
+    agent_colour = {"RELAY": CYAN, "FLUX": GREEN, "LIFT": "\033[94m",
+                    "ATLAS": YELLOW, "SPARK": "\033[95m"}.get(agent_used, "")
+    if classification == "STRATEGY":
+        print(f"  {BOLD}\033[95m[FABLE 5 — STRATEGY MODE]{RESET}")
+    else:
+        print(f"  {agent_colour}[{agent_used}]{RESET}")
+
+    if warning:
+        print(f"\n{YELLOW}⚠️  {warning}{RESET}")
+        await speak(f"Warning. {warning}")
+
+    print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
+    await speak(response)
+
+    current_topic = topic
+    history.append({"q": question, "a": response})
+    if len(history) > 10:
+        history = history[-10:]
+
+    if url and any(d in url for d in OPEN_DOMAINS):
+        print(f"{DIM}[URL: {url}]{RESET}")
+        await speak("Want me to open that in your browser?")
+        reply = await _listen_reply()
+        if reply and is_yes(reply):
+            open_chrome(url)
+            last_url = url
+            await speak("Opening now.")
+
+    if is_done and suggestion:
+        print(f"{DIM}[Topic complete: {current_topic}]{RESET}")
+        await speak(f"We covered that. {suggestion} Say yes to continue.")
+        gate_reply = await _listen_reply()
+        if gate_reply and is_yes(gate_reply):
+            current_topic = None
+            last_url = None
+            history.clear()
+            await speak("Starting fresh. What's next?")
+
+    current_topic_ref[0]  = current_topic
+    last_url_ref[0]       = last_url
+    last_built_url_ref[0] = last_built_url
+    return True
+
+
 async def main():
+    if SD_AVAILABLE:
+        mode_line = "Say 'Basnet' to wake me up"
+    else:
+        mode_line = "Press Enter to speak  (install sounddevice for wake word)"
+
     print(f"\n{BOLD}{'='*52}{RESET}")
-    print(f"{BOLD}  Basnet Voice — Direct to Production{RESET}")
-    print(f"  {DIM}sabaccountai.com · Press Enter to speak{RESET}")
-    print(f"  {DIM}Say 'morning briefing', 'run scout', or ask anything{RESET}")
+    print(f"{BOLD}  Basnet Voice — Always Listening{RESET}")
+    print(f"  {DIM}sabaccountai.com · {mode_line}{RESET}")
+    print(f"  {DIM}Say 'bye Basnet' to go back to sleep{RESET}")
     print(f"{BOLD}{'='*52}{RESET}\n")
 
     if not WEBHOOK_SECRET:
         print(f"{RED}WARNING: AGENT_WEBHOOK_SECRET not set — auth will fail{RESET}")
     if not ELEVENLABS_KEY:
         print(f"{DIM}TTS: Mac say (set ELEVENLABS_API_KEY for better voice){RESET}")
+    if not SD_AVAILABLE:
+        print(f"{YELLOW}sounddevice not installed — wake word disabled. Run: pip3 install sounddevice numpy{RESET}")
+
+    # Pre-warm whisper model in background so first detection is instant
+    if SD_AVAILABLE:
+        asyncio.get_event_loop().run_in_executor(None, _get_whisper)
 
     await speak("Basnet online.")
 
-    history: list       = []
-    current_topic: str | None = None
-    last_url: str | None = None
-    last_built_url: str | None = None
+    history: list              = []
+    current_topic_ref: list    = [None]
+    last_url_ref: list         = [None]
+    last_built_url_ref: list   = [None]
 
     while True:
         try:
-            topic_label = f" {DIM}[{current_topic}]{RESET}" if current_topic else ""
-            input(f"\nPress Enter to speak{topic_label}...")
-            subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"],
-                           capture_output=True)
-            print(f"{DIM}[Recording 8s — speak now...]{RESET}")
+            # ── Wake word gate ────────────────────────────────────────────
+            if SD_AVAILABLE:
+                print(f"\n{DIM}[Sleeping — say 'Basnet' to wake me up...]{RESET}", flush=True)
+                detected, inline_q = await wait_for_wake_word()
+                print(f"{DIM}[Wake word: \"{detected.strip()}\"]{RESET}")
+                subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"], capture_output=True)
 
-            audio = await record(seconds=8)
-            print(f"{DIM}[Transcribing...]{RESET}")
-            question = await transcribe(audio)
-            Path(audio).unlink(missing_ok=True)
-
-            if not question or len(question.strip()) < 3:
-                print(f"{DIM}[Could not hear you]{RESET}")
-                await speak("Didn't catch that. Try again.")
-                continue
-
-            question = fix_names(question.strip())
-            print(f"\n{BOLD}You:{RESET}    {question}")
-
-            # ── Voice triggers (morning briefing, run scout, etc.) ──────
-            trigger = match_trigger(question)
-            if trigger:
-                t_url, t_body = trigger
-                is_blog = (t_body.get("data") or {}).get("marketingTrigger") == "write_blog_post"
-                label   = t_body.get("trigger", "agent").upper()
-                print(f"{CYAN}[TRIGGER → {label}]{RESET}")
-
-                if is_blog:
-                    blog_topic = extract_blog_topic(question)
-                    await speak("On it. Writing the post now — give me a minute.")
-                    body_sent = {**t_body, "secret": WEBHOOK_SECRET}
-                    if blog_topic:
-                        body_sent = {**body_sent, "data": {**(t_body.get("data") or {}), "topic": blog_topic}}
-                    try:
-                        async with httpx.AsyncClient(timeout=180) as _c:
-                            _r = await _c.post(t_url, json=body_sent)
-                            _d = _r.json()
-                    except Exception as _e:
-                        _d = {"error": str(_e)}
-
-                    if _d.get("slug") and _d.get("title"):
-                        post_url = f"{VERCEL_URL}/blog/{_d['slug']}"
-                        response = f"Blog post written: {_d['title']}."
-                        print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
-                        await speak(response)
-                        history.append({"q": question, "a": response})
-
-                        # Offer to open in browser
-                        await speak("Want me to open it in your browser?")
-                        subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"], capture_output=True)
-                        _oa = await record(seconds=3)
-                        _or = await transcribe(_oa)
-                        Path(_oa).unlink(missing_ok=True)
-                        if _or and is_yes(_or):
-                            open_chrome(post_url)
-                            await speak("Opening now.")
-
-                        # Offer to write another
-                        await speak("Want me to write another blog post?")
-                        subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"], capture_output=True)
-                        _na = await record(seconds=3)
-                        _nr = await transcribe(_na)
-                        Path(_na).unlink(missing_ok=True)
-                        if _nr and is_yes(_nr):
-                            await speak("On it. Writing the next post now.")
-                            response2 = await fire_trigger(t_url, t_body)
-                            print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response2}\n")
-                            await speak(response2)
-                    else:
-                        err = str(_d.get("error") or _d.get("message") or "Blog post failed.")
-                        print(f"\n{RED}Basnet:{RESET} {err}\n")
-                        await speak(err)
+                if inline_q and len(inline_q) > 4:
+                    # User said "Basnet what time is it?" — answer immediately
+                    print(f"{DIM}[Inline question: {inline_q!r}]{RESET}")
+                    inline_result = await _conversation_loop(
+                        history, current_topic_ref, last_url_ref, last_built_url_ref,
+                        wake_word_mode=True, prefill_question=inline_q,
+                    )
+                    if inline_result == "sleep":
+                        continue   # skip conversation loop, go back to wake word gate
                 else:
-                    is_social = (t_body.get("data") or {}).get("marketingTrigger") == "draft_social_posts"
-                    await speak("On it.")
-                    body_sent2 = {**t_body, "secret": WEBHOOK_SECRET}
-                    try:
-                        async with httpx.AsyncClient(timeout=180) as _c2:
-                            _r2 = await _c2.post(t_url, json=body_sent2)
-                            _d2 = _r2.json()
-                    except Exception as _e2:
-                        _d2 = {"error": str(_e2)}
-
-                    if is_social and _d2.get("drafted") is not None:
-                        platforms = ", ".join(_d2.get("platforms") or [])
-                        response = f"Drafted {_d2['drafted']} social posts for {platforms}."
-                        print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
-                        await speak(response)
-                        history.append({"q": question, "a": response})
-
-                        # Offer to open dashboard
-                        await speak("Want me to open the dashboard so you can review and approve them?")
-                        subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"], capture_output=True)
-                        _da = await record(seconds=3)
-                        _dr = await transcribe(_da)
-                        Path(_da).unlink(missing_ok=True)
-                        if _dr and is_yes(_dr):
-                            open_chrome(f"{VERCEL_URL}/dashboard/agent")
-                            await speak("Opening dashboard now.")
-                    else:
-                        response = str(
-                            _d2.get("briefing") or _d2.get("answer") or _d2.get("message") or
-                            _d2.get("result") or _d2.get("error") or "Done."
-                        )[:400]
-                        print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
-                        await speak(response)
-                        history.append({"q": question, "a": response})
-                continue
-
-            # ── "Open that/it in browser" follow-up ──────────────────────
-            q_lower = question.lower()
-            if any(p in q_lower for p in ["open that", "open it", "open in browser", "show me that", "show that"]):
-                target_url = last_built_url or last_url
-                if target_url:
-                    open_chrome(target_url)
-                    response = f"Opening {target_url}."
-                    print(f"\n  {GREEN}[APP]{RESET}")
-                    print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
-                    await speak(response)
-                    history.append({"q": question, "a": response})
-                    continue
-                # No URL to open — fall through to normal routing
-
-            # ── Build / create (websites, apps, games, agents) ────────────
-            if is_build_query(question):
-                print(f"{DIM}[Building...]{RESET}")
-                await speak("On it. Give me a moment.")
-                try:
-                    async with httpx.AsyncClient(timeout=300) as c:
-                        r = await c.post(
-                            f"{LOCAL_AGENT_URL}/build",
-                            headers={"x-agent-secret": WEBHOOK_SECRET} if WEBHOOK_SECRET else {},
-                            json={"task": question},
-                        )
-                        d = r.json()
-                        response = d.get("answer") or "Build complete."
-                        url_built = d.get("url")
-                except Exception as e:
-                    response = f"Build failed: {e}"
-                    url_built = None
-                if url_built:
-                    last_built_url = url_built
-                else:
-                    # local file — build a localhost URL
-                    file_path = d.get("filePath", "")
-                    if file_path.startswith("public/"):
-                        last_built_url = f"http://localhost:3000/{file_path.replace('public/', '')}"
-                    else:
-                        last_built_url = None
-                print(f"\n  {GREEN}[BUILD]{RESET}")
-                print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
-                await speak(response)
-                if last_built_url:
-                    open_chrome(last_built_url)
-                    await speak("Opening in browser now.")
-                history.append({"q": question, "a": response})
-                continue
-
-            # ── Shell command execution ───────────────────────────────────
-            elif is_exec_query(question):
-                print(f"{DIM}[Running command...]{RESET}")
-                try:
-                    async with httpx.AsyncClient(timeout=60) as c:
-                        r = await c.post(
-                            f"{LOCAL_AGENT_URL}/exec",
-                            headers={"x-agent-secret": WEBHOOK_SECRET} if WEBHOOK_SECRET else {},
-                            json={"command": question,
-                                  "cwd": str(Path.home() / "Desktop" / "sab-account-ai-project")},
-                        )
-                        d = r.json()
-                        out = (d.get("stdout") or d.get("stderr") or "(no output)").strip()
-                        response = out[:500] + ("..." if len(out) > 500 else "")
-                        if d.get("exitCode", 0) != 0:
-                            response = f"Exit code {d['exitCode']}. " + response
-                except Exception as e:
-                    response = f"Command failed: {e}"
-                print(f"\n  {GREEN}[EXEC]{RESET}")
-                print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
-                await speak(response[:200])
-                history.append({"q": question, "a": response})
-                continue
-
-            # ── App open/close ────────────────────────────────────────────
-            elif is_app_query(question):
-                print(f"{DIM}[App control...]{RESET}")
-                q_lower = question.lower()
-                if any(w in q_lower for w in ["what apps", "what is running", "running apps"]):
-                    action_body = {"action": "list"}
-                elif any(w in q_lower for w in ["close", "quit"]):
-                    name = question.replace("close", "").replace("quit", "").replace("app", "").strip()
-                    action_body = {"action": "close", "name": name}
-                else:
-                    name = re.sub(r"(?i)open\s+", "", question).strip()
-                    action_body = {"action": "open", "name": name}
-                try:
-                    async with httpx.AsyncClient(timeout=15) as c:
-                        r = await c.post(
-                            f"{LOCAL_AGENT_URL}/app",
-                            headers={"x-agent-secret": WEBHOOK_SECRET} if WEBHOOK_SECRET else {},
-                            json=action_body,
-                        )
-                        d = r.json()
-                        if d.get("apps"):
-                            response = "Running: " + ", ".join(d["apps"][:10])
-                        elif d.get("opened"):
-                            response = f"Opened {d['opened']}."
-                        elif d.get("closed"):
-                            response = f"Closed {d['closed']}."
-                        else:
-                            response = "Done."
-                except Exception as e:
-                    response = f"App control failed: {e}"
-                print(f"\n  {GREEN}[APP]{RESET}")
-                print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
-                await speak(response)
-                history.append({"q": question, "a": response})
-                continue
-
-            # ── Local Mac agent (file/computer/code queries bypass Vercel) ──
-            elif is_code_query(question):
-                print(f"{DIM}[Asking Flux (local)...]{RESET}")
-                local_answer = await call_local_agent(question, "/technical")
-                if local_answer:
-                    print(f"\n  {GREEN}[FLUX — LOCAL]{RESET}")
-                    print(f"\n{GREEN}{BOLD}Basnet:{RESET} {local_answer}\n")
-                    await speak(local_answer)
-                    history.append({"q": question, "a": local_answer})
-                    continue
-                print(f"{DIM}[Local Flux unavailable — falling back to Vercel]{RESET}")
-
-            if is_local_query(question):
-                print(f"{DIM}[Asking local agent...]{RESET}")
-                local_answer = await call_local_agent(question)
-                if local_answer:
-                    print(f"\n{GREEN}{BOLD}Basnet:{RESET} {local_answer}\n")
-                    await speak(local_answer)
-                    history.append({"q": question, "a": local_answer})
-                    continue
-                print(f"{DIM}[Local agent unavailable — falling back to Basnet]{RESET}")
-
-            # ── Standard voice route ─────────────────────────────────────
-            print(f"{DIM}[Asking Basnet...]{RESET}")
-            data = await call_voice(question, history, current_topic)
-
-            response       = data.get("response", "No response.")
-            warning        = data.get("warning")
-            topic          = data.get("topic") or current_topic
-            is_done        = data.get("is_complete", False)
-            suggestion     = data.get("next_suggestion")
-            url            = data.get("url")
-            agent_used     = data.get("agentUsed", "basnet").upper()
-            classification = data.get("classification", "")
-
-            # Print agent label — show Fable 5 badge on strategy mode
-            agent_colour = {"RELAY": CYAN, "FLUX": GREEN, "LIFT": "\033[94m",
-                            "ATLAS": YELLOW, "SPARK": "\033[95m"}.get(agent_used, "")
-            if classification == "STRATEGY":
-                print(f"  {BOLD}\033[95m[FABLE 5 — STRATEGY MODE]{RESET}")
+                    await speak("How can I help you?")
             else:
-                print(f"  {agent_colour}[{agent_used}]{RESET}")
+                topic_label = f" {DIM}[{current_topic_ref[0]}]{RESET}" if current_topic_ref[0] else ""
+                input(f"\nPress Enter to speak{topic_label}...")
+                subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"], capture_output=True)
 
-            # Speak warning first
-            if warning:
-                print(f"\n{YELLOW}⚠️  {warning}{RESET}")
-                await speak(f"Warning. {warning}")
-
-            print(f"\n{GREEN}{BOLD}Basnet:{RESET} {response}\n")
-            await speak(response)
-
-            # Update state
-            current_topic = topic
-            history.append({"q": question, "a": response})
-            if len(history) > 10:
-                history = history[-10:]
-
-            # Offer to open URLs from Basnet
-            if url and any(d in url for d in OPEN_DOMAINS):
-                print(f"{DIM}[URL: {url}]{RESET}")
-                await speak("Want me to open that in your browser?")
-                subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"],
-                               capture_output=True)
-                print(f"{DIM}[Listening 3s...]{RESET}")
-                reply_audio = await record(seconds=3)
-                reply = await transcribe(reply_audio)
-                Path(reply_audio).unlink(missing_ok=True)
-                if reply and is_yes(reply):
-                    open_chrome(url)
-                    last_url = url
-                    await speak("Opening now.")
-
-            # Topic complete gate
-            if is_done and suggestion:
-                print(f"{DIM}[Topic complete: {current_topic}]{RESET}")
-                await speak(f"We covered that. {suggestion} Say yes to continue or just press Enter.")
-                subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"],
-                               capture_output=True)
-                gate_audio = await record(seconds=3)
-                gate_reply = await transcribe(gate_audio)
-                Path(gate_audio).unlink(missing_ok=True)
-                if gate_reply and is_yes(gate_reply):
-                    current_topic = None
-                    last_url = None
-                    history = []
-                    await speak("Starting fresh. What's next?")
+            # ── Conversation loop (stays awake until sleep word / 2 silent) ──
+            silent_turns = 0
+            while True:
+                try:
+                    stay = await _conversation_loop(
+                        history, current_topic_ref, last_url_ref, last_built_url_ref,
+                        wake_word_mode=SD_AVAILABLE,
+                    )
+                    if stay == "sleep":
+                        # Explicit sleep word — go back to wake loop immediately, no "Still there?"
+                        print(f"{DIM}[Sleep word — going back to listening for 'Basnet']{RESET}", flush=True)
+                        break
+                    elif stay:
+                        silent_turns = 0
+                        if not SD_AVAILABLE:
+                            break   # fallback mode: one question at a time
+                    else:
+                        silent_turns += 1
+                        if silent_turns >= 2 or not SD_AVAILABLE:
+                            if SD_AVAILABLE:
+                                print(f"{DIM}[No speech — going back to sleep]{RESET}")
+                            break
+                        # one silent turn: give another chance
+                        await speak("Still there?")
+                except KeyboardInterrupt:
+                    raise
+                except Exception as e:
+                    print(f"{RED}Error: {e}{RESET}")
+                    await asyncio.sleep(0.5)
+                    if not SD_AVAILABLE:
+                        break
 
         except KeyboardInterrupt:
             print(f"\n{DIM}Basnet signing off.{RESET}")
             await speak("Basnet offline.")
             break
         except Exception as e:
-            print(f"{RED}Error: {e}{RESET}")
+            print(f"{RED}Outer error: {e}{RESET}")
             await asyncio.sleep(1)
 
 

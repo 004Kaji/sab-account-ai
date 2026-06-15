@@ -7,8 +7,6 @@ import { executeToolCall } from '@/lib/chat/tool-handlers'
 
 export const maxDuration = 60
 
-const DAILY_LIMIT = 30
-
 const SYSTEM_PROMPT = (ctx: {
   businessName: string
   abn: string
@@ -116,16 +114,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'SAB Chat requires the Autopilot plan.' }, { status: 403 })
   }
 
-  // Rate limit — 30 messages/day
   const today = new Date().toISOString().slice(0, 10)
-  const { data: usage } = await supabase
-    .from('chat_usage')
-    .select('message_count')
-    .eq('user_id', user.id)
-    .eq('date', today)
-    .single()
-
-  const currentCount = (usage?.message_count as number) ?? 0
 
   const { messages } = await req.json() as { messages: Anthropic.MessageParam[] }
 
@@ -269,7 +258,7 @@ export async function POST(req: NextRequest) {
           supabase.rpc('increment_chat_usage', { p_user_id: user.id, p_date: today }),
         ])
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', remaining: DAILY_LIMIT - currentCount - 1 })}\n\n`))
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
         controller.close()
 
       } catch (err) {
