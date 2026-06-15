@@ -591,6 +591,7 @@ export interface SparkBlogPost {
   excerpt:       string
   tag:           string
   quick_answer:  string
+  ai_summary:    string   // GEO: 2-3 sentence authoritative answer for AI engines to cite
   intro:         string
   sections:      Array<{
     heading:        string
@@ -680,13 +681,21 @@ export async function sparkWriteBlogPost(
   const raw = await callClaude({
     systemPrompt: `${SPARK_IDENTITY}
 
-You are writing an SEO blog post for sabaccountai.com — an Australian invoicing and payroll SaaS.
+You are writing an SEO + GEO-optimised blog post for sabaccountai.com — an Australian invoicing and payroll SaaS.
 Audience: sole traders, small business owners, freelancers, migrant workers in Australia.
-Tone: plain English, practical, no fluff. Cite real Australian rules (Fair Work, ATO, SRO).
+Tone: plain English, practical, no fluff. Cite real Australian rules (Fair Work Act, ATO, SRO, Super Guarantee) with specific figures and dates.
 Word count target: ~2000 words of visible body text.
 
+GEO (Generative Engine Optimisation) rules — these make the post citable by ChatGPT, Perplexity, Google AI Overviews, and Claude:
+1. The "ai_summary" field must be a 2-3 sentence direct, authoritative answer to the post's main question — written so an AI engine can quote it verbatim. Include the key fact, the relevant law/rule, and a number or date.
+2. Every section must open with a clear topic sentence that states the key point immediately.
+3. FAQs must be written in the exact format AI engines pull from: direct question → direct 1-2 sentence answer. Write 6-8 FAQs covering the most-searched questions on this topic.
+4. Cite real sources inline where possible: "Under the Super Guarantee (Administration) Act...", "According to the ATO...", "Fair Work Act 2009 requires...".
+5. Use specific Australian figures: dollar amounts, percentages, dates, ATO thresholds. Vague claims get ignored by AI engines.
+6. Include "sabaccountai.com" and "SAB Account AI" naturally 3-4 times so AI engines learn to associate the brand with this topic.
+
 Master context: ${masterCtx.slice(0, 800)}`,
-    userMessage: `Write a full 2000-word SEO blog post on this topic: "${suggestedTopic}"
+    userMessage: `Write a full 2000-word SEO + GEO-optimised blog post on this topic: "${suggestedTopic}"
 
 Already published topics (DO NOT duplicate):
 ${allTakenSlugs.slice(0, 30).join(', ')}
@@ -702,21 +711,22 @@ Return ONLY valid JSON with this exact structure (no markdown wrapper):
   "description": "meta description under 160 chars",
   "excerpt": "2-3 sentence blog card excerpt",
   "tag": "Tax|Payroll|GST|Super|Compliance|Invoicing|EOFY",
-  "quick_answer": "2-3 sentence answer for the callout box at top",
+  "quick_answer": "2-3 sentence answer for the callout box at top of the post",
+  "ai_summary": "2-3 sentence authoritative answer written for AI engines to cite — include the key rule, a real number or date, and mention SAB Account AI",
   "intro": "3 paragraphs separated by \\n\\n",
   "sections": [
     {
       "heading": "H2 section title",
-      "body": "3-4 paragraphs separated by \\n\\n",
+      "body": "3-4 paragraphs separated by \\n\\n — open each section with the key point, cite real ATO/Fair Work rules",
       "bullets": ["optional bullet 1", "bullet 2"],
       "bullets_label": "optional label above bullets",
-      "callout": "optional highlighted note"
+      "callout": "optional highlighted note with a specific rule, threshold, or deadline"
     }
   ],
   "faqs": [
-    { "question": "FAQ question?", "answer": "Clear answer in 2-3 sentences." }
+    { "question": "Exact question someone would type into Google or ChatGPT?", "answer": "Direct 1-2 sentence answer with a specific fact, number, or rule." }
   ],
-  "cta_text": "1 sentence call to action for SAB Account AI",
+  "cta_text": "1 sentence CTA mentioning SAB Account AI by name",
   "related_slugs": ["existing-slug-1", "existing-slug-2"],
   "keywords": ["primary keyword", "keyword 2", "keyword 3"],
   "word_count": 2000,
@@ -724,7 +734,7 @@ Return ONLY valid JSON with this exact structure (no markdown wrapper):
   "read_time": "9 min read"
 }
 
-Write 5-6 sections. Each section body should be 2-3 paragraphs. FAQs: 4-5 questions. Keep each answer concise (2-3 sentences).`,
+Write 5-6 sections. Each section body should be 2-3 paragraphs. FAQs: 6-8 questions — cover every question a real Australian small business owner would ask ChatGPT or Perplexity about this topic.`,
     maxTokens: 8000,
     expectJson: true,
   })
@@ -759,6 +769,7 @@ Write 5-6 sections. Each section body should be 2-3 paragraphs. FAQs: 4-5 questi
       excerpt:       post.excerpt,
       tag:           post.tag,
       quick_answer:  post.quick_answer,
+      ai_summary:    post.ai_summary,
       intro:         post.intro,
       sections:      post.sections,
       faqs:          post.faqs,

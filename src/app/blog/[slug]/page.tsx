@@ -20,6 +20,7 @@ interface BlogPost {
   excerpt:       string
   tag:           string
   quick_answer:  string
+  ai_summary?:   string | null   // GEO: authoritative summary for AI engines
   intro:         string
   sections:      BlogSection[]
   faqs:          Array<{ question: string; answer: string }>
@@ -86,11 +87,16 @@ export default async function DynamicBlogPostPage(
     '@type': 'Article',
     headline: post.title,
     description: post.description,
+    abstract: post.ai_summary ?? post.description,
     datePublished: post.updated_at ?? new Date().toISOString(),
     dateModified:  post.updated_at ?? new Date().toISOString(),
     author:    { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com' },
     publisher: { '@type': 'Organization', name: 'SAB Account AI', url: 'https://sabaccountai.com' },
     mainEntityOfPage: { '@type': 'WebPage', '@id': `https://sabaccountai.com/blog/${post.slug}` },
+    speakable: {
+      '@type': 'SpeakableSpecification',
+      cssSelector: ['[data-geo-summary]', '[data-quick-answer]'],
+    },
   }
 
   const faqSchema = post.faqs?.length > 0 ? {
@@ -151,9 +157,9 @@ export default async function DynamicBlogPostPage(
           {post.date_published} · {post.read_time}
         </p>
 
-        {/* Quick answer box */}
+        {/* Quick answer box — data-quick-answer used by GEO speakable schema */}
         {post.quick_answer && (
-          <div style={{
+          <div data-quick-answer style={{
             background: 'var(--ember-p)', border: '1px solid rgba(200,75,47,0.2)',
             borderRadius: 'var(--r2)', padding: '1.25rem 1.5rem', marginBottom: '2.5rem',
           }}>
@@ -162,6 +168,11 @@ export default async function DynamicBlogPostPage(
             </p>
             <p style={{ color: 'var(--char)', margin: 0, lineHeight: 1.6 }}>{post.quick_answer}</p>
           </div>
+        )}
+
+        {/* GEO summary — machine-readable authoritative statement for AI engines */}
+        {post.ai_summary && (
+          <p data-geo-summary style={{ display: 'none' }}>{post.ai_summary}</p>
         )}
 
         {/* Intro */}
