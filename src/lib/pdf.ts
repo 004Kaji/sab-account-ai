@@ -258,11 +258,14 @@ async function buildPayslipDoc(data: PayslipPDFData) {
   const payItemsTotal = (data.payItems || []).reduce((s, i) => s + i.hours * i.rate, 0) + (data.leave_loading_amount || 0)
   const ordinaryDisplay = Math.round((n.ordinaryEarnings - payItemsTotal) * 100) / 100
   if (isHourly) {
+    const derivedOrdinaryHours = data.hourly_rate > 0
+      ? Math.round(ordinaryDisplay / data.hourly_rate * 100) / 100
+      : data.ordinary_hours
     lineItem(
       'Ordinary Hours',
       formatCurrency(ordinaryDisplay),
       undefined,
-      data.ordinary_hours.toFixed(4),
+      derivedOrdinaryHours % 1 === 0 ? String(derivedOrdinaryHours) : derivedOrdinaryHours.toFixed(2),
       formatCurrency(data.hourly_rate),
     )
   } else {
@@ -273,7 +276,13 @@ async function buildPayslipDoc(data: PayslipPDFData) {
   if (data.payItems && data.payItems.length > 0) {
     data.payItems.forEach(item => {
       if (item.hours > 0 && item.rate > 0)
-        lineItem(item.description || 'Additional Earnings', formatCurrency(Math.round(item.hours * item.rate * 100) / 100))
+        lineItem(
+          item.description || 'Additional Earnings',
+          formatCurrency(Math.round(item.hours * item.rate * 100) / 100),
+          undefined,
+          item.hours % 1 === 0 ? String(item.hours) : item.hours.toFixed(2),
+          formatCurrency(item.rate),
+        )
     })
   }
   if (data.allowances && data.allowances.length > 0) {

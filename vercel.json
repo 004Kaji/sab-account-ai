@@ -51,6 +51,18 @@
     {
       "path": "/api/cron/bas-reminder",
       "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/find-freelancers",
+      "schedule": "0 20 * * 0"
+    },
+    {
+      "path": "/api/cron/learn",
+      "schedule": "0 10 * * 0"
+    },
+    {
+      "path": "/api/cron/relay-visa",
+      "schedule": "0 23 * * 0"
     }
   ]
 }

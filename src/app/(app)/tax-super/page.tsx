@@ -322,7 +322,7 @@ export default function TaxSuperPage() {
 
   const q = quarters[qIdx]
 
-  if (profile.plan !== 'pro') {
+  if (profile.plan !== 'pro' && profile.plan !== 'autopilot') {
     return (
       <div style={{ maxWidth: 480, margin: '6rem auto', textAlign: 'center', padding: '0 1.5rem' }}>
         <p style={{ fontSize: '2rem', marginBottom: '1rem' }}>📊</p>

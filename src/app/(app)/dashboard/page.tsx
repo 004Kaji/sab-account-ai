@@ -613,7 +613,7 @@ export default function DashboardPage() {
           .eq('type', 'expense')
           .gte('date', fy_start)
           .lte('date', fy_end),
-        profile.plan === 'pro'
+        (profile.plan === 'pro' || profile.plan === 'autopilot')
           ? supabase.from('payslips').select('super_sg').eq('user_id', user.id).gte('pay_period_end', qStart).lte('pay_period_end', qEnd)
           : Promise.resolve({ data: [] }),
       ])
@@ -846,8 +846,8 @@ export default function DashboardPage() {
         />
         <KpiCard
           label="Super Owing (this quarter)"
-          value={profile.plan === 'pro' ? formatCurrency(kpis.superOwing) : '—'}
-          sub={profile.plan === 'pro' ? 'From payslips this quarter' : 'Pro plan feature'}
+          value={(profile.plan === 'pro' || profile.plan === 'autopilot') ? formatCurrency(kpis.superOwing) : '—'}
+          sub={(profile.plan === 'pro' || profile.plan === 'autopilot') ? 'From payslips this quarter' : 'Pro plan feature'}
         />
       </div>
 
@@ -950,7 +950,7 @@ export default function DashboardPage() {
               <Link href="/records" className="btn btn-outline" style={{ fontSize: '0.875rem', padding: '0.5rem 1rem', textAlign: 'center' }}>
                 Add Income / Expense
               </Link>
-              {profile.plan === 'pro' && (
+              {(profile.plan === 'pro' || profile.plan === 'autopilot') && (
                 <Link href="/payslip" className="btn btn-char" style={{ fontSize: '0.875rem', padding: '0.5rem 1rem', textAlign: 'center' }}>
                   Generate Payslip
                 </Link>
@@ -1005,7 +1005,7 @@ export default function DashboardPage() {
           <PaydaySuperCalcWidget />
 
           {/* Upgrade nudge */}
-          {profile.plan !== 'pro' && (
+          {profile.plan !== 'pro' && profile.plan !== 'autopilot' && (
             <div style={{
               background: 'linear-gradient(135deg, rgba(200,75,47,0.06) 0%, rgba(200,75,47,0.02) 100%)',
               border: '1px solid rgba(200,75,47,0.2)',
@@ -1060,6 +1060,7 @@ export default function DashboardPage() {
       <style>{`
         @media (max-width: 900px) {
           .dashboard-grid { grid-template-columns: 1fr !important; }
+          .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
         }
         @media (max-width: 480px) {
           .top-clients-grid > div { padding: 0.875rem 1rem !important; }

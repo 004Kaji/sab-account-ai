@@ -26,6 +26,8 @@ interface Employee {
   notes: string | null
   annual_leave_hours: number | null
   personal_leave_hours: number | null
+  claiming_threshold: boolean | null
+  has_help: boolean | null
 }
 
 interface EmployeeForm {
@@ -44,6 +46,8 @@ interface EmployeeForm {
   member_number: string
   residency_status: string
   notes: string
+  claiming_threshold: boolean
+  has_help: boolean
 }
 
 function emptyForm(): EmployeeForm {
@@ -53,6 +57,7 @@ function emptyForm(): EmployeeForm {
     pay_basis: 'salary', annual_salary: '', hourly_rate: '',
     ordinary_hours: '76', super_fund_name: '', member_number: '',
     residency_status: 'citizen_pr', notes: '',
+    claiming_threshold: true, has_help: false,
   }
 }
 
@@ -126,6 +131,8 @@ export default function EmployeesPage() {
       member_number: emp.member_number ?? '',
       residency_status: emp.residency_status,
       notes: emp.notes ?? '',
+      claiming_threshold: emp.claiming_threshold ?? true,
+      has_help: emp.has_help ?? false,
     })
     setModalOpen(true)
   }
@@ -158,6 +165,8 @@ export default function EmployeesPage() {
         member_number: form.member_number.trim() || null,
         residency_status: form.residency_status,
         notes: form.notes.trim() || null,
+        claiming_threshold: form.claiming_threshold,
+        has_help: form.has_help,
       }
 
       const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }
@@ -440,6 +449,30 @@ export default function EmployeesPage() {
               <option value="partner">Partner or dependent visa (temporary)</option>
               <option value="other_temp">Other temporary resident</option>
             </select>
+          </div>
+
+          {/* Tax Settings */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', padding: '0.875rem 1rem', background: 'var(--cream)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+            <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.125rem' }}>Tax Settings</p>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--char)' }}>
+              <input
+                type="checkbox"
+                checked={form.claiming_threshold}
+                onChange={e => setForm(f => ({ ...f, claiming_threshold: e.target.checked }))}
+                style={{ width: 15, height: 15, accentColor: 'var(--ember)', cursor: 'pointer', flexShrink: 0 }}
+              />
+              <span>Claims tax-free threshold</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text3)', fontWeight: 400 }}>(tick for main/only job)</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--char)' }}>
+              <input
+                type="checkbox"
+                checked={form.has_help}
+                onChange={e => setForm(f => ({ ...f, has_help: e.target.checked }))}
+                style={{ width: 15, height: 15, accentColor: 'var(--ember)', cursor: 'pointer', flexShrink: 0 }}
+              />
+              <span>Has HELP / HECS debt</span>
+            </label>
           </div>
 
           {/* Super */}

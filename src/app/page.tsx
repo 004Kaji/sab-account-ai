@@ -163,12 +163,14 @@ export default function HomePage() {
           .nav-desktop { display: none !important; }
           .nav-cta-full { display: none !important; }
           .nav-cta-short { display: inline-flex !important; }
-        }
-        .nav-cta-short { display: none; }
-        @media (max-width: 640px) {
           .how-grid { grid-template-columns: 1fr !important; }
           .product-input { font-size: 0.8125rem !important; }
+          .trust-bar-inner { display: grid !important; grid-template-columns: repeat(2, 1fr) !important; gap: 0.625rem 1rem !important; justify-items: start !important; }
         }
+        .nav-cta-short { display: none; }
+        .pricing-grid { display: grid !important; grid-template-columns: 1fr !important; gap: 1.25rem !important; align-items: start !important; }
+        @media (min-width: 600px) { .pricing-grid { grid-template-columns: repeat(2, 1fr) !important; } }
+        @media (min-width: 960px) { .pricing-grid { grid-template-columns: repeat(4, 1fr) !important; } }
       `}</style>
       <nav className="landing-nav" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -230,7 +232,7 @@ export default function HomePage() {
 
       {/* ── Trust bar ──────────────────────────────────────────── */}
       <div style={{ background: 'var(--char)', padding: '0.875rem 1.5rem' }}>
-        <div style={{
+        <div className="trust-bar-inner" style={{
           display: 'flex', justifyContent: 'center', alignItems: 'center',
           gap: '2rem', flexWrap: 'wrap', maxWidth: '800px', margin: '0 auto',
         }}>
@@ -487,7 +489,7 @@ export default function HomePage() {
           <p style={{ color: 'var(--text2)', fontSize: '0.9375rem' }}>Start free. Upgrade only when you need more.</p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.25rem', alignItems: 'start' }}>
+        <div className="pricing-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', alignItems: 'start' }}>
           {PLANS.map((plan) => (
             <div key={plan.name} style={{
               background: plan.highlight ? 'var(--char)' : '#ffffff',

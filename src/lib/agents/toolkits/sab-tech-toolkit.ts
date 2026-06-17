@@ -113,6 +113,7 @@ export async function githubCreatePR(
   body: string,
   head: string,
   base?: string,
+  draft?: boolean,
 ): Promise<{ number: number; url: string }> {
   const { name: defaultBranch } = base ? { name: base } : await githubGetDefaultBranch()
   const res = await fetch(
@@ -120,7 +121,7 @@ export async function githubCreatePR(
     {
       method: 'POST',
       headers: githubHeaders(),
-      body: JSON.stringify({ title, body, head, base: defaultBranch }),
+      body: JSON.stringify({ title, body, head, base: defaultBranch, draft: draft ?? false }),
     },
   )
   if (!res.ok) throw new Error(`GitHub create PR failed: ${res.status}`)

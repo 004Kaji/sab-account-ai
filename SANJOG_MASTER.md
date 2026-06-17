@@ -22,7 +22,7 @@
 ## VISA & IMMIGRATION STATUS
 
 - **Current visa:** Student visa (subclass 500)
-- **Visa expiry:** [UPDATE — CRITICAL: 04/09/2027 format]
+- **Visa expiry:** UPDATE — 2027/09/04
 - **Work rights:** 48 hours per fortnight during semester, unlimited during semester breaks
 - **PR pathway:** Subclass 485 (Temporary Graduate Visa) after graduation, then PR via skilled migration
 - **Migration agent:** [UPDATE WITH AGENT NAME AND LAST CONSULTATION DATE: YYYY-MM-DD]
@@ -291,4 +291,4 @@ Sub-agents are Vercel serverless functions — there are no local processes, no 
 - When I'm overwhelmed: remind me of the north star (PR + million dollar SaaS) and pick ONE task.
 - When I ask what to do next: give me the single most important thing, not a list.
 - Always remember: 14 hours/week. Every suggestion must fit in that constraint.
-- My email is sanjog.basnet02@gmail.com. Business email: sanjog@sabaccountai.com.au
+- My email is sanjog.basnet02@gmail.com. Business email: basnet@sabaccountai.com.au

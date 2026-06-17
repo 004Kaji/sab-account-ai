@@ -222,6 +222,11 @@ export async function fluxAuditCode(): Promise<{ issueUrl: string; findings: str
   const start = Date.now()
 
   if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) {
+    await sendAlert(
+      'Flux: GitHub not configured',
+      'fluxAuditCode() cannot run — GITHUB_TOKEN or GITHUB_REPO env var is missing. Add both to your Vercel environment variables to enable automated code audits.',
+      'warning', 'flux',
+    )
     return { issueUrl: '', findings: 'GitHub not configured — set GITHUB_TOKEN and GITHUB_REPO.' }
   }
 
@@ -279,6 +284,11 @@ export async function fluxProposeFix(params: {
   const start = Date.now()
 
   if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) {
+    await sendAlert(
+      'Flux: GitHub not configured',
+      'fluxProposeFix() cannot run — GITHUB_TOKEN or GITHUB_REPO env var is missing. Add both to your Vercel environment variables to enable automated fix proposals.',
+      'warning', 'flux',
+    )
     return { prUrl: '', summary: 'GitHub not configured — set GITHUB_TOKEN and GITHUB_REPO.' }
   }
 
@@ -325,10 +335,13 @@ Propose a minimal fix. Return the complete corrected file content.`,
     branchName,
   )
 
+  // Draft PR — stays hidden until manually marked "Ready for review"
   const pr = await githubCreatePR(
     `[Flux] ${parsed.summary}`,
-    `## Auto-proposed fix\n\n**Error:** ${params.errorMessage}\n**File:** \`${params.filePath}\`\n\n**Summary:** ${parsed.summary}\n\n---\n*Proposed by Flux agent — review before merging*`,
+    `## Auto-proposed fix\n\n**Error:** ${params.errorMessage}\n**File:** \`${params.filePath}\`\n\n**Summary:** ${parsed.summary}\n\n---\n*Proposed by Flux agent — draft until Sanjog approves. Click "Ready for review" to publish.*`,
     branchName,
+    undefined,
+    true,
   )
 
   await saveGithubPR({
@@ -339,10 +352,11 @@ Propose a minimal fix. Return the complete corrected file content.`,
     triggerType: 'propose_fix',
   })
 
+  // Approval-gate alert — Sanjog must explicitly mark PR ready before it goes live
   await sendAlert(
-    `Flux proposed fix: ${parsed.summary}`,
-    `PR opened: ${pr.url}\nFile: ${params.filePath}\nError: ${params.errorMessage}`,
-    'info', 'flux',
+    `Flux fix needs your approval: ${parsed.summary}`,
+    `A draft PR is waiting for your approval before it goes live:\n${pr.url}\n\nFile: ${params.filePath}\nError: ${params.errorMessage}\n\nOpen the link → click "Ready for review" to publish, or close the PR to discard.`,
+    'warning', 'flux',
   )
 
   await logSubAgent('flux', 'propose_fix', params.errorMessage.slice(0, 100), parsed.summary, Date.now() - start, true)

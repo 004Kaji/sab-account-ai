@@ -6,10 +6,11 @@ import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
 import { formatDateAU, validateABN, formatABN } from '@/lib/utils'
+import { INDUSTRY_LIST, getAwardRates, pct } from '@/lib/award-rates'
 import AbnVerifyBadge from '@/components/ui/AbnVerifyBadge'
 
 // ── Types ─────────────────────────────────────────────────────────────
-type TabKey = 'business' | 'subscription' | 'invoices' | 'notifications' | 'ato' | 'referrals'
+type TabKey = 'business' | 'subscription' | 'invoices' | 'notifications' | 'ato' | 'referrals' | 'feedback'
 
 interface BizSettings {
   business_name:        string
@@ -20,6 +21,10 @@ interface BizSettings {
   website:              string
   industry:             string
   logo_url:             string
+  sat_rate_mult:        string
+  sun_rate_mult:        string
+  ph_rate_mult:         string
+  evening_rate_mult:    string
   default_payment_terms: string
   default_gst:          boolean
   starting_invoice_num: number
@@ -37,6 +42,7 @@ interface BizSettings {
 
 const EMPTY: BizSettings = {
   business_name: '', abn: '', email: '', phone: '', address: '', website: '', industry: '', logo_url: '',
+  sat_rate_mult: '', sun_rate_mult: '', ph_rate_mult: '', evening_rate_mult: '',
   default_payment_terms: '14 days', default_gst: true, starting_invoice_num: 1,
   default_currency: 'AUD', default_footer: '',
   gst_registered: false, bas_frequency: 'quarterly', super_rate_new: true,
@@ -50,13 +56,10 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'notifications', label: 'Notifications' },
   { key: 'ato',           label: 'ATO'           },
   { key: 'referrals',     label: 'Referrals 🎁'  },
+  { key: 'feedback',      label: 'Feedback'       },
 ]
 
-const INDUSTRIES = [
-  'Building & Construction', 'Consulting & Professional Services', 'Retail', 'Hospitality',
-  'Technology', 'Creative & Design', 'Transport & Logistics', 'Health & Wellbeing',
-  'Education & Training', 'Agriculture', 'Real Estate', 'Other',
-]
+// INDUSTRY_LIST is imported from @/lib/award-rates (maps to Modern Awards)
 
 // ── Shared tab prop types ─────────────────────────────────────────────
 interface SharedTabProps {
@@ -144,11 +147,24 @@ async function resizeLogo(file: File): Promise<string> {
 
 // ── Tab components (module-level to prevent remounting on parent re-render) ──
 
-function BusinessTab({ biz, setField, saving, save, abnError, setAbnError }: SharedTabProps & {
+function BusinessTab({ biz, setField, saving, save, abnError, setAbnError, toast }: SharedTabProps & {
   abnError: string
   setAbnError: (e: string) => void
+  toast: (msg: string, type: 'success' | 'error' | 'info') => void
 }) {
   function handleSave() {
+    if (!biz.business_name.trim()) {
+      toast('Business name is required', 'error')
+      return
+    }
+    if (!biz.email.trim()) {
+      toast('Business email is required', 'error')
+      return
+    }
+    if (!biz.industry) {
+      toast('Please select your industry — this sets your Fair Work penalty rates', 'error')
+      return
+    }
     if (biz.abn && !validateABN(biz.abn)) {
       setAbnError('Invalid ABN — please check and try again')
       return
@@ -156,13 +172,17 @@ function BusinessTab({ biz, setField, saving, save, abnError, setAbnError }: Sha
     save({
       business_name: biz.business_name, abn: biz.abn, email: biz.email,
       phone: biz.phone, address: biz.address, website: biz.website, industry: biz.industry,
+      sat_rate_mult:     biz.sat_rate_mult     ? String(parseFloat(biz.sat_rate_mult)     / 100) : (null as unknown as string),
+      sun_rate_mult:     biz.sun_rate_mult     ? String(parseFloat(biz.sun_rate_mult)     / 100) : (null as unknown as string),
+      ph_rate_mult:      biz.ph_rate_mult      ? String(parseFloat(biz.ph_rate_mult)      / 100) : (null as unknown as string),
+      evening_rate_mult: biz.evening_rate_mult ? String(parseFloat(biz.evening_rate_mult) / 100) : (null as unknown as string),
     })
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       <div>
-        <label className="sab-label">Business Name</label>
+        <label className="sab-label">Business Name <span style={{ color: 'var(--ember)' }}>*</span></label>
         <input className="sab-input" placeholder="Smith Trades Pty Ltd" autoComplete="organization"
           value={biz.business_name} onChange={e => setField('business_name', e.target.value)} />
       </div>
@@ -184,7 +204,7 @@ function BusinessTab({ biz, setField, saving, save, abnError, setAbnError }: Sha
       </div>
       <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
         <div>
-          <label className="sab-label">Business Email</label>
+          <label className="sab-label">Business Email <span style={{ color: 'var(--ember)' }}>*</span></label>
           <input type="text" className="sab-input" placeholder="hello@yourbusiness.com.au" autoComplete="email"
             value={biz.email} onChange={e => setField('email', e.target.value)} />
         </div>
@@ -209,13 +229,99 @@ function BusinessTab({ biz, setField, saving, save, abnError, setAbnError }: Sha
             value={biz.website} onChange={e => setField('website', e.target.value)} />
         </div>
         <div>
-          <label className="sab-label">Industry</label>
+          <label className="sab-label">Industry <span style={{ color: 'var(--ember)' }}>*</span></label>
           <select className="sab-input" value={biz.industry} onChange={e => setField('industry', e.target.value)}>
             <option value="">Select industry…</option>
-            {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
+            {INDUSTRY_LIST.map(i => <option key={i}>{i}</option>)}
           </select>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.3rem' }}>
+            Sets Fair Work Award penalty rates in payslips
+          </p>
         </div>
       </div>
+
+      {/* Custom penalty rate overrides */}
+      {biz.industry && (() => {
+        const awards = getAwardRates(biz.industry)
+        if (!awards) return null
+        return (
+          <div style={{ background: 'var(--cream2)', borderRadius: 'var(--r)', padding: '1rem', border: '1px solid var(--border)' }}>
+            <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.25rem' }}>Custom Penalty Rates <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(optional)</span></p>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginBottom: '0.875rem', lineHeight: 1.4 }}>
+              Leave blank to use {awards.awardShort} defaults. Fill in only if your enterprise agreement or contract differs.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              {awards.evening && (
+                <div>
+                  <label className="sab-label" style={{ fontSize: '0.75rem' }}>
+                    Evening <span style={{ color: 'var(--text3)', fontWeight: 400 }}>default {pct(awards.evening.mult)}</span>
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="number" min={100} max={400} step={1} className="sab-input"
+                      placeholder={String(Math.round(awards.evening.mult * 100))}
+                      value={biz.evening_rate_mult}
+                      onChange={e => setField('evening_rate_mult', e.target.value)}
+                      style={{ paddingRight: '2rem' }}
+                      onWheel={e => (e.target as HTMLInputElement).blur()}
+                    />
+                    <span style={{ position: 'absolute', right: '0.625rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.8125rem', pointerEvents: 'none' }}>%</span>
+                  </div>
+                </div>
+              )}
+              <div>
+                <label className="sab-label" style={{ fontSize: '0.75rem' }}>
+                  Saturday <span style={{ color: 'var(--text3)', fontWeight: 400 }}>default {pct(awards.saturday)}</span>
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="number" min={100} max={400} step={1} className="sab-input"
+                    placeholder={String(Math.round(awards.saturday * 100))}
+                    value={biz.sat_rate_mult}
+                    onChange={e => setField('sat_rate_mult', e.target.value)}
+                    style={{ paddingRight: '2rem' }}
+                    onWheel={e => (e.target as HTMLInputElement).blur()}
+                  />
+                  <span style={{ position: 'absolute', right: '0.625rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.8125rem', pointerEvents: 'none' }}>%</span>
+                </div>
+              </div>
+              <div>
+                <label className="sab-label" style={{ fontSize: '0.75rem' }}>
+                  Sunday <span style={{ color: 'var(--text3)', fontWeight: 400 }}>default {pct(awards.sunday)}</span>
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="number" min={100} max={400} step={1} className="sab-input"
+                    placeholder={String(Math.round(awards.sunday * 100))}
+                    value={biz.sun_rate_mult}
+                    onChange={e => setField('sun_rate_mult', e.target.value)}
+                    style={{ paddingRight: '2rem' }}
+                    onWheel={e => (e.target as HTMLInputElement).blur()}
+                  />
+                  <span style={{ position: 'absolute', right: '0.625rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.8125rem', pointerEvents: 'none' }}>%</span>
+                </div>
+              </div>
+              <div>
+                <label className="sab-label" style={{ fontSize: '0.75rem' }}>
+                  Public Holiday <span style={{ color: 'var(--text3)', fontWeight: 400 }}>default {pct(awards.publicHoliday)}</span>
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="number" min={100} max={400} step={1} className="sab-input"
+                    placeholder={String(Math.round(awards.publicHoliday * 100))}
+                    value={biz.ph_rate_mult}
+                    onChange={e => setField('ph_rate_mult', e.target.value)}
+                    style={{ paddingRight: '2rem' }}
+                    onWheel={e => (e.target as HTMLInputElement).blur()}
+                  />
+                  <span style={{ position: 'absolute', right: '0.625rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: '0.8125rem', pointerEvents: 'none' }}>%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Logo upload */}
       <div>
         <label className="sab-label">Business Logo <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
@@ -1019,6 +1125,156 @@ function ReferralsTab() {
   )
 }
 
+// ── Feedback tab ──────────────────────────────────────────────────────
+function FeedbackTab() {
+  const profile = useProfile()
+  const [rating, setRating]       = useState(0)
+  const [hovered, setHovered]     = useState(0)
+  const [category, setCategory]   = useState('General feedback')
+  const [message, setMessage]     = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError]         = useState('')
+
+  async function handleSubmit() {
+    if (!message.trim() || rating === 0) return
+    setSubmitting(true)
+    setError('')
+    try {
+      const supabase = createBrowserClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('Not authenticated')
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ rating, category, message, userEmail: profile.email, businessName: profile.business_name, plan: profile.plan }),
+      })
+      if (!res.ok) throw new Error('Failed to send')
+      setSubmitted(true)
+    } catch {
+      setError('Could not send feedback. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const LABELS = ['', 'Poor', 'Fair', 'Good', 'Great', 'Excellent']
+  const STAR_COLORS = ['', '#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e']
+
+  if (submitted) {
+    return (
+      <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+        <p style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🙏</p>
+        <h2 className="font-display" style={{ fontSize: '1.25rem', color: 'var(--char)', marginBottom: '0.5rem' }}>
+          Thank you for your feedback!
+        </h2>
+        <p style={{ color: 'var(--text2)', fontSize: '0.875rem', lineHeight: 1.6 }}>
+          Sanjog reads every message personally and will get back to you if needed.
+        </p>
+        <button
+          onClick={() => { setSubmitted(false); setRating(0); setMessage(''); setCategory('General feedback') }}
+          style={{ marginTop: '1.5rem', fontSize: '0.875rem', color: 'var(--ember)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+        >
+          Send more feedback
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: '1.75rem' }}>
+        <h2 className="font-display" style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.375rem' }}>
+          Send Feedback
+        </h2>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text2)' }}>
+          Found a bug? Have a feature idea? Sanjog reads every message personally.
+        </p>
+      </div>
+
+      {/* Star rating */}
+      <div style={{ marginBottom: '1.5rem' }}>
+        <p style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--char)', marginBottom: '0.625rem' }}>
+          How would you rate SAB Account AI? <span style={{ color: 'var(--ember)' }}>*</span>
+        </p>
+        <div style={{ display: 'flex', gap: '0.375rem' }}>
+          {[1, 2, 3, 4, 5].map(n => (
+            <button
+              key={n}
+              onClick={() => setRating(n)}
+              onMouseEnter={() => setHovered(n)}
+              onMouseLeave={() => setHovered(0)}
+              style={{
+                fontSize: '2rem', background: 'none', border: 'none', cursor: 'pointer',
+                padding: '0.125rem', lineHeight: 1,
+                color: n <= (hovered || rating) ? STAR_COLORS[hovered || rating] : 'var(--border)',
+                transform: n <= (hovered || rating) ? 'scale(1.2)' : 'scale(1)',
+                transition: 'all 120ms',
+              }}
+            >★</button>
+          ))}
+        </div>
+        {(hovered || rating) > 0 && (
+          <p style={{ fontSize: '0.8125rem', fontWeight: 500, color: STAR_COLORS[hovered || rating], marginTop: '0.375rem' }}>
+            {LABELS[hovered || rating]}
+          </p>
+        )}
+      </div>
+
+      {/* Category */}
+      <div style={{ marginBottom: '1.25rem' }}>
+        <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 500, color: 'var(--char)', marginBottom: '0.5rem' }}>
+          Category
+        </label>
+        <select
+          value={category}
+          onChange={e => setCategory(e.target.value)}
+          className="sab-input"
+          style={{ width: '100%', maxWidth: '300px' }}
+        >
+          {['General feedback', 'Bug report', 'Feature request', 'Billing question', 'Compliment'].map(c => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Message */}
+      <div style={{ marginBottom: '1.75rem' }}>
+        <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 500, color: 'var(--char)', marginBottom: '0.5rem' }}>
+          Message <span style={{ color: 'var(--ember)' }}>*</span>
+        </label>
+        <textarea
+          value={message}
+          onChange={e => setMessage(e.target.value)}
+          placeholder="Tell us what's on your mind…"
+          rows={5}
+          className="sab-input"
+          style={{ width: '100%', resize: 'vertical', minHeight: '120px', fontFamily: 'inherit' }}
+        />
+        <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.375rem' }}>
+          Replies go to {profile.email}
+        </p>
+      </div>
+
+      {error && (
+        <p style={{ fontSize: '0.8125rem', color: 'var(--ember)', marginBottom: '1rem' }}>{error}</p>
+      )}
+
+      <button
+        onClick={handleSubmit}
+        disabled={submitting || !message.trim() || rating === 0}
+        className="btn btn-ember"
+        style={{ opacity: (!message.trim() || rating === 0) ? 0.5 : 1, cursor: (!message.trim() || rating === 0) ? 'not-allowed' : 'pointer' }}
+      >
+        {submitting ? 'Sending…' : 'Send feedback'}
+      </button>
+      {rating === 0 && message.trim().length > 0 && (
+        <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.5rem' }}>Please select a star rating above</p>
+      )}
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────
 function SettingsPageInner() {
   const profile      = useProfile()
@@ -1083,6 +1339,10 @@ function SettingsPageInner() {
           website:              data.website              ?? '',
           industry:             data.industry             ?? '',
           logo_url:             data.logo_url             ?? '',
+          sat_rate_mult:        data.sat_rate_mult     != null ? String(Math.round(data.sat_rate_mult * 100)) : '',
+          sun_rate_mult:        data.sun_rate_mult     != null ? String(Math.round(data.sun_rate_mult * 100)) : '',
+          ph_rate_mult:         data.ph_rate_mult      != null ? String(Math.round(data.ph_rate_mult  * 100)) : '',
+          evening_rate_mult:    data.evening_rate_mult != null ? String(Math.round(data.evening_rate_mult * 100)) : '',
           default_payment_terms: data.default_payment_terms ?? '14 days',
           default_gst:          data.default_gst          ?? true,
           starting_invoice_num: data.starting_invoice_num ?? 1,
@@ -1211,7 +1471,7 @@ function SettingsPageInner() {
       {/* Active tab content */}
       <div className="settings-tab-panel" style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '2rem' }}>
         {tab === 'business' && (
-          <BusinessTab biz={biz} setField={setField} saving={saving} save={save} abnError={abnError} setAbnError={setAbnError} />
+          <BusinessTab biz={biz} setField={setField} saving={saving} save={save} abnError={abnError} setAbnError={setAbnError} toast={toast} />
         )}
         {tab === 'subscription' && (
           <SubscriptionTab profile={profile} successPlan={successPlan} stripeLoading={stripeLoading} handlePortal={handlePortal} handleUpgrade={handleUpgrade} />
@@ -1227,6 +1487,9 @@ function SettingsPageInner() {
         )}
         {tab === 'referrals' && (
           <ReferralsTab />
+        )}
+        {tab === 'feedback' && (
+          <FeedbackTab />
         )}
       </div>
     </div>

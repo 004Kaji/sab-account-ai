@@ -1,7 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import * as Sentry from '@sentry/nextjs'
-import { calculatePayslip } from '@/lib/ato'
+import { calculatePayslip, isMedicareExemptByResidency } from '@/lib/ato'
 import PDFDocument from 'pdfkit'
 
 // ── Generate BAS PDF as a Buffer ──────────────────────────────────────
@@ -378,17 +378,30 @@ ${inv.has_gst ? `<tr><td style="padding:6px 0;color:#57534E;font-size:13px;borde
         const payBasis    = (emp.pay_basis as string | null) || 'salary'
         let grossPay      = input.gross_pay as number | undefined
 
+        type PayItemInput = { description: string; hours: number; rate_mult: number }
+        const payItemInputs = (input.pay_items as PayItemInput[] | undefined) ?? []
+        const ordinaryHoursOverride = input.ordinary_hours as number | undefined
+
         if (!grossPay) {
           if (payBasis === 'hourly') {
-            const rate  = emp.hourly_rate as number | null
-            const hours = emp.ordinary_hours as number | null
-            if (!rate || !hours) return { error: `Cannot auto-compute pay: ${emp.name as string} has no hourly rate or ordinary hours on file. Please provide gross_pay or update the employee record.` }
-            grossPay = Math.round(rate * hours * 100) / 100
+            const rate         = emp.hourly_rate as number | null
+            const storedHours  = emp.ordinary_hours as number | null
+            const ordHours     = ordinaryHoursOverride ?? storedHours
+            if (!rate || !ordHours) return { error: `Cannot auto-compute pay: ${emp.name as string} has no hourly rate or ordinary hours on file. Please provide gross_pay or update the employee record.` }
+            const ordinaryPay  = Math.round(rate * ordHours * 100) / 100
+            const penaltyPay   = payItemInputs.reduce((s, i) => s + Math.round(rate * i.rate_mult * i.hours * 100) / 100, 0)
+            grossPay = Math.round((ordinaryPay + penaltyPay) * 100) / 100
           } else {
             const annual = emp.annual_salary as number | null
             if (!annual) return { error: `Cannot auto-compute pay: ${emp.name as string} has no annual salary on file. Please provide gross_pay or update the employee record.` }
             const divisor = payCycleStr === 'weekly' ? 52 : payCycleStr === 'monthly' ? 12 : 26
-            grossPay = Math.round((annual / divisor) * 100) / 100
+            const basePay = Math.round((annual / divisor) * 100) / 100
+            // For salaried employees, pay_items are loadings on top (passed as dollar amounts via rate_mult × base day rate)
+            const penaltyPay = payItemInputs.reduce((s, i) => {
+              const dayRate = annual / (52 * 5)
+              return s + Math.round(dayRate * i.rate_mult * i.hours * 100) / 100
+            }, 0)
+            grossPay = Math.round((basePay + penaltyPay) * 100) / 100
           }
         }
 
@@ -418,7 +431,12 @@ ${inv.has_gst ? `<tr><td style="padding:6px 0;color:#57534E;font-size:13px;borde
 
         const payCycle = payCycleStr === 'weekly' ? 'weekly' : payCycleStr === 'monthly' ? 'monthly' : 'fortnightly'
 
-        const annualSalary = (emp.annual_salary as number | null) ?? (grossPay * (payCycle === 'weekly' ? 52 : payCycle === 'fortnightly' ? 26 : 12))
+        const periodsPerYear = payCycle === 'weekly' ? 52 : payCycle === 'monthly' ? 12 : 26
+        // For hourly employees, always derive annual from actual gross (includes penalty items)
+        // For salary employees, use stored annual_salary for correct tax bands
+        const annualSalary = payBasis === 'hourly'
+          ? Math.round(grossPay! * periodsPerYear * 100) / 100
+          : ((emp.annual_salary as number | null) ?? Math.round(grossPay! * periodsPerYear * 100) / 100)
         const residencyStatus = (emp.residency_status as 'citizen_pr' | 'student' | 'temp_work' | 'whm' | 'partner' | 'other_temp') ?? 'citizen_pr'
         const useNewSuperRate = (biz?.super_rate_new as boolean | null) ?? true
 
@@ -428,9 +446,9 @@ ${inv.has_gst ? `<tr><td style="padding:6px 0;color:#57534E;font-size:13px;borde
           overtimeHours:         0,
           overtimeRate:          0,
           payCycle,
-          claimingThreshold:     true,
-          hasHELP:               false,
-          medicareLevyExemption: false,
+          claimingThreshold:     (emp.claiming_threshold as boolean | null) ?? true,
+          hasHELP:               (emp.has_help           as boolean | null) ?? false,
+          medicareLevyExemption: isMedicareExemptByResidency(residencyStatus),
           useNewSuperRate,
           residencyStatus,
         })
@@ -464,6 +482,14 @@ ${inv.has_gst ? `<tr><td style="padding:6px 0;color:#57534E;font-size:13px;borde
 
         if (psErr) throw new Error(psErr.message)
 
+        const baseRate = (emp.hourly_rate as number | null) ?? 0
+        const payItemLines = payItemInputs.map(i => ({
+          description: i.description,
+          hours:       i.hours,
+          rate:        Math.round(baseRate * i.rate_mult * 100) / 100,
+          total:       fmt(Math.round(baseRate * i.rate_mult * i.hours * 100) / 100),
+        }))
+
         return {
           payslip_id:      ps.id,
           payslip_number:  payslipNumber,
@@ -476,6 +502,7 @@ ${inv.has_gst ? `<tr><td style="padding:6px 0;color:#57534E;font-size:13px;borde
           help_repayment:  fmt(numbers.helpRepayment),
           net_pay:         fmt(numbers.netPay),
           super_sg:        fmt(numbers.superSG),
+          ...(payItemLines.length > 0 && { pay_items_applied: payItemLines }),
           rows: [
             ['Gross Pay',      fmt(numbers.grossPay)],
             ['Income Tax',     fmt(numbers.incomeTax)],
@@ -729,9 +756,9 @@ ${(ps.help_repayment as number) > 0 ? `<tr><td style="padding:6px 0;color:#57534
               overtimeHours:         0,
               overtimeRate:          0,
               payCycle,
-              claimingThreshold:     true,
-              hasHELP:               false,
-              medicareLevyExemption: false,
+              claimingThreshold:     (emp.claiming_threshold as boolean | null) ?? true,
+              hasHELP:               (emp.has_help           as boolean | null) ?? false,
+              medicareLevyExemption: isMedicareExemptByResidency(residencyStatus),
               useNewSuperRate,
               residencyStatus,
             })

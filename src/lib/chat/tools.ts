@@ -57,12 +57,26 @@ export const SAB_CHAT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'create_payslip',
-    description: 'Create an ATO-compliant payslip for an employee using NAT 1004 PAYG calculations. Use when the user asks to pay, process payroll, or make a payslip. Always call this first — never send without confirming. Returns the full breakdown with tax, Medicare, super. gross_pay and dates are optional — if omitted, the handler computes them from the employee\'s stored rate and pay cycle.',
+    description: 'Create an ATO-compliant payslip for an employee using NAT 1004 PAYG calculations. Use when the user asks to pay, process payroll, or make a payslip. Always call this first — never send without confirming. Returns the full breakdown with tax, Medicare, super. gross_pay and dates are optional — if omitted, the handler computes them from the employee\'s stored rate and pay cycle. For hourly employees with penalty/overtime hours, use ordinary_hours + pay_items instead of gross_pay.',
     input_schema: {
       type: 'object' as const,
       properties: {
         employee_id:      { type: 'string', description: 'UUID of the employee from the EMPLOYEES list' },
-        gross_pay:        { type: 'number', description: 'Override gross pay in AUD. Omit to auto-calculate from stored hourly_rate × ordinary_hours or annual_salary ÷ pay periods.' },
+        gross_pay:        { type: 'number', description: 'Override total gross pay in AUD. Omit when using ordinary_hours + pay_items.' },
+        ordinary_hours:   { type: 'number', description: 'For hourly employees: override the ordinary (base-rate) hours for this period. E.g. if total is 48hrs with 8 evening + 8 Saturday, pass 32 here (48 - 8 - 8). Omit to use the employee\'s stored hours.' },
+        pay_items: {
+          type: 'array',
+          description: 'Penalty/overtime pay items. Each adds extra earnings on top of ordinary hours. The handler calculates the dollar rate as employee\'s hourly_rate × rate_mult.',
+          items: {
+            type: 'object',
+            properties: {
+              description: { type: 'string', description: 'Label shown on payslip, e.g. "Evening loading", "Saturday penalty"' },
+              hours:       { type: 'number', description: 'Hours worked at this rate' },
+              rate_mult:   { type: 'number', description: 'Rate as a multiplier of the base hourly rate. E.g. 1.15 = 115% for evening, 1.25 = Saturday, 1.75 = Sunday, 2.25 = public holiday' },
+            },
+            required: ['description', 'hours', 'rate_mult'],
+          },
+        },
         pay_period_start: { type: 'string', description: 'Start date YYYY-MM-DD. Omit to use the most recent completed pay period based on pay cycle.' },
         pay_period_end:   { type: 'string', description: 'End date YYYY-MM-DD. Omit to use today.' },
       },

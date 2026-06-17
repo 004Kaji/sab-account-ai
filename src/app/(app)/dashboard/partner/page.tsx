@@ -121,7 +121,7 @@ export default function PartnerDashboardPage() {
       </div>
 
       {/* Stats */}
-      <div style={{
+      <div className="partner-stats" style={{
         display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
         gap: '1rem', marginBottom: '1.75rem',
       }}>
@@ -212,6 +212,9 @@ export default function PartnerDashboardPage() {
         </ul>
       </div>
 
+      <style>{`
+        @media (max-width: 600px) { .partner-stats { grid-template-columns: 1fr !important; } }
+      `}</style>
     </div>
   )
 }

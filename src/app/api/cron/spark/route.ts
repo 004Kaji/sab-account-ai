@@ -2,11 +2,11 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 // Runs every Tuesday 9am AEST (Monday 23:00 UTC).
-// Generates the weekly content brief then drafts social posts.
+// Generates the weekly content brief, drafts social posts, and community-segment posts.
 // Runs after atlas cron (Monday) so Atlas brief is already published.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { sparkWeeklyBrief, sparkDraftSocialPosts } from '@/lib/agents/sub/spark'
+import { sparkWeeklyBrief, sparkDraftSocialPosts, sparkPostCommunity, sparkGenerateTikTok } from '@/lib/agents/sub/spark'
 import { getStripeMetrics, getSABMetrics, getLatestAtlasIntel, getLatestLiftSignal, logAgentAction } from '@/lib/agents/utils'
 
 export async function GET(req: NextRequest) {
@@ -17,8 +17,10 @@ export async function GET(req: NextRequest) {
 
   const start = Date.now()
   const results = {
-    brief:  { ok: false, topic: '', error: '' },
-    social: { ok: false, count: 0,  error: '' },
+    brief:     { ok: false, topic:   '', error: '' },
+    social:    { ok: false, count:    0, error: '' },
+    community: { ok: false, drafts:   0, error: '' },
+    tiktok:    { ok: false, scripts:  0, error: '' },
   }
 
   // Gather live metrics to feed the brief
@@ -49,12 +51,26 @@ export async function GET(req: NextRequest) {
     results.brief.error = err instanceof Error ? err.message : String(err)
   }
 
-  // Draft social posts (reads Atlas recommendation signal automatically)
-  try {
-    const drafts = await sparkDraftSocialPosts()
-    results.social = { ok: true, count: drafts.drafts?.length ?? 0, error: '' }
-  } catch (err) {
-    results.social.error = err instanceof Error ? err.message : String(err)
+  // Social posts, community posts, and TikTok scripts — all independent, run concurrently
+  const [socialR, communityR, tiktokR] = await Promise.allSettled([
+    sparkDraftSocialPosts(),
+    sparkPostCommunity(),
+    sparkGenerateTikTok(),
+  ])
+  if (socialR.status === 'fulfilled') {
+    results.social = { ok: true, count: socialR.value.drafts?.length ?? 0, error: '' }
+  } else {
+    results.social.error = socialR.reason instanceof Error ? socialR.reason.message : String(socialR.reason)
+  }
+  if (communityR.status === 'fulfilled') {
+    results.community = { ok: true, drafts: communityR.value.drafts, error: '' }
+  } else {
+    results.community.error = communityR.reason instanceof Error ? communityR.reason.message : String(communityR.reason)
+  }
+  if (tiktokR.status === 'fulfilled') {
+    results.tiktok = { ok: true, scripts: tiktokR.value.scripts, error: '' }
+  } else {
+    results.tiktok.error = tiktokR.reason instanceof Error ? tiktokR.reason.message : String(tiktokR.reason)
   }
 
   await logAgentAction({

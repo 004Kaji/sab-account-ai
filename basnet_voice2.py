@@ -225,7 +225,46 @@ async def transcribe(audio_path: str) -> str:
 
 # ── TTS: speak ────────────────────────────────────────────────────────
 
+def _clean_for_tts(text: str) -> str:
+    """Strip all markdown / code / URLs so Mac say sounds natural."""
+    # Remove fenced code blocks entirely (``` ... ```)
+    text = re.sub(r'```[\s\S]*?```', ' ', text)
+    # Remove inline code but keep the word inside
+    text = re.sub(r'`([^`\n]+)`', r'\1', text)
+    # Markdown links [label](url) → just label
+    text = re.sub(r'\[([^\]]+)\]\([^\)]*\)', r'\1', text)
+    # Bare URLs — say reads these as "h-t-t-p-s colon slash slash..."
+    text = re.sub(r'https?://\S+', '', text)
+    # Markdown headers (## Title → Title)
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # Bold / italic — unwrap the text inside
+    text = re.sub(r'\*{1,3}([^*\n]+)\*{1,3}', r'\1', text)
+    text = re.sub(r'_{1,3}([^_\n]+)_{1,3}', r'\1', text)
+    # Bullet list markers
+    text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)
+    # Horizontal rules
+    text = re.sub(r'^[-_*]{3,}\s*$', '', text, flags=re.MULTILINE)
+    # HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+    # Strip known agent routing labels only — NOT domain acronyms like [GST] [ATO] [ABN]
+    text = re.sub(r'\[(?:BASNET|FLUX|SPARK|ATLAS|LIFT|SCOUT|RELAY|BUILD|EXEC|APP|LOCAL|N8N|TRIGGER)\]', '', text)
+    # Remaining junk chars
+    text = re.sub(r'[*_`#|\\]', '', text)
+    # Normalize \n \n (non-contiguous newlines) → \n\n first
+    text = re.sub(r'\n[ \t]*\n', '\n\n', text)
+    # Remove leading/trailing blank lines — prevents leading \n\n becoming ". hello"
+    text = text.strip('\n')
+    # Paragraph breaks → sentence pause; \.? eats trailing period to avoid double-dot
+    text = re.sub(r'\.?\n{2,}', '. ', text)
+    text = re.sub(r'\n', ' ', text)
+    # Collapse whitespace
+    text = re.sub(r' {2,}', ' ', text)
+    return text.strip()
+
+
 async def speak(text: str):
+    clean = _clean_for_tts(text)
+
     if ELEVENLABS_KEY and ELEVENLABS_VOICE:
         try:
             async with httpx.AsyncClient(timeout=15) as c:
@@ -233,7 +272,7 @@ async def speak(text: str):
                     f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE}",
                     headers={"xi-api-key": ELEVENLABS_KEY},
                     json={
-                        "text": text,
+                        "text": (clean[:500].rsplit(' ', 1)[0] if len(clean) > 500 else clean),
                         "model_id": "eleven_turbo_v2",
                         "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "speed": 1.1},
                     },
@@ -247,7 +286,9 @@ async def speak(text: str):
         except Exception:
             pass
 
-    clean = re.sub(r"[*_`#]", "", text)
+    # Cap at 350 chars — reading 500 words aloud is unusable
+    if len(clean) > 350:
+        clean = clean[:350].rsplit(' ', 1)[0] + "..."
     subprocess.run(["say", "-v", "Daniel", "-r", "175", clean])
 
 
@@ -698,9 +739,10 @@ async def _conversation_loop(
     last_built_url_ref: list,  # mutable [str|None]
     wake_word_mode: bool,
     prefill_question: str = "",
-) -> bool:
+) -> "bool | str":
     """
-    Run one conversation turn. Returns True to stay in conversation, False to go back to sleep.
+    Run one conversation turn.
+    Returns True to stay in conversation, False for silence, "sleep" for explicit sleep word.
     prefill_question: skip recording and use this as the question (inline wake word question).
     """
     current_topic    = current_topic_ref[0]
@@ -711,6 +753,10 @@ async def _conversation_loop(
     if prefill_question:
         question = prefill_question
     elif wake_word_mode and SD_AVAILABLE:
+        # Fire Tink in thread — recording starts immediately, no speech clipped
+        asyncio.get_running_loop().run_in_executor(
+            None, lambda: subprocess.run(["afplay", "/System/Library/Sounds/Tink.aiff"], capture_output=True)
+        )
         print(f"{DIM}[Listening...]{RESET}", flush=True)
         audio = await record_vad(max_secs=MAX_RECORD_SECS)
         if not audio:
@@ -737,8 +783,9 @@ async def _conversation_loop(
     # ── Sleep / goodbye detection ────────────────────────────────────
     if wake_word_mode and _is_sleep_word(question):
         await speak("Going to sleep. Say Basnet when you need me.")
-        current_topic_ref[0] = None
-        last_url_ref[0]      = None
+        current_topic_ref[0]  = None
+        last_url_ref[0]       = None
+        last_built_url_ref[0] = None
         return "sleep"   # explicit sleep — skip "Still there?" and go straight to wake loop
 
     # ── Voice triggers (morning briefing, run scout, etc.) ──────
@@ -840,6 +887,7 @@ async def _conversation_loop(
     if is_build_query(question):
         print(f"{DIM}[Building...]{RESET}")
         await speak("On it. Give me a moment.")
+        d: dict = {}   # init so the else branch below is safe if the request fails
         try:
             async with httpx.AsyncClient(timeout=300) as c:
                 r = await c.post(
@@ -983,7 +1031,7 @@ async def _conversation_loop(
     current_topic = topic
     history.append({"q": question, "a": response})
     if len(history) > 10:
-        history = history[-10:]
+        history[:] = history[-10:]   # mutate in-place so main()'s list is also trimmed
 
     if url and any(d in url for d in OPEN_DOMAINS):
         print(f"{DIM}[URL: {url}]{RESET}")
@@ -1031,7 +1079,7 @@ async def main():
 
     # Pre-warm whisper model in background so first detection is instant
     if SD_AVAILABLE:
-        asyncio.get_event_loop().run_in_executor(None, _get_whisper)
+        asyncio.get_running_loop().run_in_executor(None, _get_whisper)
 
     await speak("Basnet online.")
 
@@ -1086,6 +1134,7 @@ async def main():
                         if silent_turns >= 2 or not SD_AVAILABLE:
                             if SD_AVAILABLE:
                                 print(f"{DIM}[No speech — going back to sleep]{RESET}")
+                            last_built_url_ref[0] = None   # clear stale build URL on timeout
                             break
                         # one silent turn: give another chance
                         await speak("Still there?")

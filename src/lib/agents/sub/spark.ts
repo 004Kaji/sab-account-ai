@@ -223,20 +223,23 @@ async function fetchPexelsImage(tag: string, title: string): Promise<string | nu
 
 // ── Find accountants in a location + add to outreach queue ────────────
 
-function buildEmailHtml(body: string, ctaText: string, includePartnerLink = false): string {
+function buildEmailHtml(body: string, ctaText: string, includePartnerLink = false, recipientEmail?: string): string {
   const htmlBody = body
     .split('\n\n')
     .filter(p => p.trim())
     .map(p => `<p style="margin:0 0 16px 0;">${p.trim().replace(/\n/g, '<br>')}</p>`)
     .join('')
   const partnerLine = includePartnerLink
-    ? `<p style="margin-top:12px;font-size:13px;color:#666;">Interested in earning 20% monthly commission? <a href="https://sabaccountai.com/partners" style="color:#2563eb;text-decoration:none;">View the partner program →</a></p>`
+    ? `<p style="margin-top:12px;font-size:13px;color:#666;">Interested in earning 30% recurring monthly commission? <a href="https://sabaccountai.com/partners" style="color:#2563eb;text-decoration:none;">View the partner program →</a></p>`
     : ''
-  return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:580px;margin:0 auto;padding:24px;color:#222;line-height:1.6;">${htmlBody}<p style="margin:28px 0 0 0;"><a href="https://sabaccountai.com" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 28px;text-decoration:none;border-radius:6px;font-weight:600;font-size:15px;">${ctaText}</a></p>${partnerLine}<p style="margin-top:28px;color:#666;font-size:13px;border-top:1px solid #eee;padding-top:16px;line-height:1.8;">Sanjog Basnet<br>Founder, SAB Account AI<br>0415 304 090 · basnet@sabaccountai.com · sabaccountai.com</p></body></html>`
+  // Australian Spam Act 2003 s.18 — all commercial emails must include a functional unsubscribe
+  const unsubEmail = recipientEmail ? encodeURIComponent(recipientEmail) : ''
+  const unsubscribeLine = `<p style="margin-top:20px;font-size:11px;color:#999;border-top:1px solid #f0f0f0;padding-top:12px;">This email was sent to ${recipientEmail ?? 'you'} because we thought SAB Account AI might be relevant to your work. <a href="mailto:basnet@sabaccountai.com?subject=Unsubscribe%20${unsubEmail}&body=Please%20remove%20me%20from%20your%20outreach%20list." style="color:#999;">Unsubscribe</a></p>`
+  return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:580px;margin:0 auto;padding:24px;color:#222;line-height:1.6;">${htmlBody}<p style="margin:28px 0 0 0;"><a href="https://sabaccountai.com" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 28px;text-decoration:none;border-radius:6px;font-weight:600;font-size:15px;">${ctaText}</a></p>${partnerLine}<p style="margin-top:28px;color:#666;font-size:13px;border-top:1px solid #eee;padding-top:16px;line-height:1.8;">Sanjog Basnet<br>Founder, SAB Account AI<br>0415 304 090 · basnet@sabaccountai.com · sabaccountai.com</p>${unsubscribeLine}</body></html>`
 }
 
 // Third-party platform emails that appear in page scripts/embeds — never the real contact
-const PLATFORM_EMAIL = /cloudflare|disqus|mailchimp|sentry|google|facebook|twitter|instagram|wordpress|wix|squarespace|shopify|hubspot|intercom|zendesk|stripe/i
+const PLATFORM_EMAIL = /cloudflare|disqus|mailchimp|sentry|google|facebook|twitter|instagram|wordpress|wix|squarespace|shopify|hubspot|intercom|zendesk|stripe|dribbble|behance/i
 
 // Returns true if the URL looks like an unknown directory/listing page
 // (deep paths like /listing/123 or /business/name are directories, not business sites)
@@ -267,8 +270,9 @@ async function tavilyExtractEmail(url: string): Promise<string | null> {
     const content = data.results?.[0]?.raw_content ?? ''
 
     const EMAIL_RE = /[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/gi
+    const BEHANCE_HASH = /^[0-9a-f]{10,}@/i
     const allEmails = [...new Set((content.match(EMAIL_RE) ?? []).map(e => e.toLowerCase()))]
-      .filter(e => !GENERIC_EMAIL.test(e) && !PLATFORM_EMAIL.test(e) && !e.includes('example') && !e.includes('noreply'))
+      .filter(e => !GENERIC_EMAIL.test(e) && !PLATFORM_EMAIL.test(e) && !BEHANCE_HASH.test(e) && !e.includes('example') && !e.includes('noreply'))
 
     if (allEmails.length === 0) return null
 
@@ -319,7 +323,7 @@ export async function sparkFindAccountants(location = 'Darwin, Australia'): Prom
       const emailsInSnippet = (result.content + ' ' + result.title).match(EMAIL_RE) ?? []
       const snippetEmail = emailsInSnippet
         .map(e => e.toLowerCase())
-        .find(e => !GENERIC_EMAIL.test(e) && !e.includes('example') && !e.includes('noreply'))
+        .find(e => !GENERIC_EMAIL.test(e) && !e.includes('example') && !e.includes('noreply') && isPersonalEmail(e))
         ?? null
 
       const name = result.title
@@ -337,10 +341,10 @@ export async function sparkFindAccountants(location = 'Darwin, Australia'): Prom
     let email = candidate.snippetEmail
     if (!email) {
       const raw = await tavilyExtractEmail(candidate.url)
-      if (raw && !GENERIC_EMAIL.test(raw)) email = raw
+      if (raw && !GENERIC_EMAIL.test(raw) && isPersonalEmail(raw)) email = raw
     }
     if (!email) continue
-    if (GENERIC_EMAIL.test(email)) continue
+    if (GENERIC_EMAIL.test(email) || !isPersonalEmail(email)) continue
 
     const { count } = await supabase
       .from('accountant_outreach')
@@ -354,12 +358,126 @@ export async function sparkFindAccountants(location = 'Darwin, Australia'): Prom
       practice_type: candidate.practiceType,
       location,
       status:        'pending',
+      source:        'tavily_search',
     })
     added++
   }
 
   await logSubAgent('spark', 'find_accountants', location, `Candidates: ${candidates.length}, added: ${added}`, Date.now() - start, added > 0)
   return { found: candidates.length, added }
+}
+
+// ── Find TPB-registered BAS and tax agents from tpb.gov.au/public-register ─
+// Verified licensed practitioners — highest quality accountant leads.
+
+export async function sparkFindTPBAccountants(
+  states = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'NT'],
+): Promise<{ found: number; added: number }> {
+  const start = Date.now()
+  const supabase = createServiceClient()
+  const apiKey = process.env.TAVILY_API_KEY
+  if (!apiKey) return { found: 0, added: 0 }
+
+  type TPBPractitioner = {
+    name: string
+    businessName: string
+    suburb: string
+    state: string
+    registrationType: string
+  }
+
+  const practitioners: TPBPractitioner[] = []
+  const seenNames = new Set<string>()
+
+  // Extract content from TPB public register for each state + registration type
+  const registerPages = states.flatMap(state => [
+    { url: `https://www.tpb.gov.au/public-register?state=${state}&registration_type=bas_agent`,            type: 'BAS agent',  state },
+    { url: `https://www.tpb.gov.au/public-register?state=${state}&registration_type=registered_tax_agent`, type: 'tax agent', state },
+  ])
+
+  for (const page of registerPages.slice(0, 8)) {
+    try {
+      const res = await fetch('https://api.tavily.com/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey, urls: [page.url] }),
+      })
+      if (!res.ok) continue
+      type ExtractRes = { results?: Array<{ raw_content?: string }> }
+      const data = await res.json() as ExtractRes
+      const content = data.results?.[0]?.raw_content ?? ''
+      if (!content || content.length < 200) continue
+
+      const parsed = await callClaude({
+        systemPrompt: `Extract practitioner records from TPB public register text. Return ONLY valid JSON.`,
+        userMessage: `From this TPB register page (${page.type}s in ${page.state}), extract all individual practitioner entries.
+Return a JSON array: [{"name":"Full Name","businessName":"Practice Name or empty string","suburb":"Suburb or empty string"}]
+Only include entries where a real person's full name is clearly shown.
+Content: ${content.slice(0, 4000)}`,
+        maxTokens: 1200,
+        expectJson: true,
+      })
+
+      try {
+        const list = JSON.parse(parsed) as Array<{ name: string; businessName: string; suburb: string }>
+        for (const p of list) {
+          if (!p.name || seenNames.has(p.name.toLowerCase())) continue
+          seenNames.add(p.name.toLowerCase())
+          practitioners.push({ ...p, state: page.state, registrationType: page.type })
+        }
+      } catch { /* skip unparseable */ }
+    } catch { /* skip failed extract */ }
+  }
+
+  const EMAIL_RE = /[\w.+]+@[\w.-]+\.(com|com\.au|net\.au|org\.au|au)\b/gi
+  let added = 0
+
+  for (const p of practitioners.slice(0, 20)) {
+    try {
+      const searchQuery = `"${p.name}" ${p.businessName ? `"${p.businessName}"` : ''} ${p.suburb} ${p.state} Australia accountant contact email`
+      const searchResults = await tavilySearch(searchQuery, { maxResults: 4, includeAnswer: false })
+
+      let email: string | null = null
+      for (const result of searchResults.results) {
+        if (DIRECTORY_DOMAINS.test(result.url)) continue
+        if (/\.gov\.au/i.test(result.url)) continue
+
+        const emailsInSnippet = (result.content + ' ' + result.title).match(EMAIL_RE) ?? []
+        const snippetEmail = emailsInSnippet
+          .map(e => e.toLowerCase())
+          .find(e => !GENERIC_EMAIL.test(e) && isPersonalEmail(e))
+          ?? null
+        if (snippetEmail) { email = snippetEmail; break }
+
+        const extracted = await tavilyExtractEmail(result.url)
+        if (extracted && !GENERIC_EMAIL.test(extracted) && isPersonalEmail(extracted)) {
+          email = extracted
+          break
+        }
+      }
+
+      if (!email) continue
+
+      const { count } = await supabase
+        .from('accountant_outreach')
+        .select('id', { count: 'exact', head: true })
+        .eq('email', email)
+      if ((count ?? 0) > 0) continue
+
+      await supabase.from('accountant_outreach').insert({
+        name:          p.name,
+        email,
+        practice_type: p.registrationType,
+        location:      [p.suburb, p.state].filter(Boolean).join(', '),
+        status:        'pending',
+        source:        'tpb_register',
+      })
+      added++
+    } catch { /* skip individual failures — don't abort entire batch */ }
+  }
+
+  await logSubAgent('spark', 'find_tpb_accountants', states.join(','), `Practitioners: ${practitioners.length}, added: ${added}`, Date.now() - start, added > 0)
+  return { found: practitioners.length, added }
 }
 
 // ── Send professional deal emails to accountants (2/day, auto-follow-up) ─
@@ -374,7 +492,7 @@ ABOUT SAB ACCOUNT AI:
 - Key features: PAYG withholding (ATO-compliant), super tracking, BAS, Payday Super compliance
 
 THE REFERRAL DEAL YOU ARE OFFERING:
-- 20% ongoing monthly commission for every paying client referred — no cap, no expiry
+- 30% recurring monthly commission for every paying client referred — no cap, no expiry
 - Free 14-day trial for any client they refer — cancel anytime before it ends
 - No lock-in contract for their clients
 - Partner sign-up page: sabaccountai.com/partners
@@ -408,27 +526,35 @@ export async function sparkSendAccountantEmails(): Promise<{ sent: number; names
   type AccountantRow = {
     id: string; name: string; email: string
     practice_type: string | null; location: string | null
-    email_subject: string | null; isFollowUp: boolean
+    email_subject: string | null; source: string | null
+    sequence_step: number | null; isFollowUp: boolean
   }
 
-  // Fetch follow-ups AND new in parallel — merge with follow-ups first
-  const [pendingR, followUpsR] = await Promise.all([
+  const SEL = 'id, name, email, practice_type, location, email_subject, source, sequence_step'
+
+  // Fetch TPB-verified, Tavily-scraped, and sequence follow-ups in parallel
+  const [tpbPendingR, tavilyPendingR, followUpsR] = await Promise.all([
     supabase.from('accountant_outreach')
-      .select('id, name, email, practice_type, location, email_subject')
-      .eq('status', 'pending').is('emailed_at', null)
+      .select(SEL).eq('status', 'pending').is('emailed_at', null)
+      .eq('source', 'tpb_register')
       .order('created_at', { ascending: true }).limit(2),
     supabase.from('accountant_outreach')
-      .select('id, name, email, practice_type, location, email_subject')
-      .eq('status', 'emailed').eq('replied', false)
+      .select(SEL).eq('status', 'pending').is('emailed_at', null)
+      .eq('source', 'tavily_search')
+      .order('created_at', { ascending: true }).limit(2),
+    // Rows awaiting touch 2 (step=1) or touch 3 (step=2), no reply, due today or earlier
+    supabase.from('accountant_outreach')
+      .select(SEL).eq('status', 'emailed').eq('replied', false)
       .lte('follow_up_due', today)
       .order('follow_up_due', { ascending: true }).limit(2),
   ])
 
-  const followUps = (followUpsR.data ?? []).map(r => ({ ...r, isFollowUp: true  }))
-  const pending   = (pendingR.data   ?? []).map(r => ({ ...r, isFollowUp: false }))
+  const tpbPending    = (tpbPendingR.data    ?? []).map(r => ({ ...r, isFollowUp: false }))
+  const tavilyPending = (tavilyPendingR.data ?? []).map(r => ({ ...r, isFollowUp: false }))
+  const followUps     = (followUpsR.data     ?? []).map(r => ({ ...r, isFollowUp: true  }))
 
-  // Follow-ups take priority — fill remaining slot(s) with new
-  const targets = ([...followUps, ...pending] as AccountantRow[]).slice(0, 2)
+  // Priority: due follow-ups first, then TPB-verified new contacts, then Tavily-scraped
+  const targets = ([...followUps, ...tpbPending, ...tavilyPending] as AccountantRow[]).slice(0, 2)
   if (targets.length === 0) return { sent: 0, names: [] }
 
   // Load winning subject lines for the learning loop
@@ -454,29 +580,46 @@ export async function sparkSendAccountantEmails(): Promise<{ sent: number; names
         ? `\nSubject lines that got replies before (inspiration only, don't copy):\n${winningSubjects.map(s => `- "${s}"`).join('\n')}`
         : ''
 
-      const userMessage = accountant.isFollowUp
-        ? `Write a SHORT FOLLOW-UP email (max 80 words). This accountant did not reply to the first email 7 days ago.
+      const step = accountant.isFollowUp ? (accountant.sequence_step ?? 1) : 0
 
-Accountant: ${accountant.name}
-Practice type: ${accountant.practice_type ?? 'accounting practice'}
-Location: ${accountant.location ?? 'Australia'}
-Previous subject: "${accountant.email_subject ?? 'SAB Account AI referral'}"
-
-New angle: Payday Super July 28 — every employer must pay super on every payday from that date. SAB Account AI handles this automatically for their clients.
-CTA: offer a free 14-day trial for their clients (no call needed this time).
-Do NOT include a sign-off or signature — those are added automatically.
-Return ONLY valid JSON: { "subject": "string", "body": "string" }`
-
-        : `Write an INITIAL cold email (max 150 words, 3 short paragraphs).
+      const userMessage =
+        step === 0
+          // ── Touch 1: compliance urgency ───────────────────────────────
+          ? `Write an INITIAL cold email. Max 150 words. 3 short paragraphs.
 
 Accountant: ${accountant.name}
 Practice type: ${accountant.practice_type ?? 'accounting practice'}
 Location: ${accountant.location ?? 'Australia'}
 ${winnerHint}
 
-Para 1: One sentence on who you are and why you're contacting them.
-Para 2: The deal — 20% referral commission on first year + free 14-day trial for any client they refer + SAB Account AI is 60% cheaper than Xero for sole traders.
-Para 3: One CTA — ask for a 15-minute call this week.
+Use this subject line exactly: "Your clients have 14 days to comply with Payday Super"
+Para 1: From July 1 2026, all employers must pay super on every payday — not quarterly. ATO penalties apply from day one with no grace period. Their clients need to be set up before then.
+Para 2: SAB Account AI calculates the exact super amount per pay run automatically — free for their clients to try today, no lock-in.
+Para 3: As a referring accountant they earn 30% recurring monthly commission for every client who stays on (sabaccountai.com/partners).
+Do NOT include a sign-off or signature — those are added automatically.
+Return ONLY valid JSON: { "subject": "string", "body": "string" }`
+
+          : step === 1
+          // ── Touch 2 (day 4): social proof ─────────────────────────────
+          ? `Write a SHORT follow-up email. Max 100 words. Friendly, not pushy.
+
+Accountant: ${accountant.name}
+Practice type: ${accountant.practice_type ?? 'accounting practice'}
+Previous subject: "${accountant.email_subject ?? 'SAB Account AI'}"
+
+Use this subject line exactly: "Quick update on SAB Account AI"
+Reference that you emailed them a few days ago. Mention that Australian small businesses are already using SAB Account AI to auto-calculate Payday Super on every pay run — it goes live July 28 and ATO penalties apply from day one.
+No hard sell. One sentence CTA: their clients can try it free at sabaccountai.com.
+Do NOT include a sign-off or signature — those are added automatically.
+Return ONLY valid JSON: { "subject": "string", "body": "string" }`
+
+          // ── Touch 3 (day 8): direct offer, sequence ends ───────────────
+          : `Write a short, honest final email. Max 80 words.
+
+Accountant: ${accountant.name}
+
+Use this subject line exactly: "Last note from me"
+Be direct and genuine — this is the last email. If they have clients who need payroll simplified before July 28, SAB Account AI handles Payday Super automatically and offers them 30% recurring monthly commission for every client referred (sabaccountai.com/partners). No pressure. No follow-up after this.
 Do NOT include a sign-off or signature — those are added automatically.
 Return ONLY valid JSON: { "subject": "string", "body": "string" }`
 
@@ -504,29 +647,46 @@ Return ONLY valid JSON: { "subject": "string", "body": "string" }`
           emailJSON.body,
           accountant.isFollowUp ? 'Start free trial → sabaccountai.com' : 'Try it free → sabaccountai.com',
           true,
+          accountant.email,
         ),
       })
 
-      if (accountant.isFollowUp) {
-        // Mark as fully followed-up — no more automatic emails
-        await supabase.from('accountant_outreach').update({
-          emailed_at: new Date().toISOString(),
-          status:     'followed_up',
-        }).eq('id', accountant.id)
-      } else {
-        // First email sent — schedule follow-up in 7 days
-        const followUpDate = new Date()
-        followUpDate.setDate(followUpDate.getDate() + 7)
+      const nextDate = (daysFromNow: number) => {
+        const d = new Date()
+        d.setDate(d.getDate() + daysFromNow)
+        return d.toISOString().split('T')[0]
+      }
+
+      if (step === 0) {
+        // Touch 1 sent — schedule touch 2 for day 4
         await supabase.from('accountant_outreach').update({
           emailed_at:    new Date().toISOString(),
           status:        'emailed',
-          follow_up_due: followUpDate.toISOString().split('T')[0],
+          sequence_step: 1,
+          follow_up_due: nextDate(4),
           email_subject: emailJSON.subject,
           email_body:    emailJSON.body,
         }).eq('id', accountant.id)
+      } else if (step === 1) {
+        // Touch 2 sent — schedule touch 3 for 4 more days (day 8 total)
+        await supabase.from('accountant_outreach').update({
+          emailed_at:    new Date().toISOString(),
+          sequence_step: 2,
+          follow_up_due: nextDate(4),
+          email_subject: emailJSON.subject,
+          email_body:    emailJSON.body,
+        }).eq('id', accountant.id)
+      } else {
+        // Touch 3 sent — sequence complete, no further automated emails
+        await supabase.from('accountant_outreach').update({
+          emailed_at:    new Date().toISOString(),
+          sequence_step: 3,
+          status:        'followed_up',
+        }).eq('id', accountant.id)
       }
 
-      names.push(`${accountant.name}${accountant.isFollowUp ? ' (follow-up)' : ''}`)
+      const touchLabel = step === 0 ? '' : ` (touch ${step + 1})`
+      names.push(`${accountant.name}${touchLabel}`)
     } catch (err) {
       console.error('[spark] accountant email failed for', accountant.name, err)
     }
@@ -1004,6 +1164,194 @@ Return ONLY valid JSON array:
   return { drafts, searchTopic }
 }
 
+// ── Community-targeted post drafts ────────────────────────────────────
+// Generates 5 draft posts per run, one per segment, saved for manual review.
+// Never auto-publishes — status is always 'draft'.
+
+const COMMUNITY_SEGMENTS = [
+  {
+    segment:    'nepali_aus',
+    platform:   'facebook',
+    persona:    'Nepali small business owner in Australia',
+    tone:       'warm and community-focused — writing to fellow Nepali business owners, mix of English is natural',
+    painPoint:  'understanding payslips, Payday Super compliance, and ATO obligations as a new business owner in Australia',
+  },
+  {
+    segment:    'indian_aus',
+    platform:   'linkedin',
+    persona:    'Indian small business owner in Australia',
+    tone:       'professional but friendly',
+    painPoint:  'ATO compliance and the Payday Super July 28 deadline — super must be paid on every payday from that date',
+  },
+  {
+    segment:    'filipino_aus',
+    platform:   'facebook',
+    persona:    'Filipino small business owner or employee in Australia',
+    tone:       'friendly and genuinely helpful',
+    painPoint:  'simple invoicing and payslip generation for employees — doing it correctly without expensive software',
+  },
+  {
+    segment:    'tradies_aus',
+    platform:   'facebook',
+    persona:    'Australian tradie — plumber, electrician, builder — who employs workers',
+    tone:       'straight talking, plain language, zero jargon',
+    painPoint:  'paying employees correctly and avoiding ATO fines when Payday Super kicks in July 28',
+  },
+  {
+    segment:    'general_aus',
+    platform:   'linkedin',
+    persona:    'Australian small business owner with employees',
+    tone:       'professional and urgent',
+    painPoint:  'the Payday Super July 28 deadline — ATO penalties apply from day one with no grace period',
+  },
+] as const
+
+export async function sparkPostCommunity(): Promise<{ drafts: number }> {
+  const start = Date.now()
+  const supabase = createServiceClient()
+
+  let drafted = 0
+
+  for (const seg of COMMUNITY_SEGMENTS) {
+    try {
+      const content = await callClaude({
+        systemPrompt: `${SPARK_IDENTITY}
+You write social media posts for specific migrant and local Australian small business communities.
+Speak directly to the community. Sound like a real person, not a brand account.
+Always include a CTA to try SAB Account AI free at sabaccountai.com.
+Under 150 words. 3-4 hashtags maximum. No buzzwords. No competitors named.`,
+        userMessage: `Write a ${seg.platform} post for: ${seg.persona}
+
+Tone: ${seg.tone}
+Core pain point: ${seg.painPoint}
+
+Structure:
+1. Opening line that speaks directly to this community (hook)
+2. 1-2 sentences on the pain point — specific and relatable
+3. 1-2 sentences on how SAB Account AI solves it: invoicing, payslips, Payday Super compliance, from $9/month
+4. CTA: try free at sabaccountai.com
+5. 3-4 relevant hashtags on a new line
+
+Return ONLY the post text — no JSON, no markdown, no explanation.`,
+        maxTokens: 350,
+      })
+
+      if (!content?.trim()) continue
+
+      await supabase.from('community_posts').insert({
+        segment:  seg.segment,
+        platform: seg.platform,
+        content:  content.trim(),
+        status:   'draft',
+      })
+      drafted++
+    } catch { /* skip individual failures — don't abort the batch */ }
+  }
+
+  await logSubAgent('spark', 'post_community', '', `${drafted}/5 community drafts created`, Date.now() - start, drafted > 0)
+  return { drafts: drafted }
+}
+
+// ── TikTok video script generation ────────────────────────────────────
+// Generates 3 scripts per run (one per segment) with stage directions.
+// Always status='draft' — never auto-published.
+
+const TIKTOK_SCRIPT_SEGMENTS = [
+  {
+    segment: 'tradies',
+    hook:    "You're probably underpaying your super right now and don't know it",
+    tone:    'Blunt, Australian, zero jargon — like talking to a mate on site. Short punchy sentences.',
+    focus:   `Payday Super starts July 28 — employers must pay super on EVERY payday, not quarterly.
+Most tradies with employees are underpaying because they're still on the old quarterly system.
+ATO penalties apply from day one with no grace period.
+SAB Account AI calculates the exact super amount on every pay run automatically — $9/month, free to start.`,
+    cta:     'Search SAB Account AI — free to start',
+  },
+  {
+    segment: 'intl_student_employer',
+    hook:    "Hiring an international student? There's one thing most employers get wrong",
+    tone:    'Helpful and informative — explain clearly, no condescension.',
+    focus:   `International students on a student visa are exempt from the Medicare levy — they don't pay it.
+But most payroll software charges them 2% Medicare levy anyway because employers don't know to turn it off.
+That's money being taken from their pay that shouldn't be.
+SAB Account AI detects international student status and removes the Medicare levy automatically — no manual configuration needed.`,
+    cta:     'SAB Account AI calculates this automatically — link in bio',
+  },
+  {
+    segment: 'payday_super_urgency',
+    hook:    'July 1 is 14 days away and most small businesses aren\'t ready',
+    tone:    'Urgent but clear and simple — not alarmist, just factual.',
+    focus:   `From July 28, every employer in Australia must pay super on EVERY payday — not quarterly.
+The ATO starts issuing penalties from day one. No warning letters, no grace period.
+If you have employees and you're still paying super quarterly, you'll be non-compliant the day Payday Super starts.
+SAB Account AI tracks super per pay run automatically and shows you exactly what's owed each payday.`,
+    cta:     'sabaccountai.com — free Payday Super calculator',
+  },
+] as const
+
+export async function sparkGenerateTikTok(): Promise<{ scripts: number }> {
+  const start = Date.now()
+  const supabase = createServiceClient()
+  let scripts = 0
+
+  for (const seg of TIKTOK_SCRIPT_SEGMENTS) {
+    try {
+      const raw = await callClaude({
+        systemPrompt: `${SPARK_IDENTITY}
+You write TikTok video scripts for SAB Account AI — Australian invoicing and payroll SaaS.
+Scripts must be natural spoken word, 45-60 seconds when read aloud (~120-150 words of dialogue).
+Include stage directions in square brackets: [PAUSE], [SHOW SCREEN], [POINT TO CAMERA], [HOLD UP PHONE], [CUT TO].
+Stage directions don't count toward word count.
+Always open with the exact hook provided. End with the exact CTA provided.
+Return ONLY valid JSON — no markdown, no explanation.`,
+        userMessage: `Write a TikTok video script for the ${seg.segment} segment.
+
+Hook (use this exact line to open): "${seg.hook}"
+Tone: ${seg.tone}
+Core content to cover:
+${seg.focus}
+CTA (use this exact line to close): "${seg.cta}"
+
+Script structure:
+1. Hook — the opening line verbatim, then [PAUSE 1 sec]
+2. Problem setup — 2-3 short sentences establishing the pain, use [POINT TO CAMERA] once
+3. The detail — 2-3 sentences explaining the specific rule or fact, use [SHOW SCREEN] once if showing the app makes sense
+4. Solution — 2 sentences on how SAB Account AI fixes it, use [HOLD UP PHONE] once
+5. CTA — the closing line verbatim, then [PAUSE]
+
+Return ONLY valid JSON:
+{
+  "hook": "exact hook line",
+  "script_body": "full script with stage directions in [BRACKETS]",
+  "cta": "exact cta line"
+}`,
+        maxTokens: 600,
+        expectJson: true,
+      })
+
+      type ScriptJSON = { hook: string; script_body: string; cta: string }
+      let parsed: ScriptJSON
+      try {
+        parsed = JSON.parse(raw) as ScriptJSON
+      } catch { continue }
+
+      if (!parsed.hook?.trim() || !parsed.script_body?.trim() || !parsed.cta?.trim()) continue
+
+      await supabase.from('tiktok_scripts').insert({
+        segment:     seg.segment,
+        hook:        parsed.hook.trim(),
+        script_body: parsed.script_body.trim(),
+        cta:         parsed.cta.trim(),
+        status:      'draft',
+      })
+      scripts++
+    } catch { /* skip individual failures */ }
+  }
+
+  await logSubAgent('spark', 'generate_tiktok', '', `${scripts}/3 TikTok scripts drafted`, Date.now() - start, scripts > 0)
+  return { scripts }
+}
+
 // ── Post an approved draft to its platform ─────────────────────────────
 
 export async function sparkPostApproved(approvalId: string): Promise<{
@@ -1263,7 +1611,7 @@ export async function sparkFindBusinesses(location = 'Darwin, Australia'): Promi
       const emailsInSnippet = (result.content + ' ' + result.title).match(EMAIL_RE) ?? []
       const snippetEmail = emailsInSnippet
         .map(e => e.toLowerCase())
-        .find(e => !GENERIC_EMAIL.test(e) && !e.includes('example') && !e.includes('noreply'))
+        .find(e => !GENERIC_EMAIL.test(e) && !e.includes('example') && !e.includes('noreply') && isPersonalEmail(e))
         ?? null
 
       const name = result.title
@@ -1281,10 +1629,10 @@ export async function sparkFindBusinesses(location = 'Darwin, Australia'): Promi
     let email = candidate.snippetEmail
     if (!email) {
       const raw = await tavilyExtractEmail(candidate.url)
-      if (raw && !GENERIC_EMAIL.test(raw)) email = raw
+      if (raw && !GENERIC_EMAIL.test(raw) && isPersonalEmail(raw)) email = raw
     }
     if (!email) continue
-    if (GENERIC_EMAIL.test(email)) continue
+    if (GENERIC_EMAIL.test(email) || !isPersonalEmail(email)) continue
 
     const { count } = await supabase
       .from('business_outreach')
@@ -1399,6 +1747,8 @@ Return ONLY valid JSON: { "subject": "string", "body": "string" }`
         html:    buildEmailHtml(
           emailJSON.body,
           business.isFollowUp ? 'Start free trial → sabaccountai.com' : 'Try it free → sabaccountai.com',
+          false,
+          business.email,
         ),
       })
 
@@ -1433,7 +1783,23 @@ Return ONLY valid JSON: { "subject": "string", "body": "string" }`
 const DIRECTORY_DOMAINS = /upwork\.com|freelancer\.com|airtasker\.com|hipages\.com|seek\.com|yellowpages\.com\.au|truelocal\.com|bark\.com|oneflare\.com|serviceseeking\.com\.au|linkedin\.com|instagram\.com|facebook\.com|twitter\.com|fiverr\.com/i
 
 // Generic company inboxes — not personal freelancer contacts
-const GENERIC_EMAIL = /^(info|hello|contact|support|enquiries|enquiry|admin|noreply|no-reply|sales|team|office|mail|webmaster|postmaster)@/i
+const GENERIC_EMAIL = /^(info|hello|contact|support|enquiries|enquiry|admin|noreply|no-reply|sales|team|office|mail|webmaster|postmaster|photos|studio|build|stories|editor|events|reception|media|press|marketing|careers|jobs|billing|accounts|accounting)@/i
+
+// Returns true only for emails that look like a real person's address.
+// Accepts: john@, john.smith@, john_smith@, j.smith@
+// Rejects: gov.au domains, franchise/group domains, locals with digits or 3+ segments.
+function isPersonalEmail(email: string): boolean {
+  const atIdx = email.indexOf('@')
+  if (atIdx < 0) return false
+  const local  = email.slice(0, atIdx)
+  const domain = email.slice(atIdx + 1)
+  if (/gov\.au/i.test(domain)) return false
+  if (/franchise|group/i.test(domain)) return false
+  // Local must be letters-only with at most one separator (dot/underscore/hyphen)
+  if (!/^[a-z]+([._-][a-z]+)?$/i.test(local)) return false
+  if (local.length < 3) return false
+  return true
+}
 
 export async function sparkFindFreelancers(location = 'Sydney, Australia'): Promise<{ found: number; added: number }> {
   const start = Date.now()
@@ -1481,10 +1847,11 @@ export async function sparkFindFreelancers(location = 'Sydney, Australia'): Prom
 
       const text = result.content + ' ' + result.title
       const emailsInSnippet = text.match(EMAIL_RE) ?? []
-      // Prefer personal-domain emails over generic ones — skip info@, contact@, etc.
+      const BEHANCE_HASH_F = /^[0-9a-f]{10,}@/i
+      // Prefer personal-domain emails — skip generic, platform, and Behance-obfuscated emails
       const snippetEmail = emailsInSnippet
         .map(e => e.toLowerCase())
-        .find(e => !GENERIC_EMAIL.test(e) && !e.includes('example') && !e.includes('noreply'))
+        .find(e => !GENERIC_EMAIL.test(e) && !PLATFORM_EMAIL.test(e) && !BEHANCE_HASH_F.test(e) && !e.includes('example') && !e.includes('noreply'))
         ?? null
 
       const name = result.title
@@ -1610,7 +1977,7 @@ Return ONLY valid JSON: { "subject": "string", "body": "string" }`
         to:      freelancer.email,
         subject: emailJSON.subject,
         text:    emailJSON.body,
-        html:    buildEmailHtml(emailJSON.body, 'Start free trial → sabaccountai.com'),
+        html:    buildEmailHtml(emailJSON.body, 'Start free trial → sabaccountai.com', false, freelancer.email),
       })
 
       if (freelancer.isFollowUp) {

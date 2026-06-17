@@ -190,8 +190,8 @@ export async function relayVisaCheck(): Promise<{
 }> {
   const content = await readMasterContext()
 
-  const visaDate = parseDateFromMaster(content, /Visa expiry[^:]*:\s*\[?(\d{4}-\d{2}-\d{2})/i)
-  const migDate  = parseDateFromMaster(content, /last consultation date[^:]*:\s*(\d{4}-\d{2}-\d{2})/i)
+  const visaDate = parseDateFromMaster(content, /Visa expiry[^:]*:.*?(\d{4}-\d{2}-\d{2})/i)
+  const migDate  = parseDateFromMaster(content, /last consultation date[^:]*:.*?(\d{4}-\d{2}-\d{2})/i)
 
   const daysUntilExpiry   = visaDate ? daysUntil(visaDate) : 999
   const daysSinceMigAgent = migDate  ? daysSince(migDate)  : 0
@@ -211,6 +211,12 @@ export async function relayVisaCheck(): Promise<{
       `Visa expiry — ${daysUntilExpiry} days`,
       `Visa expires ${visaDate}. ${daysUntilExpiry} days left. Contact migration agent immediately.`,
       'urgent', 'relay',
+    )
+  } else if (urgency === 'warning') {
+    await sendAlert(
+      `Visa expiry — ${daysUntilExpiry} days remaining`,
+      `Visa expires ${visaDate}. ${daysUntilExpiry} days left. Start renewal prep now — book migration agent consultation.`,
+      'warning', 'relay',
     )
   }
 

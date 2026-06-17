@@ -555,6 +555,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             main { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
             .app-footer { display: none !important; }
           }
+          @media (min-width: 901px) {
+            .desktop-nav { min-width: 0; overflow: hidden; }
+            .desktop-nav a { padding-left: 0.4rem !important; padding-right: 0.4rem !important; }
+          }
           @media (max-width: 480px) {
             .plan-badge { display: none !important; }
             .upgrade-btn { font-size: 0.75rem !important; padding: 0.3rem 0.625rem !important; }

@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 import { SAB_CHAT_TOOLS } from '@/lib/chat/tools'
 import { executeToolCall } from '@/lib/chat/tool-handlers'
+import { getAwardRates, pct } from '@/lib/award-rates'
 
 export const maxDuration = 60
 
@@ -11,6 +12,11 @@ const SYSTEM_PROMPT = (ctx: {
   businessName: string
   abn: string
   gstRegistered: boolean
+  industry: string
+  satRateMult: number | null
+  sunRateMult: number | null
+  phRateMult: number | null
+  eveningRateMult: number | null
   clientsSection: string
   employeesSection: string
   recentInvoicesSection: string
@@ -56,6 +62,33 @@ PAYSLIPS:
     Salary: annual ÷ 26 (fortnightly) / ÷ 52 (weekly) / ÷ 12 (monthly)
 - Default pay period: ends today, back-dated by pay cycle (14 days fortnightly, 7 days weekly, current month)
 - Only ask if: you genuinely can't figure out which employee, or they want a different date range
+
+PENALTY / OVERTIME HOURS (for hourly employees):
+When the user mentions evening, Saturday, Sunday, public holiday hours or different rates for certain hours:
+- Calculate ordinary_hours = total_hours - penalty_hours (e.g. 48 total - 8 evening - 8 Saturday = 32 ordinary)
+- Pass ordinary_hours + pay_items to create_payslip — the tool computes the correct gross automatically
+- NEVER compute gross manually — always use the tool with these parameters
+${(() => {
+  const awards = ctx.industry ? getAwardRates(ctx.industry) : null
+  if (!awards) return `- Industry not set in Settings — use typical Fair Work rates and mention the employer should verify at fairwork.gov.au`
+
+  const satMult     = ctx.satRateMult     ?? awards.saturday
+  const sunMult     = ctx.sunRateMult     ?? awards.sunday
+  const phMult      = ctx.phRateMult      ?? awards.publicHoliday
+  const eveningMult = ctx.eveningRateMult ?? awards.evening?.mult
+
+  const customNote  = (ctx.satRateMult || ctx.sunRateMult || ctx.phRateMult || ctx.eveningRateMult)
+    ? ' (★ custom rate set by employer — overrides Award default)'
+    : ''
+
+  return `- THIS BUSINESS IS COVERED BY: ${awards.awardName}${customNote ? '\n- EMPLOYER HAS SET CUSTOM PENALTY RATES — use these instead of Award defaults' : ''}
+- USE THESE EXACT MULTIPLIERS (rate_mult values):
+    ${awards.evening || eveningMult ? `Evening: rate_mult ${eveningMult ?? awards.evening?.mult} (${pct(eveningMult ?? awards.evening?.mult ?? 1)})${ctx.eveningRateMult ? ' ★ custom' : ''}` : 'Evening penalty: not applicable under this Award'}
+    Saturday:       rate_mult ${satMult} (${pct(satMult)})${ctx.satRateMult ? ' ★ custom' : ''}
+    Sunday:         rate_mult ${sunMult} (${pct(sunMult)})${ctx.sunRateMult ? ' ★ custom' : ''}
+    Public Holiday: rate_mult ${phMult} (${pct(phMult)})${ctx.phRateMult ? ' ★ custom' : ''}
+    ${awards.note ? `NOTE: ${awards.note}` : ''}`
+})()}
 
 INVOICES:
 - You need: who it's for + what work was done + amount. That's it.
@@ -130,7 +163,7 @@ export async function POST(req: NextRequest) {
     { data: recentPayslips },
     { data: monthInvoices },
   ] = await Promise.all([
-    supabase.from('business_profiles').select('business_name, abn, gst_registered').eq('id', user.id).single(),
+    supabase.from('business_profiles').select('business_name, abn, gst_registered, industry, sat_rate_mult, sun_rate_mult, ph_rate_mult, evening_rate_mult').eq('id', user.id).single(),
     supabase.from('clients').select('id, business_name, contact_name, email, phone').eq('user_id', user.id).order('business_name').limit(100),
     supabase.from('employees').select('id, name, email, employment_type, pay_cycle, pay_basis, hourly_rate, ordinary_hours, annual_salary').eq('user_id', user.id).order('name').limit(100),
     supabase.from('invoices').select('id, invoice_number, client_name, client_email, total_inc_gst, status, issue_date').eq('user_id', user.id).order('created_at', { ascending: false }).limit(30),
@@ -176,6 +209,11 @@ export async function POST(req: NextRequest) {
     businessName:          (biz?.business_name as string) || user.email?.split('@')[0] || 'Your Business',
     abn:                   (biz?.abn as string) || '',
     gstRegistered:         (biz?.gst_registered as boolean) || false,
+    industry:              (biz?.industry as string) || '',
+    satRateMult:           biz?.sat_rate_mult     != null ? (biz.sat_rate_mult as number) : null,
+    sunRateMult:           biz?.sun_rate_mult     != null ? (biz.sun_rate_mult as number) : null,
+    phRateMult:            biz?.ph_rate_mult      != null ? (biz.ph_rate_mult as number) : null,
+    eveningRateMult:       biz?.evening_rate_mult != null ? (biz.evening_rate_mult as number) : null,
     clientsSection,
     employeesSection,
     recentInvoicesSection,

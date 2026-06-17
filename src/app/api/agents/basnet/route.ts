@@ -54,6 +54,13 @@ export async function POST(req: NextRequest) {
       secret?: string
     }
 
+    // Validate shared webhook secret — sent by voice script and cron routes
+    const expectedSecret = process.env.AGENT_WEBHOOK_SECRET
+    const providedSecret = body.secret ?? req.headers.get('x-agent-secret') ?? ''
+    if (!expectedSecret || providedSecret !== expectedSecret) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
     const trigger = body.trigger ?? 'ask'
 
     // ── TRIGGER: morning ───────────────────────────────────────────────
