@@ -6,7 +6,7 @@ Basnet listens until you stop speaking, then responds.
 No Enter key needed. Stays awake until you say "bye Basnet".
 
 Requirements:
-  pip3 install httpx openai sounddevice numpy
+  pip3 install httpx openai sounddevice numpy schedule
   brew install sox  (fallback if sounddevice unavailable)
 
 Optional (better TTS):
@@ -26,6 +26,11 @@ import subprocess
 import tempfile
 import wave
 from pathlib import Path
+import schedule
+import threading
+import time as _time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # ── Optional real-time audio (sounddevice + numpy) ────────────────────
 try:
@@ -106,6 +111,8 @@ RED     = "\033[91m"
 DIM     = "\033[2m"
 BOLD    = "\033[1m"
 RESET   = "\033[0m"
+
+_briefing_done_date: str | None = None   # set to today's AEST date once briefing fires
 
 
 # ── Voice trigger commands ─────────────────────────────────────────────
@@ -715,6 +722,110 @@ OPEN_DOMAINS = ["linkedin.com","supabase.com","vercel.com","stripe.com",
                 "sentry.io","github.com","sabaccountai.com","seek.com"]
 
 
+# ── Morning briefing (8am AEST, automatic) ────────────────────────────
+
+async def morning_briefing() -> None:
+    """
+    Fetch the morning-brief JSON from Vercel and speak a ~60-second summary.
+    Fires automatically at 8am AEST — no wake word required.
+    After speaking, normal wake-word listening resumes.
+    """
+    global _briefing_done_date
+
+    print(f"\n{CYAN}{BOLD}[Morning briefing — 8am AEST]{RESET}", flush=True)
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            r = await c.get(
+                f"{VERCEL_URL}/api/agents/basnet/morning-brief",
+                headers={"Authorization": f"Bearer {WEBHOOK_SECRET}"},
+            )
+            if r.status_code != 200:
+                print(f"{RED}[morning_briefing] HTTP {r.status_code}{RESET}", flush=True)
+                await speak("Morning briefing unavailable right now.")
+                return
+            data: dict = r.json()
+    except Exception as e:
+        print(f"{RED}[morning_briefing error: {e}]{RESET}", flush=True)
+        await speak("Morning briefing couldn't load. Check your connection.")
+        return
+
+    mrr             = data.get("mrr", 0)
+    mrr_change      = data.get("mrrChange", 0)
+    signups         = data.get("newSignups24h", 0)
+    alerts          = data.get("p0Alerts", [])
+    days_left       = data.get("daysUntilJuly1", 0)
+    kite_drafts     = data.get("kiteRepliesDraft", 0)
+    content_drafts  = data.get("contentDraft", 0)
+    outreach_queued = data.get("outreachQueuedToday", 0)
+    total_review    = kite_drafts + content_drafts
+
+    direction  = "up" if mrr_change >= 0 else "down"
+    change_abs = abs(mrr_change)
+
+    parts: list[str] = [
+        "Good morning Sanjog. Here's your briefing.",
+        f"MRR is ${mrr:,}, {direction} ${change_abs:,} this week.",
+    ]
+
+    if signups == 0:
+        parts.append("No new signups in the last 24 hours.")
+    elif signups == 1:
+        parts.append("1 new signup in the last 24 hours.")
+    else:
+        parts.append(f"{signups} new signups in the last 24 hours.")
+
+    if total_review == 0:
+        parts.append("Nothing waiting for your review.")
+    else:
+        pieces: list[str] = []
+        if content_drafts:
+            pieces.append(f"{content_drafts} content draft{'s' if content_drafts != 1 else ''}")
+        if kite_drafts:
+            pieces.append(f"{kite_drafts} Kite repl{'ies' if kite_drafts != 1 else 'y'}")
+        summary = " and ".join(pieces)
+        parts.append(f"{total_review} item{'s' if total_review != 1 else ''} waiting for review — {summary}.")
+
+    if outreach_queued > 0:
+        parts.append(f"Spark has {outreach_queued} contacts queued for outreach.")
+
+    parts.append(f"{days_left} days until the Payday Super deadline.")
+
+    if alerts:
+        names = [a.get("error_type", "unknown") for a in alerts[:2]]
+        parts.append(f"Alert: {', '.join(names)}.")
+    else:
+        parts.append("No alerts.")
+
+    parts.append("Have a great day.")
+
+    script = " ".join(parts)
+    print(f"\n{GREEN}{BOLD}[Morning brief]:{RESET} {script}\n", flush=True)
+    await speak(script)
+
+
+def _check_and_brief(loop: asyncio.AbstractEventLoop) -> None:
+    """schedule callback — runs in the scheduler thread every minute.
+    Fires morning_briefing() on the asyncio event loop at 8am AEST."""
+    global _briefing_done_date
+    try:
+        now_aest = datetime.now(ZoneInfo("Australia/Sydney"))
+        today    = now_aest.strftime("%Y-%m-%d")
+        if now_aest.hour == 8 and _briefing_done_date != today:
+            _briefing_done_date = today   # mark first — prevents double-fire if brief is slow
+            asyncio.run_coroutine_threadsafe(morning_briefing(), loop)
+    except Exception as e:
+        print(f"{RED}[schedule error: {e}]{RESET}", flush=True)
+
+
+def _start_scheduler(loop: asyncio.AbstractEventLoop) -> None:
+    """Daemon thread: checks schedule every 30 seconds."""
+    schedule.every(1).minutes.do(_check_and_brief, loop)
+    while True:
+        schedule.run_pending()
+        _time.sleep(30)
+
+
 # ── Main loop ─────────────────────────────────────────────────────────
 
 async def _listen_reply(max_secs: float = 5.0) -> str:
@@ -1068,6 +1179,7 @@ async def main():
     print(f"{BOLD}  Basnet Voice — Always Listening{RESET}")
     print(f"  {DIM}sabaccountai.com · {mode_line}{RESET}")
     print(f"  {DIM}Say 'bye Basnet' to go back to sleep{RESET}")
+    print(f"  {DIM}Morning brief fires at 8am AEST automatically{RESET}")
     print(f"{BOLD}{'='*52}{RESET}\n")
 
     if not WEBHOOK_SECRET:
@@ -1082,6 +1194,13 @@ async def main():
         asyncio.get_running_loop().run_in_executor(None, _get_whisper)
 
     await speak("Basnet online.")
+
+    # ── Start morning briefing scheduler (8am AEST, no wake word) ────────
+    _loop = asyncio.get_running_loop()
+    _sched_thread = threading.Thread(
+        target=_start_scheduler, args=(_loop,), daemon=True,
+    )
+    _sched_thread.start()
 
     history: list              = []
     current_topic_ref: list    = [None]
