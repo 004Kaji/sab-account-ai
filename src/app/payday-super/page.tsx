@@ -74,6 +74,8 @@ export default function PaydaySuperPage() {
 
   const [email, setEmail] = useState('')
   const [submitted, setSubmitted] = useState(false)
+  const [subLoading, setSubLoading] = useState(false)
+  const [subError, setSubError] = useState('')
 
   // Annual / Hourly results
   const annualSalary = basis === 'annual'
@@ -89,9 +91,27 @@ export default function PaydaySuperPage() {
   const casualGross = (parseFloat(casualRate) || 0) * (parseFloat(casualHours) || 0)
   const casualSuper = casualGross * 0.12
 
-  function handleEmailSubmit(e: React.FormEvent) {
+  async function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSubmitted(true)
+    setSubLoading(true)
+    setSubError('')
+    try {
+      const res = await fetch('/api/payday-super/subscribe', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email }),
+      })
+      if (!res.ok) {
+        const data = await res.json() as { error?: string }
+        setSubError(data.error ?? 'Something went wrong. Try again.')
+      } else {
+        setSubmitted(true)
+      }
+    } catch {
+      setSubError('Something went wrong. Try again.')
+    } finally {
+      setSubLoading(false)
+    }
   }
 
   const MODES = [
@@ -300,20 +320,26 @@ export default function PaydaySuperPage() {
               <span>✓</span> Got it! We&apos;ll be in touch before 1 July 2026.
             </div>
           ) : (
-            <form onSubmit={handleEmailSubmit} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <input
-                type="email"
-                className="sab-input"
-                placeholder="your@email.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                style={{ flex: 1, minWidth: '200px' }}
-              />
-              <button type="submit" className="btn btn-ember" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
-                Send me reminders
-              </button>
-            </form>
+            <>
+              <form onSubmit={handleEmailSubmit} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <input
+                  type="email"
+                  className="sab-input"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  disabled={subLoading}
+                  style={{ flex: 1, minWidth: '200px' }}
+                />
+                <button type="submit" className="btn btn-ember" style={{ whiteSpace: 'nowrap', flexShrink: 0 }} disabled={subLoading}>
+                  {subLoading ? 'Saving...' : 'Send me reminders'}
+                </button>
+              </form>
+              {subError && (
+                <p style={{ fontSize: '0.8125rem', color: '#dc2626', marginTop: '0.5rem' }}>{subError}</p>
+              )}
+            </>
           )}
         </div>
 

@@ -113,7 +113,7 @@ const FAQ_SCHEMA = {
   mainEntity: [
     { '@type': 'Question', name: 'How much does SAB Account AI cost?', acceptedAnswer: { '@type': 'Answer', text: 'Free plan includes 3 invoices per month. Starter plan is $9/month with unlimited invoices and AI generation. Pro plan is $19/month and adds ATO-compliant PAYG payslips, superannuation tracking, and BAS estimates.' } },
     { '@type': 'Question', name: 'Is SAB Account AI ATO compliant?', acceptedAnswer: { '@type': 'Answer', text: 'Yes. PAYG calculations are verified across 19 ATO tax scenarios including Medicare levy, LITO, HELP/HECS debt repayment, and all visa types including working holiday makers and international students.' } },
-    { '@type': 'Question', name: 'Does SAB Account AI handle Payday Super?', acceptedAnswer: { '@type': 'Answer', text: 'Yes. Payday Super starts July 28, 2026. SAB Account AI automatically calculates and tracks superannuation on every pay run, ensuring you meet the new ATO requirements from day one.' } },
+    { '@type': 'Question', name: 'Does SAB Account AI handle Payday Super?', acceptedAnswer: { '@type': 'Answer', text: 'Yes. Payday Super starts 1 July 2026. SAB Account AI automatically calculates and tracks superannuation on every pay run, ensuring you meet the new ATO requirements from day one.' } },
     { '@type': 'Question', name: 'How long does it take to create an invoice?', acceptedAnswer: { '@type': 'Answer', text: 'About 30 seconds. Describe your job in plain English and the AI generates a professional ATO-compliant tax invoice with correct GST calculations instantly.' } },
   ],
 }
@@ -150,7 +150,7 @@ export default function HomePage() {
             fontWeight: 500,
             letterSpacing: '0.01em',
           }}>
-            ⚡ Payday Super starts <strong>July 28, 2026</strong> — Every employer must pay super on every payday. <span style={{ textDecoration: 'underline' }}>Is your business ready? →</span>
+            ⚡ Payday Super starts <strong>1 July 2026</strong> — Every employer must pay super on every payday. <span style={{ textDecoration: 'underline' }}>Is your business ready? →</span>
           </div>
         </a>
       )}
@@ -464,12 +464,12 @@ export default function HomePage() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                 <span style={{ background: 'var(--ember)', color: '#fff', fontSize: '0.6875rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '999px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  July 28, 2026
+                  1 July 2026
                 </span>
-                <span style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.6)', fontWeight: 500 }}>Payday Super — July 28, 2026</span>
+                <span style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.6)', fontWeight: 500 }}>Payday Super — 1 July 2026</span>
               </div>
               <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: '#fff', marginBottom: '0.5rem' }}>
-                Super must be paid on every payday from July 28
+                Super must be paid on every payday from 1 July 2026
               </h3>
               <p style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.65)', lineHeight: 1.6, maxWidth: '480px' }}>
                 ATO penalties start immediately with no grace period. SAB Account AI calculates and tracks Payday Super automatically on every pay run.
