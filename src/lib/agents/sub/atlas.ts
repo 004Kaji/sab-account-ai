@@ -31,7 +31,6 @@ export interface AtlasSparkBrief {
   campaign_idea:     string        // short campaign concept (1-2 sentences)
   campaign_urgency:  'low' | 'medium' | 'high'
   source_finding:    string        // the Atlas finding that triggered this brief
-  auto_publish:      boolean       // true = Spark should publish without waiting
 }
 
 export interface AtlasReport {
@@ -216,11 +215,8 @@ ${raw.slice(0, 3000)}`,
       expires_after_hours: 168,
     })
 
-    // Generate Spark brief from findings and auto-trigger if high urgency
-    const sparkBrief = await atlasGenerateSparkBrief(report.intel, report.summary)
-    if (sparkBrief?.auto_publish) {
-      await autoTriggerSpark(sparkBrief)
-    }
+    // Generate Spark brief from findings — always saved as signal for Spark to read on Tuesday
+    await atlasGenerateSparkBrief(report.intel, report.summary)
   }
 
   return report
@@ -311,14 +307,11 @@ Rules:
       expires_after_hours: 168,
     })
 
-    // Generate Spark brief from compliance findings — always auto-publish on urgent
-    const sparkBrief = await atlasGenerateSparkBrief(
+    // Generate Spark brief from compliance findings — saved as signal for Spark to read on Tuesday
+    await atlasGenerateSparkBrief(
       findings.map(f => ({ ...f, category: 'compliance' as const })),
       summary,
     )
-    if (sparkBrief?.auto_publish) {
-      await autoTriggerSpark(sparkBrief)
-    }
   }
 
   await logSubAgent('atlas', 'compliance_watch', '', summary.slice(0, 200), Date.now() - start, true)
@@ -359,55 +352,6 @@ export async function atlasResearch(query: string): Promise<string> {
   return answer
 }
 
-// ── Auto-trigger Spark when Atlas finds high-urgency content ───────────
-// Fire-and-forget: POSTs to the SAB API as a separate Vercel function
-// invocation so Atlas doesn't wait for Spark's 2-3 min blog generation.
-
-async function autoTriggerSpark(brief: AtlasSparkBrief): Promise<void> {
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
-
-    // Fire both triggers without awaiting — separate Vercel function invocations
-    fetch(`${baseUrl}/api/agents/sab`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        trigger: 'marketing_run',
-        data: {
-          marketingTrigger: 'write_blog_post',
-          topic: brief.blog_topic,
-          angle: brief.blog_angle,
-          atlasBrief: true,
-        },
-      }),
-    }).catch((err) => { console.error('[atlas] auto-trigger blog post failed:', err) })
-
-    fetch(`${baseUrl}/api/agents/sab`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        trigger: 'marketing_run',
-        data: {
-          marketingTrigger: 'draft_social_posts',
-          topicOverride: brief.social_angle,
-          hookOverride:  brief.social_hook,
-          atlasBrief: true,
-        },
-      }),
-    }).catch((err) => { console.error('[atlas] auto-trigger social posts failed:', err) })
-
-    await sendAlert(
-      'Atlas auto-triggered Spark',
-      `High-urgency compliance finding. Spark is writing:\n• Blog: "${brief.blog_topic}"\n• Social posts (4 platforms)\n\nSource: ${brief.source_finding}`,
-      'info',
-      'atlas',
-    )
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    await sendAlert('Atlas auto-trigger failed', msg, 'warning', 'atlas').catch(() => {})
-  }
-}
-
 // ── Atlas → Spark intelligence brief ──────────────────────────────────
 // Called after every scan. Produces a structured brief that Spark reads
 // before choosing blog topics, social hooks, or campaign angles.
@@ -444,8 +388,7 @@ Generate a JSON brief (no markdown):
   "social_angle": "the core message across all platforms — what do we want Australian SMBs to feel or do",
   "campaign_idea": "1-2 sentence campaign concept tying blog + social + CTA (try it free → sabaccountai.com)",
   "campaign_urgency": "low|medium|high",
-  "source_finding": "the single most important finding that drives this brief",
-  "auto_publish": ${highUrgency.length > 0 ? 'true' : 'false'}
+  "source_finding": "the single most important finding that drives this brief"
 }`,
     maxTokens: 600,
     expectJson: true,
@@ -464,9 +407,7 @@ Generate a JSON brief (no markdown):
       severity:      brief.campaign_urgency === 'high' ? 'urgent' : brief.campaign_urgency === 'medium' ? 'warning' : 'info',
       summary:       `Spark brief: ${brief.blog_topic}`,
       data:          brief as unknown as Record<string, unknown>,
-      suggested_reactions: brief.auto_publish
-        ? 'Spark: auto-publish blog post and social posts based on this brief immediately.'
-        : 'Spark: use this brief as topic/hook guidance for next blog and social posts.',
+      suggested_reactions: 'Spark: use this brief as topic/hook guidance for next blog and social posts.',
       expires_after_hours: 168,
     })
 
@@ -518,4 +459,81 @@ Return 2-3 sentences.`,
     outcome:     result.slice(0, 200),
     durationMs:  Date.now() - start,
   })
+}
+
+// ── Daily content digest ───────────────────────────────────────────────
+// Emails basnet@sabaccountai.com.au every morning with a count of content
+// waiting in draft status across blog posts, community posts, and TikTok scripts.
+// Only sends if at least one item is waiting for review.
+
+export async function atlasDailyDigest(): Promise<{ sent: boolean; totalItems: number }> {
+  const { Resend } = await import('resend')
+  const supabase = createServiceClient()
+
+  const [blogR, communityR, tiktokR] = await Promise.allSettled([
+    supabase.from('blog_posts').select('title').eq('status', 'draft').order('created_at', { ascending: false }),
+    supabase.from('community_posts').select('segment, platform').eq('status', 'draft').order('created_at', { ascending: false }),
+    supabase.from('tiktok_scripts').select('segment').eq('status', 'draft').order('created_at', { ascending: false }),
+  ])
+
+  const blogDrafts    = blogR.status      === 'fulfilled' ? (blogR.value.data      ?? []) : []
+  const communityDrafts = communityR.status === 'fulfilled' ? (communityR.value.data ?? []) : []
+  const tiktokDrafts  = tiktokR.status    === 'fulfilled' ? (tiktokR.value.data    ?? []) : []
+
+  const totalItems = blogDrafts.length + communityDrafts.length + tiktokDrafts.length
+  if (totalItems === 0) return { sent: false, totalItems: 0 }
+
+  const blogLines = blogDrafts.length > 0
+    ? `<ul>${blogDrafts.slice(0, 10).map((p: { title: string }) => `<li>${p.title}</li>`).join('')}${blogDrafts.length > 10 ? `<li><em>…and ${blogDrafts.length - 10} more</em></li>` : ''}</ul>`
+    : '<p><em>None</em></p>'
+
+  const communityLine = communityDrafts.length > 0
+    ? `${communityDrafts.length} post${communityDrafts.length > 1 ? 's' : ''} across ${[...new Set(communityDrafts.map((c: { platform: string }) => c.platform))].join(', ')}`
+    : 'None'
+
+  const tiktokLine = tiktokDrafts.length > 0
+    ? `${tiktokDrafts.length} script${tiktokDrafts.length > 1 ? 's' : ''} (${tiktokDrafts.map((t: { segment: string }) => t.segment).join(', ')})`
+    : 'None'
+
+  const subject = `📋 Your daily content review — ${totalItems} item${totalItems > 1 ? 's' : ''} waiting`
+
+  const html = `
+<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+  <h2 style="margin-top:0">📋 Daily content review</h2>
+  <p>${totalItems} item${totalItems > 1 ? 's are' : ' is'} waiting for your review in draft status.</p>
+
+  <h3>Blog posts (${blogDrafts.length})</h3>
+  ${blogLines}
+
+  <h3>Community posts (${communityDrafts.length})</h3>
+  <p>${communityLine}</p>
+
+  <h3>TikTok scripts (${tiktokDrafts.length})</h3>
+  <p>${tiktokLine}</p>
+
+  <p style="margin-top:32px">
+    <a href="https://sabaccountai.com.au/dashboard" style="background:#1a1a1a;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600">
+      Review in dashboard →
+    </a>
+  </p>
+
+  <p style="color:#888;font-size:12px;margin-top:32px">
+    SAB Account AI · Sent by Atlas · To publish, open dashboard and click Publish
+  </p>
+</div>`
+
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    await resend.emails.send({
+      from:    'Basnet <basnet@sabaccountai.com>',
+      to:      'basnet@sabaccountai.com.au',
+      subject,
+      html,
+    })
+    await logSubAgent('atlas', 'daily_digest', '', `Sent digest: ${totalItems} items`, 0, true)
+    return { sent: true, totalItems }
+  } catch (err) {
+    console.error('[atlas] daily digest send failed:', err)
+    return { sent: false, totalItems }
+  }
 }
