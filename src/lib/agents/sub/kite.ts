@@ -56,6 +56,14 @@ async function tavilyIntentSearch(
 ): Promise<{ url: string; title: string; content: string }[]> {
   const apiKey = process.env.TAVILY_API_KEY
   if (!apiKey) return []
+
+  const sevenDaysAgo = new Date()
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+  const startDate = sevenDaysAgo.toISOString().split('T')[0]
+
+  const fourteenDaysAgo = new Date()
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
+
   try {
     const res = await fetch('https://api.tavily.com/search', {
       method:  'POST',
@@ -66,17 +74,24 @@ async function tavilyIntentSearch(
         max_results:     maxResults,
         include_domains: domains,
         search_depth:    'advanced',
+        start_date:      startDate,
+        time_range:      'week',
       }),
       signal: AbortSignal.timeout(15000),
     })
     if (!res.ok) return []
-    type RawResult = { url?: string; title?: string; content?: string }
+    type RawResult = { url?: string; title?: string; content?: string; published_date?: string }
     const data = (await res.json()) as { results?: RawResult[] }
-    return (data.results ?? []).map((r: RawResult) => ({
-      url:     r.url     ?? '',
-      title:   r.title   ?? '',
-      content: r.content ?? '',
-    }))
+    return (data.results ?? [])
+      .filter((r: RawResult) => {
+        if (!r.published_date) return false
+        return new Date(r.published_date) >= fourteenDaysAgo
+      })
+      .map((r: RawResult) => ({
+        url:     r.url     ?? '',
+        title:   r.title   ?? '',
+        content: r.content ?? '',
+      }))
   } catch { return [] }
 }
 
