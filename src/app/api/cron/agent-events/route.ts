@@ -11,6 +11,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { logAgentAction } from '@/lib/agents/utils'
 import { liftOnboardingEmail, liftReEngagementEmail } from '@/lib/agents/sub/lift'
 import { sparkUpgradePrompt, sparkSendAccountantEmails, sparkSendBusinessEmails } from '@/lib/agents/sub/spark'
+import { runKite } from '@/lib/agents/sub/kite'
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('Authorization')
@@ -20,7 +21,7 @@ export async function GET(req: NextRequest) {
 
   const supabase = createServiceClient()
   const start = Date.now()
-  const results = { newUser: 0, invoice8th: 0, inactive30d: 0, accountantEmails: 0, businessEmails: 0, errors: 0 }
+  const results = { newUser: 0, invoice8th: 0, inactive30d: 0, accountantEmails: 0, businessEmails: 0, kiteReplies: 0, errors: 0 }
 
   // ── 1. new_user: signed up in last 24h, not yet AI-welcomed ──────────
   try {
@@ -153,6 +154,15 @@ export async function GET(req: NextRequest) {
     results.businessEmails = r.sent
   } catch (err) {
     console.error('[cron/agent-events] business_emails phase failed:', err)
+    results.errors++
+  }
+
+  // ── 6. kite: find intent signals on Reddit/LinkedIn/Facebook and draft replies ─
+  try {
+    const r = await runKite()
+    results.kiteReplies = r.savedIds.length
+  } catch (err) {
+    console.error('[cron/agent-events] kite phase failed:', err)
     results.errors++
   }
 
