@@ -18,7 +18,7 @@ export interface AtRiskUser {
   userId:     string
   email:      string
   plan:       string
-  riskReason: 'inactive_paid' | 'never_invoiced' | 'free_limit_hit' | 'payment_issue' | 'onboarding_gap'
+  riskReason: 'inactive_paid' | 'never_invoiced' | 'free_limit_hit' | 'payment_issue' | 'onboarding_gap' | 'power_user_gone'
   daysSince:  number
   action:     string
 }
@@ -37,7 +37,7 @@ type ProfileRow = {
   plan:               string
   stripe_status:      string | null
   created_at:         string
-  updated_at:         string
+  last_sign_in_at:    string | null
 }
 
 // ── Retention outcome check ────────────────────────────────────────────
@@ -73,18 +73,25 @@ export async function checkRetentionOutcomes(): Promise<{
     const rows = emailedConvs as ConvRow[]
     let cameBack = 0
 
-    for (const row of rows) {
-      const userId = row.context_used?.userId
-      if (!userId) continue
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('updated_at')
-        .eq('id', userId)
-        .maybeSingle()
-      if (profile && new Date(profile.updated_at as string) > new Date(row.created_at)) {
-        cameBack++
-      }
-    }
+    // For each retention email, check if user created an invoice OR payslip
+    // in the 3 days after it was sent — real proof the email worked.
+    const outcomeResults = await Promise.allSettled(
+      rows.map(async row => {
+        const userId = row.context_used?.userId
+        if (!userId) return false
+        const emailSentAt = row.created_at
+        const threeAfter  = new Date(new Date(emailSentAt).getTime() + 3 * 24 * 60 * 60 * 1000).toISOString()
+        const [invR, payR] = await Promise.allSettled([
+          supabase.from('invoices').select('id').eq('user_id', userId)
+            .gte('created_at', emailSentAt).lte('created_at', threeAfter).limit(1).maybeSingle(),
+          supabase.from('payslips').select('id').eq('user_id', userId)
+            .gte('created_at', emailSentAt).lte('created_at', threeAfter).limit(1).maybeSingle(),
+        ])
+        return (invR.status === 'fulfilled' && invR.value.data !== null) ||
+               (payR.status === 'fulfilled' && payR.value.data !== null)
+      })
+    )
+    cameBack = outcomeResults.filter(r => r.status === 'fulfilled' && r.value === true).length
 
     const conversionRate = rows.length > 0 ? Math.round((cameBack / rows.length) * 100) : 0
     return { totalEmailed: rows.length, cameBack, conversionRate }
@@ -129,66 +136,118 @@ export async function runLift(): Promise<LiftReport> {
       outcome: `${outcomes.cameBack}/${outcomes.totalEmailed} users came back after retention email (${outcomes.conversionRate}%)`,
     })
   }
-  const tenDaysAgo  = new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString()
+  const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString()
   const threeDaysAgo = new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString()
-  const twoDaysAgo  = new Date(now - 48 * 60 * 60 * 1000).toISOString()
+  const twoDaysAgo   = new Date(now - 48 * 60 * 60 * 1000).toISOString()
 
-  const [inactivePaidR, pastDueR, neverInvoicedR, onboardingGapR, upgradeSignalR] =
-    await Promise.allSettled([
+  const [
+    paidUsersR, pastDueR, neverInvoicedR, onboardingGapR,
+    recentInvoicesR, recentPayslipsR, recentLoginsR,
+    allInvoicesR, allPayslipsR,
+  ] = await Promise.allSettled([
 
-      // SIGNAL 1: Paid users inactive 10+ days
-      supabase.from('profiles')
-        .select('id, email, plan, stripe_status, created_at, updated_at')
-        .in('plan', ['starter', 'pro', 'enterprise'])
-        .lt('updated_at', tenDaysAgo)
-        .limit(10),
+    // SIGNAL 1: All paid users — genuine activity filter applied in JS
+    supabase.from('profiles')
+      .select('id, email, plan, stripe_status, created_at, last_sign_in_at')
+      .in('plan', ['starter', 'pro', 'enterprise'])
+      .limit(50),
 
-      // SIGNAL 4: Past due (payment issue)
-      supabase.from('profiles')
-        .select('id, email, plan, stripe_status, created_at, updated_at')
-        .eq('stripe_status', 'past_due')
-        .limit(10),
+    // SIGNAL 4: Past due (payment issue)
+    supabase.from('profiles')
+      .select('id, email, plan, stripe_status, created_at, last_sign_in_at')
+      .eq('stripe_status', 'past_due')
+      .limit(10),
 
-      // SIGNAL 2: Paid users who never invoiced (signed up 3+ days ago)
-      supabase.from('profiles')
-        .select('id, email, plan, stripe_status, created_at, updated_at')
-        .in('plan', ['starter', 'pro', 'enterprise'])
-        .lt('created_at', threeDaysAgo)
-        .limit(10),
+    // SIGNAL 2: Paid users signed up 3+ days ago (never-invoiced check)
+    supabase.from('profiles')
+      .select('id, email, plan, stripe_status, created_at, last_sign_in_at')
+      .in('plan', ['starter', 'pro', 'enterprise'])
+      .lt('created_at', threeDaysAgo)
+      .limit(10),
 
-      // SIGNAL 5: Onboarding gaps — free users, 48h+ old, no invoice
-      supabase.from('profiles')
-        .select('id, email, plan, created_at, updated_at, stripe_status')
-        .eq('plan', 'free')
-        .lt('created_at', twoDaysAgo)
-        .limit(20),
+    // SIGNAL 5: Onboarding gaps — free users, 48h+ old
+    supabase.from('profiles')
+      .select('id, email, plan, created_at, last_sign_in_at, stripe_status')
+      .eq('plan', 'free')
+      .lt('created_at', twoDaysAgo)
+      .limit(20),
 
-      // SIGNAL 3: Free users approaching invoice limit (upgrade signals)
-      supabase.from('invoices')
-        .select('user_id')
-        .then(r => ({
-          data: r.data,
-          error: r.error,
-        })),
-    ])
+    // Activity signal A: invoices created in last 7 days
+    supabase.from('invoices').select('user_id').gte('created_at', sevenDaysAgo),
+
+    // Activity signal B: payslips created in last 7 days
+    supabase.from('payslips').select('user_id').gte('created_at', sevenDaysAgo),
+
+    // Activity signal C: paid profiles with a login in last 7 days
+    supabase.from('profiles')
+      .select('id')
+      .in('plan', ['starter', 'pro', 'enterprise'])
+      .gte('last_sign_in_at', sevenDaysAgo),
+
+    // SIGNAL 3 + power_user_gone: all invoices with timestamps
+    supabase.from('invoices').select('user_id, created_at').limit(2000),
+
+    // power_user_gone: all payslips with timestamps
+    supabase.from('payslips').select('user_id, created_at').limit(2000),
+  ])
 
   const atRiskUsers: AtRiskUser[] = []
   let onboardingGaps = 0
   let upgradeSignals = 0
 
-  // SIGNAL 1: Inactive paid users
-  if (inactivePaidR.status === 'fulfilled') {
-    for (const row of (inactivePaidR.value.data ?? []).slice(0, 5) as ProfileRow[]) {
-      const daysSince = Math.floor((now - new Date(row.updated_at).getTime()) / 86400000)
-      atRiskUsers.push({
-        userId:     row.id,
-        email:      row.email ?? '',
-        plan:       row.plan,
-        riskReason: 'inactive_paid',
-        daysSince,
-        action:     `Send re-engagement email highlighting newest ${row.plan} feature`,
-      })
-    }
+  // ── Build genuine activity sets ────────────────────────────────────────
+  // A paid user is considered active if ANY of the three signals is true:
+  //   A) created an invoice in the last 7 days
+  //   B) created a payslip in the last 7 days
+  //   C) logged in within the last 7 days (last_sign_in_at)
+  type ActivityRow  = { user_id?: string; id?: string; created_at?: string }
+  const recentInvoiceIds = new Set(
+    (recentInvoicesR.status === 'fulfilled' ? recentInvoicesR.value.data ?? [] : [] as ActivityRow[])
+      .map((r: ActivityRow) => r.user_id!)
+  )
+  const recentPayslipIds = new Set(
+    (recentPayslipsR.status === 'fulfilled' ? recentPayslipsR.value.data ?? [] : [] as ActivityRow[])
+      .map((r: ActivityRow) => r.user_id!)
+  )
+  const recentLoginIds = new Set(
+    (recentLoginsR.status === 'fulfilled' ? recentLoginsR.value.data ?? [] : [] as ActivityRow[])
+      .map((r: ActivityRow) => r.id!)
+  )
+  const isGenuinelyActive = (userId: string): boolean =>
+    recentInvoiceIds.has(userId) || recentPayslipIds.has(userId) || recentLoginIds.has(userId)
+
+  // All invoice + payslip history (for upgrade signals and power_user_gone detection)
+  const allInvoiceData = (allInvoicesR.status === 'fulfilled' ? allInvoicesR.value.data ?? [] : []) as ActivityRow[]
+  const allPayslipData = (allPayslipsR.status === 'fulfilled' ? allPayslipsR.value.data ?? [] : []) as ActivityRow[]
+
+  // Count old activity (before 7 days ago) per user — used for power_user_gone
+  const oldInvoiceCount = new Map<string, number>()
+  const oldPayslipCount = new Map<string, number>()
+  for (const r of allInvoiceData) {
+    if (r.created_at && r.created_at < sevenDaysAgo)
+      oldInvoiceCount.set(r.user_id!, (oldInvoiceCount.get(r.user_id!) ?? 0) + 1)
+  }
+  for (const r of allPayslipData) {
+    if (r.created_at && r.created_at < sevenDaysAgo)
+      oldPayslipCount.set(r.user_id!, (oldPayslipCount.get(r.user_id!) ?? 0) + 1)
+  }
+
+  // All user_ids who have ever created an invoice (for never_invoiced + onboarding_gap)
+  const everInvoicedIds = new Set(allInvoiceData.map(r => r.user_id!))
+
+  // SIGNAL 1: Paid users with no invoice, payslip, OR login in last 7 days
+  const allPaidUsers = (paidUsersR.status === 'fulfilled' ? paidUsersR.value.data ?? [] : []) as ProfileRow[]
+  for (const row of allPaidUsers.filter(r => !isGenuinelyActive(r.id)).slice(0, 5)) {
+    const lastActivity = row.last_sign_in_at ?? row.created_at
+    const daysSince    = Math.floor((now - new Date(lastActivity).getTime()) / 86400000)
+    atRiskUsers.push({
+      userId:     row.id,
+      email:      row.email ?? '',
+      plan:       row.plan,
+      riskReason: 'inactive_paid',
+      daysSince,
+      action:     `Send re-engagement email highlighting newest ${row.plan} feature`,
+    })
   }
 
   // SIGNAL 4: Payment issues
@@ -205,13 +264,10 @@ export async function runLift(): Promise<LiftReport> {
     }
   }
 
-  // SIGNAL 2: Never invoiced paid users — check against invoice table
-  if (neverInvoicedR.status === 'fulfilled' && upgradeSignalR.status === 'fulfilled') {
-    const invoicedUserIds = new Set(
-      (upgradeSignalR.value.data ?? []).map((r: Record<string, unknown>) => r.user_id as string)
-    )
+  // SIGNAL 2: Never invoiced paid users
+  if (neverInvoicedR.status === 'fulfilled') {
     for (const row of (neverInvoicedR.value.data ?? []).slice(0, 5) as ProfileRow[]) {
-      if (!invoicedUserIds.has(row.id)) {
+      if (!everInvoicedIds.has(row.id)) {
         const daysSince = Math.floor((now - new Date(row.created_at).getTime()) / 86400000)
         atRiskUsers.push({
           userId:     row.id,
@@ -226,22 +282,36 @@ export async function runLift(): Promise<LiftReport> {
   }
 
   // SIGNAL 5: Onboarding gaps — free users who never invoiced
-  if (onboardingGapR.status === 'fulfilled' && upgradeSignalR.status === 'fulfilled') {
-    const invoicedUserIds = new Set(
-      (upgradeSignalR.value.data ?? []).map((r: Record<string, unknown>) => r.user_id as string)
-    )
+  if (onboardingGapR.status === 'fulfilled') {
     const freeRows = (onboardingGapR.value.data ?? []) as ProfileRow[]
-    onboardingGaps = freeRows.filter(r => !invoicedUserIds.has(r.id)).length
+    onboardingGaps = freeRows.filter(r => !everInvoicedIds.has(r.id)).length
   }
 
   // SIGNAL 3: Upgrade signals — free users with 8+ invoices (approaching limit)
-  if (upgradeSignalR.status === 'fulfilled') {
-    const invoiceData = upgradeSignalR.value.data ?? []
-    const countByUser = new Map<string, number>()
-    for (const row of invoiceData as { user_id: string }[]) {
-      countByUser.set(row.user_id, (countByUser.get(row.user_id) ?? 0) + 1)
+  const invoiceCountByUser = new Map<string, number>()
+  for (const r of allInvoiceData) {
+    invoiceCountByUser.set(r.user_id!, (invoiceCountByUser.get(r.user_id!) ?? 0) + 1)
+  }
+  upgradeSignals = Array.from(invoiceCountByUser.values()).filter(c => c >= 8).length
+
+  // SIGNAL 6: power_user_gone — had 3+ invoices OR payslips before 7 days ago, now cold
+  // Highest-priority re-engagement: these users proved the product works for them.
+  const alreadyFlagged = new Set(atRiskUsers.map(u => u.userId))
+  for (const row of allPaidUsers) {
+    if (alreadyFlagged.has(row.id) || isGenuinelyActive(row.id)) continue
+    const hadInvoices = (oldInvoiceCount.get(row.id) ?? 0) >= 3
+    const hadPayslips = (oldPayslipCount.get(row.id) ?? 0) >= 3
+    if (hadInvoices || hadPayslips) {
+      const lastActivity = row.last_sign_in_at ?? row.created_at
+      atRiskUsers.push({
+        userId:     row.id,
+        email:      row.email ?? '',
+        plan:       row.plan,
+        riskReason: 'power_user_gone',
+        daysSince:  Math.floor((now - new Date(lastActivity).getTime()) / 86400000),
+        action:     'Send personalised re-engagement — power user gone cold',
+      })
     }
-    upgradeSignals = Array.from(countByUser.values()).filter(c => c >= 8).length
   }
 
   // Generate actions via Claude for found users (batch, not per-user — to save tokens)
@@ -340,10 +410,14 @@ export async function liftRetentionEmail(
       ? `\nPast learnings — what worked and failed in previous retention emails:\n${learnings}`
       : ''
 
+    const powerUserNote = user.riskReason === 'power_user_gone'
+      ? '\nThis was a highly engaged user — previously generating 3+ invoices or payslips per week. Open with exactly: "We noticed you haven\'t generated a payslip recently — is everything OK?" Be human and caring, not salesy. One soft CTA.'
+      : ''
+
     const raw = await callClaude({
       systemPrompt: `${LIFT_IDENTITY}${learningsContext}`,
       userMessage:  `Write a retention email for this user.
-Plan: ${user.plan} · Risk: ${user.riskReason} · Days inactive: ${user.daysSince}
+Plan: ${user.plan} · Risk: ${user.riskReason} · Days inactive: ${user.daysSince}${powerUserNote}
 Rules:
 - 4 sentences max
 - Personal not generic
