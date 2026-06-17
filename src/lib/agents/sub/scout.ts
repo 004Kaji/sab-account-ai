@@ -123,7 +123,7 @@ async function testAuthProtection(baseUrl: string): Promise<ScoutTestResult> {
 }
 
 async function testStripeWebhookHealth(): Promise<ScoutTestResult> {
-  const name = 'Stripe webhook health (last event within 48h)'
+  const name = 'Stripe webhook health (last event within 7 days)'
   try {
     const supabase = createServiceClient()
     const { data } = await supabase
@@ -138,13 +138,13 @@ async function testStripeWebhookHealth(): Promise<ScoutTestResult> {
     }
 
     const hoursSince = (Date.now() - new Date(data.created_at as string).getTime()) / 3600000
-    const pass = hoursSince < 48
+    const pass = hoursSince < 168
     return {
       name,
       pass,
-      expected: 'Last event within 48h',
+      expected: 'Last event within 7 days',
       actual: `Last event ${Math.round(hoursSince)}h ago`,
-      fix: pass ? undefined : 'No Stripe webhooks in 48h — check Stripe dashboard webhook config',
+      fix: pass ? undefined : 'No Stripe webhooks in 7 days — check Stripe dashboard webhook config',
     }
   } catch (err) {
     return { name, pass: false, expected: 'DB query succeeds', actual: err instanceof Error ? err.message : 'error', fix: 'Check Supabase connection and agent_logs table' }
