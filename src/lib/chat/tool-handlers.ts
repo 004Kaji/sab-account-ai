@@ -109,6 +109,254 @@ async function generateBasPdf(data: {
   })
 }
 
+// ── Generate Invoice PDF as a Buffer ─────────────────────────────────
+function generateInvoicePdf(inv: {
+  invoice_number: string
+  business_name: string
+  business_abn: string | null
+  business_address: string | null
+  business_email: string | null
+  business_phone: string | null
+  client_name: string
+  client_email: string | null
+  client_address: string | null
+  issue_date: string
+  due_date: string
+  line_items: Array<{ description: string; qty: number; unit_price: number; gst_amount: number; total: number }>
+  has_gst: boolean
+  subtotal_ex_gst: number
+  total_gst: number
+  total_inc_gst: number
+  payment_terms: string | null
+  bank_name: string | null
+  account_name: string | null
+  bsb: string | null
+  account_number: string | null
+  notes: string | null
+}): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 50, size: 'A4' })
+    const chunks: Buffer[] = []
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk))
+    doc.on('end', () => resolve(Buffer.concat(chunks)))
+    doc.on('error', reject)
+
+    const DARK   = '#1C1917'
+    const MID    = '#57534E'
+    const LIGHT  = '#A09590'
+    const RED    = '#C84B2F'
+    const BORDER = '#E5DDD5'
+    const BG     = '#F5F0E8'
+    const pageW  = doc.page.width - 100
+    const fmtN   = (n: number) => `$${Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
+
+    // Header
+    doc.rect(50, 50, pageW, 80).fill(DARK)
+    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(16).text(inv.business_name, 70, 65)
+    doc.fillColor(LIGHT).font('Helvetica').fontSize(9)
+    if (inv.business_abn) doc.text(`ABN: ${inv.business_abn}`, 70, 85)
+    if (inv.business_address) doc.text(inv.business_address, 70, 97)
+
+    // Invoice meta
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(22).text('INVOICE', pageW - 60, 60, { align: 'right', width: 130 })
+    doc.font('Helvetica').fontSize(9).fillColor(LIGHT)
+      .text(`#${inv.invoice_number}`, pageW - 60, 88, { align: 'right', width: 130 })
+      .text(`Issued: ${inv.issue_date}`, pageW - 60, 100, { align: 'right', width: 130 })
+      .text(`Due: ${inv.due_date}`, pageW - 60, 112, { align: 'right', width: 130 })
+
+    // Bill to
+    let y = 150
+    doc.fillColor(LIGHT).font('Helvetica').fontSize(8).text('BILL TO', 50, y)
+    y += 12
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text(inv.client_name, 50, y)
+    y += 14
+    doc.font('Helvetica').fontSize(9).fillColor(MID)
+    if (inv.client_email)   { doc.text(inv.client_email,   50, y); y += 12 }
+    if (inv.client_address) { doc.text(inv.client_address, 50, y); y += 12 }
+
+    // Line items table header
+    y += 8
+    doc.rect(50, y, pageW, 18).fill(DARK)
+    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8)
+      .text('DESCRIPTION', 65, y + 5)
+      .text('QTY',         350, y + 5, { width: 40, align: 'right' })
+      .text('UNIT PRICE',  395, y + 5, { width: 70, align: 'right' })
+      .text('AMOUNT',      470, y + 5, { width: 60, align: 'right' })
+    y += 18
+
+    inv.line_items.forEach((li, i) => {
+      if (i % 2 === 0) doc.rect(50, y, pageW, 20).fill(BG)
+      doc.fillColor(MID).font('Helvetica').fontSize(9)
+        .text(li.description,       65,  y + 5, { width: 280 })
+        .text(String(li.qty),       350, y + 5, { width: 40, align: 'right' })
+        .text(fmtN(li.unit_price),  395, y + 5, { width: 70, align: 'right' })
+        .text(fmtN(li.total),       470, y + 5, { width: 60, align: 'right' })
+      y += 20
+      if (y > doc.page.height - 150) { doc.addPage(); y = 50 }
+    })
+
+    // Totals
+    y += 8
+    doc.moveTo(50, y).lineTo(50 + pageW, y).strokeColor(BORDER).lineWidth(0.5).stroke()
+    y += 10
+    const totRow = (label: string, value: string, bold = false, color = MID) => {
+      doc.fillColor(color).font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 11 : 9)
+        .text(label, 350, y, { width: 120 })
+        .text(value, 470, y, { width: 60, align: 'right' })
+      y += bold ? 18 : 14
+    }
+    totRow('Subtotal (ex GST)', fmtN(inv.subtotal_ex_gst))
+    if (inv.has_gst) totRow('GST (10%)', fmtN(inv.total_gst))
+    doc.moveTo(350, y).lineTo(530, y).strokeColor(BORDER).lineWidth(0.5).stroke()
+    y += 4
+    totRow('TOTAL DUE', fmtN(inv.total_inc_gst), true, RED)
+
+    // Payment details
+    if (inv.bsb || inv.account_number) {
+      y += 12
+      doc.rect(50, y, pageW, 14).fill(DARK)
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text('PAYMENT DETAILS', 65, y + 3)
+      y += 20
+      doc.fillColor(MID).font('Helvetica').fontSize(9)
+      if (inv.bank_name)      { doc.text(`Bank: ${inv.bank_name}`,               50, y); y += 12 }
+      if (inv.account_name)   { doc.text(`Account Name: ${inv.account_name}`,    50, y); y += 12 }
+      if (inv.bsb)            { doc.text(`BSB: ${inv.bsb}`,                      50, y); y += 12 }
+      if (inv.account_number) { doc.text(`Account Number: ${inv.account_number}`, 50, y); y += 12 }
+      if (inv.payment_terms)  { doc.text(`Terms: ${inv.payment_terms}`,           50, y); y += 12 }
+    }
+
+    if (inv.notes) {
+      y += 8
+      doc.fillColor(LIGHT).font('Helvetica').fontSize(8).text(`Notes: ${inv.notes}`, 50, y)
+    }
+
+    // Footer
+    const footerY = doc.page.height - 50
+    doc.moveTo(50, footerY).lineTo(50 + pageW, footerY).strokeColor(BORDER).lineWidth(0.5).stroke()
+    doc.fillColor(LIGHT).font('Helvetica').fontSize(8)
+      .text('Generated by SAB Account AI · sabaccountai.com', 50, footerY + 8, { align: 'center', width: pageW })
+
+    doc.end()
+  })
+}
+
+// ── Generate Payslip PDF as a Buffer ─────────────────────────────────
+function generatePayslipPdf(ps: {
+  payslip_number: string
+  employer_name: string
+  employer_abn: string | null
+  employee_name: string
+  employment_type: string
+  pay_cycle: string
+  pay_period_start: string
+  pay_period_end: string
+  payment_date: string
+  gross_pay: number
+  salary_sacrifice: number
+  taxable_gross: number
+  income_tax: number
+  medicare_levy: number
+  help_repayment: number
+  net_pay: number
+  super_sg: number
+  super_sal_sac: number
+  super_fund_name: string | null
+  member_number: string | null
+}): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 50, size: 'A4' })
+    const chunks: Buffer[] = []
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk))
+    doc.on('end', () => resolve(Buffer.concat(chunks)))
+    doc.on('error', reject)
+
+    const DARK   = '#1C1917'
+    const MID    = '#57534E'
+    const LIGHT  = '#A09590'
+    const RED    = '#C84B2F'
+    const BORDER = '#E5DDD5'
+    const BG     = '#F5F0E8'
+    const pageW  = doc.page.width - 100
+    const fmtN   = (n: number) => `$${Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
+
+    // Header
+    doc.rect(50, 50, pageW, 80).fill(DARK)
+    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(16).text(ps.employer_name, 70, 65)
+    doc.fillColor(LIGHT).font('Helvetica').fontSize(9)
+    if (ps.employer_abn) doc.text(`ABN: ${ps.employer_abn}`, 70, 85)
+    doc.fillColor(LIGHT).fontSize(9)
+      .text(`Payslip ${ps.payslip_number}`, pageW - 60, 65, { align: 'right', width: 130 })
+      .text(`${ps.pay_period_start} to ${ps.pay_period_end}`, pageW - 60, 80, { align: 'right', width: 130 })
+      .text(`Payment date: ${ps.payment_date}`, pageW - 60, 95, { align: 'right', width: 130 })
+
+    // Employee info
+    let y = 150
+    doc.rect(50, y, pageW, 18).fill(DARK)
+    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text('EMPLOYEE', 65, y + 5)
+    y += 18
+    doc.rect(50, y, pageW, 32).fill(BG)
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text(ps.employee_name, 65, y + 6)
+    doc.fillColor(MID).font('Helvetica').fontSize(8)
+      .text(`${ps.employment_type} · ${ps.pay_cycle}`, 65, y + 20)
+    y += 40
+
+    // Earnings & deductions header
+    doc.rect(50, y, pageW, 18).fill(DARK)
+    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8)
+      .text('EARNINGS & DEDUCTIONS', 65, y + 5)
+      .text('AMOUNT', 470, y + 5, { width: 60, align: 'right' })
+    y += 18
+
+    const row = (label: string, value: string, bold = false, color = MID, bg?: string) => {
+      if (bg) doc.rect(50, y, pageW, 18).fill(bg)
+      doc.fillColor(color).font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 10 : 9)
+        .text(label, 65, y + 4)
+        .text(value, 470, y + 4, { width: 60, align: 'right' })
+      y += 18
+    }
+
+    row('Gross Pay', fmtN(ps.gross_pay), false, MID, BG)
+    if (ps.salary_sacrifice > 0) row('Salary Sacrifice Super', `-${fmtN(ps.salary_sacrifice)}`)
+    row('Taxable Gross', fmtN(ps.taxable_gross), false, MID, BG)
+    doc.moveTo(50, y).lineTo(50 + pageW, y).strokeColor(BORDER).lineWidth(0.5).stroke(); y += 6
+    row('Income Tax (PAYG)', `-${fmtN(ps.income_tax)}`)
+    row('Medicare Levy', `-${fmtN(ps.medicare_levy)}`, false, MID, BG)
+    if (ps.help_repayment > 0) row('HELP Repayment', `-${fmtN(ps.help_repayment)}`)
+    doc.moveTo(50, y).lineTo(50 + pageW, y).strokeColor(BORDER).lineWidth(0.5).stroke(); y += 6
+    row('NET PAY', fmtN(ps.net_pay), true, RED)
+
+    // Super
+    y += 10
+    doc.rect(50, y, pageW, 18).fill(DARK)
+    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text('SUPERANNUATION', 65, y + 5)
+    y += 18
+    doc.rect(50, y, pageW, 18).fill(BG)
+    doc.fillColor(MID).font('Helvetica').fontSize(9)
+      .text('Employer SG (12%)', 65, y + 4)
+      .text(fmtN(ps.super_sg), 470, y + 4, { width: 60, align: 'right' })
+    y += 18
+    if (ps.super_sal_sac > 0) {
+      doc.fillColor(MID).font('Helvetica').fontSize(9)
+        .text('Salary Sacrifice', 65, y + 4)
+        .text(fmtN(ps.super_sal_sac), 470, y + 4, { width: 60, align: 'right' })
+      y += 18
+    }
+    if (ps.super_fund_name) {
+      doc.fillColor(LIGHT).font('Helvetica').fontSize(8)
+        .text(`Fund: ${ps.super_fund_name}${ps.member_number ? `  ·  Member: ${ps.member_number}` : ''}`, 65, y + 4)
+      y += 18
+    }
+
+    // Footer
+    const footerY = doc.page.height - 50
+    doc.moveTo(50, footerY).lineTo(50 + pageW, footerY).strokeColor(BORDER).lineWidth(0.5).stroke()
+    doc.fillColor(LIGHT).font('Helvetica').fontSize(8)
+      .text('Generated by SAB Account AI · ATO-compliant PAYG withholding · sabaccountai.com', 50, footerY + 8, { align: 'center', width: pageW })
+
+    doc.end()
+  })
+}
+
 // ── ATO static knowledge ──────────────────────────────────────────────
 const ATO_RULES: Record<string, string> = {
   super: `Super Guarantee (SG) rates:
@@ -346,18 +594,50 @@ ${inv.has_gst ? `<tr><td style="padding:6px 0;color:#57534E;font-size:13px;borde
 <p style="color:#A09590;font-size:11px;text-align:center;margin-top:24px">Generated by SAB Account AI · ATO-compliant invoicing</p>
 </td></tr></table></body></html>`
 
+        const pdfBuffer = await generateInvoicePdf({
+          invoice_number:   inv.invoice_number   as string,
+          business_name:    inv.business_name    as string,
+          business_abn:     inv.business_abn     as string | null,
+          business_address: inv.business_address as string | null,
+          business_email:   inv.business_email   as string | null,
+          business_phone:   inv.business_phone   as string | null,
+          client_name:      inv.client_name      as string,
+          client_email:     inv.client_email     as string | null,
+          client_address:   inv.client_address   as string | null,
+          issue_date:       inv.issue_date       as string,
+          due_date:         inv.due_date         as string,
+          line_items:       inv.line_items       as Array<{ description: string; qty: number; unit_price: number; gst_amount: number; total: number }>,
+          has_gst:          inv.has_gst          as boolean,
+          subtotal_ex_gst:  inv.subtotal_ex_gst  as number,
+          total_gst:        inv.total_gst        as number,
+          total_inc_gst:    inv.total_inc_gst    as number,
+          payment_terms:    inv.payment_terms    as string | null,
+          bank_name:        inv.bank_name        as string | null,
+          account_name:     inv.account_name     as string | null,
+          bsb:              inv.bsb              as string | null,
+          account_number:   inv.account_number   as string | null,
+          notes:            inv.notes            as string | null,
+        })
+
+        const pdfFilename = `Invoice-${inv.invoice_number as string}-${(inv.business_name as string).replace(/\s+/g, '-')}.pdf`
+
         const { error: sendErr } = await resend.emails.send({
           from:    process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
           to:      [clientEmail],
           subject: `Invoice ${inv.invoice_number as string} from ${inv.business_name as string}`,
           html,
+          attachments: [{
+            filename:    pdfFilename,
+            content:     pdfBuffer.toString('base64'),
+            contentType: 'application/pdf',
+          }],
         })
 
         if (sendErr) throw new Error((sendErr as { message?: string }).message ?? 'Email send failed')
 
         await supabase.from('invoices').update({ status: 'pending' }).eq('id', invoiceId)
 
-        return { ok: true, invoice_number: inv.invoice_number, sent_to: clientEmail, total: fmt(inv.total_inc_gst as number) }
+        return { ok: true, invoice_number: inv.invoice_number, sent_to: clientEmail, total: fmt(inv.total_inc_gst as number), pdf_attached: pdfFilename }
       }
 
       // ── create_payslip ──────────────────────────────────────────
@@ -549,16 +829,46 @@ ${(ps.help_repayment as number) > 0 ? `<tr><td style="padding:6px 0;color:#57534
 <p style="color:#A09590;font-size:11px;text-align:center;margin-top:24px">Generated by SAB Account AI · ATO-compliant PAYG withholding</p>
 </td></tr></table></body></html>`
 
+        const pdfBuffer = await generatePayslipPdf({
+          payslip_number:   ps.payslip_number   as string,
+          employer_name:    ps.employer_name     as string,
+          employer_abn:     ps.employer_abn      as string | null,
+          employee_name:    ps.employee_name     as string,
+          employment_type:  ps.employment_type   as string,
+          pay_cycle:        ps.pay_cycle         as string,
+          pay_period_start: ps.pay_period_start  as string,
+          pay_period_end:   ps.pay_period_end    as string,
+          payment_date:     ps.payment_date      as string,
+          gross_pay:        ps.gross_pay         as number,
+          salary_sacrifice: ps.salary_sacrifice  as number,
+          taxable_gross:    ps.taxable_gross     as number,
+          income_tax:       ps.income_tax        as number,
+          medicare_levy:    ps.medicare_levy     as number,
+          help_repayment:   ps.help_repayment    as number,
+          net_pay:          ps.net_pay           as number,
+          super_sg:         ps.super_sg          as number,
+          super_sal_sac:    ps.super_sal_sac     as number,
+          super_fund_name:  ps.super_fund_name   as string | null,
+          member_number:    ps.member_number     as string | null,
+        })
+
+        const pdfFilename = `Payslip-${ps.payslip_number as string}-${(ps.employee_name as string).replace(/\s+/g, '-')}.pdf`
+
         const { error: sendErr } = await resend.emails.send({
           from:    process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
           to:      [employeeEmail],
           subject: `Your payslip ${ps.payslip_number as string} from ${ps.employer_name as string}`,
           html,
+          attachments: [{
+            filename:    pdfFilename,
+            content:     pdfBuffer.toString('base64'),
+            contentType: 'application/pdf',
+          }],
         })
 
         if (sendErr) throw new Error((sendErr as { message?: string }).message ?? 'Email send failed')
 
-        return { ok: true, payslip_number: ps.payslip_number, sent_to: employeeEmail, net_pay: fmt(ps.net_pay as number) }
+        return { ok: true, payslip_number: ps.payslip_number, sent_to: employeeEmail, net_pay: fmt(ps.net_pay as number), pdf_attached: pdfFilename }
       }
 
       // ── get_bas_position ────────────────────────────────────────
