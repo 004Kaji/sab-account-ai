@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { createBrowserClient } from '@/lib/supabase'
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -117,6 +118,14 @@ function deriveStatus(watcher: WatcherSummary | undefined): Record<string, Syste
 // ── Main page ─────────────────────────────────────────────────────────
 
 export default function AgentPage() {
+  const supabase = createBrowserClient()
+
+  async function authHeader(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return {}
+    return { Authorization: `Bearer ${session.access_token}` }
+  }
+
   const [data, setData]             = useState<DashboardData>({})
   const [loading, setLoading]       = useState(true)
   const [question, setQuestion]     = useState('')
@@ -139,9 +148,10 @@ export default function AgentPage() {
 
   const loadData = useCallback(async () => {
     try {
+      const h = await authHeader()
       const [dashRes, approvalRes] = await Promise.allSettled([
-        fetch('/api/agents/dashboard-data'),
-        fetch('/api/agents/approvals'),
+        fetch('/api/agents/dashboard-data', { headers: h }),
+        fetch('/api/agents/approvals', { headers: h }),
       ])
       if (dashRes.status === 'fulfilled') {
         const json = await dashRes.value.json() as DashboardData
@@ -165,9 +175,10 @@ export default function AgentPage() {
   async function handleApproval(id: string, action: 'approve' | 'reject') {
     setApproving(id)
     try {
+      const h = await authHeader()
       await fetch('/api/agents/approvals', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...h, 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, action }),
       })
       setApprovals(prev => prev.filter(a => a.id !== id))
@@ -179,9 +190,10 @@ export default function AgentPage() {
   async function saveEdit(id: string) {
     setSaving(id)
     try {
+      const h = await authHeader()
       await fetch('/api/agents/approvals', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...h, 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, content: editContent[id] }),
       })
       setApprovals(prev => prev.map(a => a.id === id ? { ...a, content: editContent[id] } : a))
@@ -221,7 +233,8 @@ export default function AgentPage() {
     try {
       const form = new FormData()
       form.append('file', file)
-      const res  = await fetch('/api/agents/upload-image', { method: 'POST', body: form })
+      const h = await authHeader()
+      const res  = await fetch('/api/agents/upload-image', { method: 'POST', headers: h, body: form })
       const data = await res.json() as { url?: string; error?: string }
       if (data.url) {
         await selectImage(id, data.url)

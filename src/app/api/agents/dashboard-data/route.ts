@@ -3,10 +3,20 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 
-export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('Authorization')
+const ADMIN_EMAILS = ['sanjog.basnet02@gmail.com', 'basnet@sabaccountai.com']
+
+async function isAuthorized(req: NextRequest): Promise<boolean> {
+  const header = req.headers.get('Authorization') ?? ''
   const secret = process.env.AGENT_WEBHOOK_SECRET ?? ''
-  if (!secret || authHeader !== `Bearer ${secret}`) {
+  if (secret && header === `Bearer ${secret}`) return true
+  const token = header.replace('Bearer ', '')
+  if (!token) return false
+  const { data: { user }, error } = await createServiceClient().auth.getUser(token)
+  return !error && !!user && ADMIN_EMAILS.includes(user.email ?? '')
+}
+
+export async function GET(req: NextRequest) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {

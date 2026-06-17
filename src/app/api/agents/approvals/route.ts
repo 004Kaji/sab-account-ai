@@ -6,11 +6,21 @@ import { createServiceClient } from '@/lib/supabase'
 import { updateApprovalStatus, getApprovalQueue } from '@/lib/agents/toolkits/sab-marketing-toolkit'
 import { sparkPostApproved } from '@/lib/agents/sub/spark'
 
+const ADMIN_EMAILS = ['sanjog.basnet02@gmail.com', 'basnet@sabaccountai.com']
+
+async function isAuthorized(req: NextRequest): Promise<boolean> {
+  const header = req.headers.get('Authorization') ?? ''
+  const secret = process.env.AGENT_WEBHOOK_SECRET ?? ''
+  if (secret && header === `Bearer ${secret}`) return true
+  const token = header.replace('Bearer ', '')
+  if (!token) return false
+  const { data: { user }, error } = await createServiceClient().auth.getUser(token)
+  return !error && !!user && ADMIN_EMAILS.includes(user.email ?? '')
+}
+
 // GET /api/agents/approvals — returns pending approval queue
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('Authorization')
-  const secret = process.env.AGENT_WEBHOOK_SECRET ?? ''
-  if (!secret || authHeader !== `Bearer ${secret}`) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
@@ -24,9 +34,7 @@ export async function GET(req: NextRequest) {
 
 // PATCH /api/agents/approvals — edit content or image of a pending draft
 export async function PATCH(req: NextRequest) {
-  const authHeader = req.headers.get('Authorization')
-  const secret = process.env.AGENT_WEBHOOK_SECRET ?? ''
-  if (!secret || authHeader !== `Bearer ${secret}`) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
@@ -52,6 +60,9 @@ export async function PATCH(req: NextRequest) {
 
 // POST /api/agents/approvals — approve or reject a draft
 export async function POST(req: NextRequest) {
+  if (!(await isAuthorized(req))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   try {
     const body = (await req.json().catch(() => ({}))) as {
       id?: string
