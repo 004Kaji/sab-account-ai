@@ -194,6 +194,37 @@ async function testDatabaseWrite(): Promise<ScoutTestResult> {
   }
 }
 
+// ── Notify Flux of a detected failure ─────────────────────────────────
+// Fire-and-retry: 3 attempts with 2s delay. Returns true if Flux acknowledged.
+// Never throws — Scout must complete its own run regardless.
+
+async function notifyFlux(params: {
+  test_name:     string
+  error_message: string
+  severity:      'critical' | 'warning'
+}): Promise<boolean> {
+  const baseUrl = getBaseUrl()
+  const secret  = process.env.AGENT_WEBHOOK_SECRET ?? ''
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`${baseUrl}/api/agents/flux`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${secret}`,
+        },
+        body:   JSON.stringify({ trigger: 'scout_incident', ...params }),
+        signal: AbortSignal.timeout(10000),
+      })
+      if (res.ok) return true
+      if (res.status < 500) return false  // 4xx — won't improve on retry
+    } catch { /* network/timeout — retry */ }
+    if (attempt < 3) await new Promise(r => setTimeout(r, 2000))
+  }
+  return false
+}
+
 // ── Main scout run ─────────────────────────────────────────────────────
 
 export async function runScout(): Promise<ScoutReport> {
@@ -255,16 +286,26 @@ export async function runScout(): Promise<ScoutReport> {
       summary,
     }
 
-    // Alerts
+    // Alerts + notify Flux for diagnosis
     if (criticalFail) {
       const criticalTests = failedTests.filter(t =>
         t.name.includes('PAYG') || t.name.includes('Invoice') || t.name.includes('Auth') || t.name.includes('Database')
       )
       const body = criticalTests.map(t => `${t.name}\nExpected: ${t.expected}\nActual: ${t.actual}\nFix: ${t.fix ?? 'investigate'}`).join('\n\n')
       await sendAlert('CRITICAL: Scout found breaking issues', body, 'urgent', 'scout')
+      await Promise.allSettled(failedTests.map(async t => {
+        const notifyStart = Date.now()
+        const ok = await notifyFlux({ test_name: t.name, error_message: `Expected: ${t.expected}\nActual: ${t.actual}\nFix: ${t.fix ?? 'investigate'}`, severity: 'critical' })
+        await logSubAgent('scout', 'notify_flux', t.name, ok ? 'Flux notified successfully' : 'Flux notification failed after 3 retries', Date.now() - notifyStart, ok)
+      }))
     } else if (failedTests.length > 0) {
       const body = failedTests.map(t => `${t.name}: ${t.actual} (fix: ${t.fix ?? 'investigate'})`).join('\n')
       await sendAlert('Scout: product issues found', body, 'warning', 'scout')
+      await Promise.allSettled(failedTests.map(async t => {
+        const notifyStart = Date.now()
+        const ok = await notifyFlux({ test_name: t.name, error_message: `Expected: ${t.expected}\nActual: ${t.actual}\nFix: ${t.fix ?? 'investigate'}`, severity: 'warning' })
+        await logSubAgent('scout', 'notify_flux', t.name, ok ? 'Flux notified successfully' : 'Flux notification failed after 3 retries', Date.now() - notifyStart, ok)
+      }))
     }
 
     await logAgentAction({
@@ -298,6 +339,7 @@ export async function runScout(): Promise<ScoutReport> {
         'urgent',
         'scout'
       )
+      await notifyFlux({ test_name: 'Scout runtime error', error_message: errorMessage, severity: 'critical' })
     } catch {
       // best-effort — don't mask the original error
     }

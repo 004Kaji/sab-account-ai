@@ -362,3 +362,80 @@ Propose a minimal fix. Return the complete corrected file content.`,
   await logSubAgent('flux', 'propose_fix', params.errorMessage.slice(0, 100), parsed.summary, Date.now() - start, true)
   return { prUrl: pr.url, summary: parsed.summary }
 }
+
+// ── Scout incident handler ────────────────────────────────────────────
+// Called when Scout detects a failure and pings /api/agents/flux.
+// Diagnoses code vs infrastructure, then takes the appropriate action.
+
+export async function fluxHandleScoutIncident(params: {
+  test_name:     string
+  error_message: string
+  severity:      'critical' | 'warning'
+}): Promise<void> {
+  const start = Date.now()
+  const supabase = createServiceClient()
+
+  const diagnosis = await callClaude({
+    systemPrompt: `${FLUX_IDENTITY}
+You are triaging a failed product test reported by Scout.
+Classify the root cause as either "code" or "infrastructure".
+- "code": bug in application logic, broken calculation, bad API handler, missing env var wired incorrectly in code
+- "infrastructure": database down, network timeout, third-party service outage, missing secret in Vercel/environment
+
+Return ONLY valid JSON:
+{
+  "type": "code" | "infrastructure",
+  "diagnosis": "one sentence explaining the cause",
+  "recommended_action": "one sentence on what to do"
+}`,
+    userMessage: `Scout reported a failed test.
+
+Test name: ${params.test_name}
+Error: ${params.error_message}
+Severity: ${params.severity}
+
+Is this a code issue or infrastructure issue?`,
+    maxTokens: 300,
+    expectJson: true,
+  })
+
+  type DiagnosisJSON = { type: 'code' | 'infrastructure'; diagnosis: string; recommended_action: string }
+  let parsed: DiagnosisJSON
+  try {
+    parsed = JSON.parse(diagnosis) as DiagnosisJSON
+  } catch {
+    parsed = { type: 'infrastructure', diagnosis: diagnosis.slice(0, 200), recommended_action: 'Investigate manually.' }
+  }
+
+  if (parsed.type === 'code' && process.env.GITHUB_TOKEN && process.env.GITHUB_REPO) {
+    const issue = await githubCreateIssue(
+      `[Scout→Flux] ${params.test_name} failed`,
+      `## Scout Incident Report\n\n**Test:** ${params.test_name}\n**Severity:** ${params.severity}\n**Error:** ${params.error_message}\n\n## Flux Diagnosis\n\n${parsed.diagnosis}\n\n**Recommended action:** ${parsed.recommended_action}\n\n---\n*Auto-filed by Flux in response to Scout alert*`,
+      ['agent-reported', 'scout-incident'],
+    ).catch(() => ({ url: '' }))
+
+    await sendAlert(
+      `Flux: code issue detected in "${params.test_name}"`,
+      `Scout reported a ${params.severity} failure.\n\nDiagnosis: ${parsed.diagnosis}\nAction: ${parsed.recommended_action}${issue.url ? `\n\nGitHub issue: ${issue.url}` : ''}`,
+      'warning', 'flux',
+    )
+  } else {
+    await sendAlert(
+      `Flux: infrastructure issue detected in "${params.test_name}"`,
+      `Scout reported a ${params.severity} failure.\n\nDiagnosis: ${parsed.diagnosis}\n\nRecommended action: ${parsed.recommended_action}`,
+      params.severity === 'critical' ? 'urgent' : 'warning', 'flux',
+    )
+  }
+
+  await supabase.from('agent_error_log').insert({
+    error_type:    'scout_incident',
+    error_message: `${params.test_name}: ${params.error_message}`.slice(0, 500),
+    file_name:     'scout.ts',
+    frequency:     1,
+    severity:      params.severity,
+    alerted:       true,
+    resolved:      false,
+  })
+
+  await logSubAgent('flux', 'handle_scout_incident', params.test_name, `${parsed.type}: ${parsed.diagnosis}`, Date.now() - start, true)
+}
