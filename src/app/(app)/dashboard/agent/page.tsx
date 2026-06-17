@@ -276,7 +276,7 @@ export default function AgentPage() {
 
   const watcher     = data.watcher?.report
   const statuses    = deriveStatus(watcher)
-  const subAgents   = ['flux', 'scout', 'spark', 'atlas', 'lift', 'relay']
+  const subAgents   = ['flux', 'scout', 'spark', 'atlas', 'lift', 'relay', 'kite', 'bridge']
   const lastChecked = data.watcher?.created_at ? timeAgo(data.watcher.created_at) : 'never'
 
   return (
@@ -416,6 +416,7 @@ export default function AgentPage() {
                 flux:  'engineering', scout: 'testing',
                 spark: 'marketing',  atlas: 'intelligence',
                 lift:  'retention',  relay: 'personal ops',
+                kite:  'customer finding', bridge: 'accountant partnerships',
               }
               // Amber if last run > 24h, red if failed, green if recent+passing, grey if never run
               let dotColor = '#9ca3af'
