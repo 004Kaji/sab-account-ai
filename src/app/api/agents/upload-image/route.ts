@@ -4,6 +4,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 
 export async function POST(req: NextRequest) {
+  const authHeader = req.headers.get('Authorization')
+  const secret = process.env.AGENT_WEBHOOK_SECRET ?? ''
+  if (!secret || authHeader !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   try {
     const formData = await req.formData()
     const file = formData.get('file') as File | null

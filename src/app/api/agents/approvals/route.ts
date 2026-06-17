@@ -7,7 +7,12 @@ import { updateApprovalStatus, getApprovalQueue } from '@/lib/agents/toolkits/sa
 import { sparkPostApproved } from '@/lib/agents/sub/spark'
 
 // GET /api/agents/approvals — returns pending approval queue
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get('Authorization')
+  const secret = process.env.AGENT_WEBHOOK_SECRET ?? ''
+  if (!secret || authHeader !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   try {
     const queue = await getApprovalQueue()
     return NextResponse.json({ success: true, queue })
@@ -19,6 +24,11 @@ export async function GET() {
 
 // PATCH /api/agents/approvals — edit content or image of a pending draft
 export async function PATCH(req: NextRequest) {
+  const authHeader = req.headers.get('Authorization')
+  const secret = process.env.AGENT_WEBHOOK_SECRET ?? ''
+  if (!secret || authHeader !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   try {
     const body = (await req.json().catch(() => ({}))) as {
       id?: string

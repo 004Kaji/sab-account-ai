@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import fs from 'fs'
 import path from 'path'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 import { readMasterContext, sendAlert, logAgentAction, callClaude } from '@/lib/agents/utils'
@@ -23,7 +23,12 @@ type OutreachRow      = { name: string; status: string; replied: boolean; emaile
 type ErrorRow         = { error_type: string | null; severity: string | null; resolved: boolean; frequency: number }
 type RetentionOutcomeRow = { outcome: string | null }
 
-export async function POST() {
+export async function POST(req: NextRequest) {
+  const authHeader = req.headers.get('Authorization')
+  const secret = process.env.AGENT_WEBHOOK_SECRET ?? ''
+  if (!secret || authHeader !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   const start = Date.now()
 
   try {

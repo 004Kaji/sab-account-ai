@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, Fragment } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -77,6 +77,72 @@ type OutreachContent = {
   message: string
 }
 
+// ── Content Queue Types ────────────────────────────────────────────────────
+
+type ContentQueueData = {
+  blogPosts:      BlogPost[]
+  communityPosts: CommunityPost[]
+  tiktokScripts:  TiktokScript[]
+  kiteReplies:    KiteReply[]
+  outreachStats:  OutreachStats
+  bridgeReport:   BridgeReport | null
+}
+
+type BlogPost = {
+  id: string
+  title: string | null
+  created_at: string
+  content: string
+}
+
+type CommunityPost = {
+  id: string
+  segment: string
+  platform: string
+  content: string
+  created_at: string
+}
+
+type TiktokScript = {
+  id: string
+  segment: string
+  hook: string
+  script_body: string
+  cta: string
+  created_at: string
+}
+
+type KiteReply = {
+  id: string
+  source_platform: string
+  source_url: string
+  original_post_snippet: string | null
+  draft_reply: string
+  created_at: string
+}
+
+type OutreachStats = {
+  total:   number
+  emailed: number
+  replied: number
+  pending: number
+  tpb:     number
+  tavily:  number
+  touch1:  number
+  touch2:  number
+  touch3:  number
+}
+
+type BridgeReport = {
+  id: string
+  created_at: string
+  week_starting: string
+  accountant_email: string
+  referral_count: number
+  commission_owed: number
+  top_referrer: string | null
+}
+
 const OUTREACH_TARGETS = [
   { key: 'accountant',    label: 'Accountant / Bookkeeper' },
   { key: 'sole_trader',   label: 'Sole Trader'             },
@@ -92,8 +158,11 @@ const TONES = [
   { key: 'story',    label: 'Founder story'       },
 ]
 
-const TABS = ['Overview', 'Users', 'Referrals', 'Content'] as const
+const TABS = ['Overview', 'Users', 'Referrals', 'Content', 'Content Queue'] as const
 type Tab = typeof TABS[number]
+
+const QUEUE_SUBTABS = ['Blog Posts', 'Community', 'TikTok', 'Kite Replies', 'Outreach'] as const
+type QueueSubtab = typeof QUEUE_SUBTABS[number]
 
 const PLAN_FILTERS = ['All', 'Free', 'Starter', 'Pro', 'Trialing', 'Past Due'] as const
 
@@ -127,6 +196,7 @@ export default function AdminPage() {
   const [tab, setTab]             = useState<Tab>('Overview')
   const [stats, setStats]         = useState<Stats | null>(null)
   const [statsLoading, setStatsLoading] = useState(true)
+  const [queueBadge, setQueueBadge] = useState<number | null>(null)
 
   async function authHeader(): Promise<Record<string, string>> {
     const { data: { session } } = await supabase.auth.getSession()
@@ -182,6 +252,11 @@ export default function AdminPage() {
               }}
             >
               {t}
+              {t === 'Content Queue' && queueBadge !== null && queueBadge > 0 && (
+                <span style={{ marginLeft: '0.4rem', background: 'var(--ember)', color: 'white', fontSize: '0.62rem', fontWeight: 700, padding: '0.1rem 0.45rem', borderRadius: 10, verticalAlign: 'middle' }}>
+                  {queueBadge}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -190,7 +265,8 @@ export default function AdminPage() {
         {tab === 'Overview'  && <OverviewTab  stats={stats} loading={statsLoading} />}
         {tab === 'Users'     && <UsersTab     authHeader={authHeader} />}
         {tab === 'Referrals' && <ReferralsTab stats={stats} loading={statsLoading} />}
-        {tab === 'Content'   && <ContentTab   supabase={supabase} />}
+        {tab === 'Content'        && <ContentTab      supabase={supabase} />}
+        {tab === 'Content Queue'  && <ContentQueueTab authHeader={authHeader} onBadgeCount={setQueueBadge} />}
       </div>
     </div>
   )
@@ -864,6 +940,526 @@ function VideoCard({ video }: { video: VideoContent }) {
           <p style={{ fontSize: '0.9rem', color: 'var(--char)', margin: 0, fontWeight: 500 }}>{video.cta}</p>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Content Queue Tab ──────────────────────────────────────────────────────
+
+function ContentQueueTab({
+  authHeader,
+  onBadgeCount,
+}: {
+  authHeader: () => Promise<Record<string, string>>
+  onBadgeCount: (n: number) => void
+}) {
+  const [subtab, setSubtab]   = useState<QueueSubtab>('Blog Posts')
+  const [data, setData]       = useState<ContentQueueData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [acting, setActing]   = useState<string | null>(null)
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const h = await authHeader()
+      const res = await fetch('/api/admin/content-queue', { headers: h })
+      const d = await res.json() as ContentQueueData
+      setData(d)
+      onBadgeCount(
+        (d.blogPosts?.length ?? 0) +
+        (d.communityPosts?.length ?? 0) +
+        (d.tiktokScripts?.length ?? 0) +
+        (d.kiteReplies?.length ?? 0),
+      )
+    } catch {
+      // ignore — show stale data or null
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  async function doAction(action: string, id: string, table: string) {
+    setActing(id)
+    try {
+      const h = await authHeader()
+      await fetch('/api/admin/content-queue', {
+        method: 'POST',
+        headers: { ...h, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, id, table }),
+      })
+      await load()
+    } finally {
+      setActing(null)
+    }
+  }
+
+  if (loading && !data) return <LoadingSpinner />
+  if (!data) return <p style={{ color: 'var(--text2)' }}>Failed to load queue.</p>
+
+  const subCounts: Record<QueueSubtab, number> = {
+    'Blog Posts':   data.blogPosts.length,
+    'Community':    data.communityPosts.length,
+    'TikTok':       data.tiktokScripts.length,
+    'Kite Replies': data.kiteReplies.length,
+    'Outreach':     0,
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
+        {QUEUE_SUBTABS.map(t => {
+          const count = subCounts[t]
+          const active = subtab === t
+          return (
+            <button
+              key={t}
+              onClick={() => setSubtab(t)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.4rem',
+                padding: '0.45rem 1.1rem', borderRadius: 20, fontSize: '0.85rem', cursor: 'pointer',
+                border: active ? '1.5px solid var(--ember)' : '1.5px solid var(--border)',
+                background: active ? 'var(--ember-p)' : 'white',
+                color: active ? 'var(--ember)' : 'var(--text2)',
+                fontFamily: 'var(--font-dm-sans)', fontWeight: active ? 600 : 400,
+                transition: 'all 0.15s',
+              }}
+            >
+              {t}
+              {count > 0 && (
+                <span style={{
+                  background: active ? 'var(--ember)' : 'rgba(200,75,47,0.15)',
+                  color: active ? 'white' : 'var(--ember)',
+                  fontSize: '0.65rem', fontWeight: 700,
+                  padding: '0.1rem 0.45rem', borderRadius: 10, lineHeight: 1,
+                }}>
+                  {count}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {subtab === 'Blog Posts'   && <BlogPostsQueue   posts={data.blogPosts}       acting={acting} onAction={doAction} />}
+      {subtab === 'Community'    && <CommunityQueue   posts={data.communityPosts}  acting={acting} onAction={doAction} />}
+      {subtab === 'TikTok'       && <TikTokQueue      scripts={data.tiktokScripts} acting={acting} onAction={doAction} />}
+      {subtab === 'Kite Replies' && <KiteQueue        replies={data.kiteReplies}   acting={acting} onAction={doAction} />}
+      {subtab === 'Outreach'     && <OutreachStatsView stats={data.outreachStats}  report={data.bridgeReport} />}
+    </div>
+  )
+}
+
+// ── Shared queue helpers ───────────────────────────────────────────────────
+
+function EmptyQueue() {
+  return (
+    <div style={{
+      padding: '3rem', textAlign: 'center',
+      background: 'white', border: '1px solid var(--border)',
+      borderRadius: 'var(--r2)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+    }}>
+      <p style={{ color: 'var(--text3)', fontSize: '0.9rem', margin: 0 }}>
+        No items waiting for review ✓
+      </p>
+    </div>
+  )
+}
+
+function QueueActionBtn({
+  label, color, disabled, onClick,
+}: {
+  label: string; color: 'green' | 'red'; disabled: boolean; onClick: () => void
+}) {
+  const g = color === 'green'
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: '0.3rem 0.85rem', borderRadius: 'var(--r)',
+        fontSize: '0.78rem', fontFamily: 'var(--font-dm-sans)', fontWeight: 600,
+        cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
+        border: g ? '1px solid rgba(74,112,85,0.35)' : '1px solid rgba(200,75,47,0.35)',
+        background: g ? 'rgba(74,112,85,0.08)' : 'rgba(200,75,47,0.08)',
+        color: g ? 'var(--sage)' : 'var(--ember)',
+        opacity: disabled ? 0.5 : 1, transition: 'all 0.15s',
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+const Q_TH: React.CSSProperties = {
+  padding: '0.75rem 1rem', textAlign: 'left',
+  fontWeight: 600, color: 'var(--text2)',
+  fontSize: '0.75rem', letterSpacing: '0.05em',
+  textTransform: 'uppercase', whiteSpace: 'nowrap',
+}
+
+const Q_CARD: React.CSSProperties = {
+  background: 'white', border: '1px solid var(--border)',
+  borderRadius: 'var(--r2)', overflow: 'hidden',
+  boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+}
+
+// ── Blog Posts queue ───────────────────────────────────────────────────────
+
+function BlogPostsQueue({
+  posts, acting, onAction,
+}: {
+  posts: BlogPost[]
+  acting: string | null
+  onAction: (action: string, id: string, table: string) => void
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  if (posts.length === 0) return <EmptyQueue />
+  return (
+    <div style={Q_CARD}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--cream)' }}>
+            {['Title', 'Created', 'Actions'].map(h => <th key={h} style={Q_TH}>{h}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {posts.map(p => (
+            <Fragment key={p.id}>
+              <tr
+                style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                onClick={() => setExpanded(expanded === p.id ? null : p.id)}
+              >
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--char)', fontWeight: 500 }}>
+                  <span style={{ marginRight: '0.5rem', color: 'var(--text3)', fontSize: '0.7rem' }}>
+                    {expanded === p.id ? '▼' : '▶'}
+                  </span>
+                  {p.title ?? <em style={{ color: 'var(--text3)' }}>Untitled</em>}
+                </td>
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+                  {fmtDate(p.created_at)}
+                </td>
+                <td style={{ padding: '0.85rem 1rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem' }} onClick={e => e.stopPropagation()}>
+                    <QueueActionBtn label="Publish" color="green" disabled={acting === p.id} onClick={() => onAction('publish', p.id, 'blog_posts')} />
+                    <QueueActionBtn label="Dismiss" color="red"   disabled={acting === p.id} onClick={() => onAction('dismiss', p.id, 'blog_posts')} />
+                  </div>
+                </td>
+              </tr>
+              {expanded === p.id && (
+                <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--cream)' }}>
+                  <td colSpan={3} style={{ padding: '1.25rem 1.5rem' }}>
+                    <pre style={{
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0,
+                      fontFamily: 'var(--font-dm-sans)', fontSize: '0.88rem',
+                      color: 'var(--char)', lineHeight: 1.7, maxHeight: 400, overflowY: 'auto',
+                    }}>
+                      {p.content}
+                    </pre>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── Community Posts queue ──────────────────────────────────────────────────
+
+function CommunityQueue({
+  posts, acting, onAction,
+}: {
+  posts: CommunityPost[]
+  acting: string | null
+  onAction: (action: string, id: string, table: string) => void
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  if (posts.length === 0) return <EmptyQueue />
+  return (
+    <div style={Q_CARD}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--cream)' }}>
+            {['Segment', 'Platform', 'Preview', 'Created', 'Actions'].map(h => <th key={h} style={Q_TH}>{h}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {posts.map(p => (
+            <Fragment key={p.id}>
+              <tr
+                style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                onClick={() => setExpanded(expanded === p.id ? null : p.id)}
+              >
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--char)' }}>
+                  <span style={{ marginRight: '0.4rem', color: 'var(--text3)', fontSize: '0.7rem' }}>
+                    {expanded === p.id ? '▼' : '▶'}
+                  </span>
+                  {p.segment.replace(/_/g, ' ')}
+                </td>
+                <td style={{ padding: '0.85rem 1rem' }}>
+                  <Badge label={p.platform} />
+                </td>
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--text2)', maxWidth: 240 }}>
+                  {p.content.slice(0, 80)}{p.content.length > 80 ? '…' : ''}
+                </td>
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+                  {fmtDate(p.created_at)}
+                </td>
+                <td style={{ padding: '0.85rem 1rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem' }} onClick={e => e.stopPropagation()}>
+                    <QueueActionBtn label="Mark Posted" color="green" disabled={acting === p.id} onClick={() => onAction('posted', p.id, 'community_posts')} />
+                    <QueueActionBtn label="Dismiss"     color="red"   disabled={acting === p.id} onClick={() => onAction('dismiss', p.id, 'community_posts')} />
+                  </div>
+                </td>
+              </tr>
+              {expanded === p.id && (
+                <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--cream)' }}>
+                  <td colSpan={5} style={{ padding: '1.25rem 1.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                      <CopyButton text={p.content} />
+                    </div>
+                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'var(--font-dm-sans)', fontSize: '0.88rem', color: 'var(--char)', lineHeight: 1.7 }}>
+                      {p.content}
+                    </pre>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── TikTok Scripts queue ───────────────────────────────────────────────────
+
+function TikTokQueue({
+  scripts, acting, onAction,
+}: {
+  scripts: TiktokScript[]
+  acting: string | null
+  onAction: (action: string, id: string, table: string) => void
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  if (scripts.length === 0) return <EmptyQueue />
+  return (
+    <div style={Q_CARD}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--cream)' }}>
+            {['Segment', 'Hook', 'Created', 'Actions'].map(h => <th key={h} style={Q_TH}>{h}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {scripts.map(s => {
+            const fullText = `SEGMENT: ${s.segment}\n\nHOOK: ${s.hook}\n\nSCRIPT:\n${s.script_body}\n\nCTA: ${s.cta}`
+            return (
+              <Fragment key={s.id}>
+                <tr
+                  style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                  onClick={() => setExpanded(expanded === s.id ? null : s.id)}
+                >
+                  <td style={{ padding: '0.85rem 1rem', color: 'var(--char)' }}>
+                    <span style={{ marginRight: '0.4rem', color: 'var(--text3)', fontSize: '0.7rem' }}>
+                      {expanded === s.id ? '▼' : '▶'}
+                    </span>
+                    {s.segment.replace(/_/g, ' ')}
+                  </td>
+                  <td style={{ padding: '0.85rem 1rem', color: 'var(--text2)', maxWidth: 260 }}>
+                    {s.hook.slice(0, 70)}{s.hook.length > 70 ? '…' : ''}
+                  </td>
+                  <td style={{ padding: '0.85rem 1rem', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+                    {fmtDate(s.created_at)}
+                  </td>
+                  <td style={{ padding: '0.85rem 1rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem' }} onClick={e => e.stopPropagation()}>
+                      <QueueActionBtn label="Mark Filmed" color="green" disabled={acting === s.id} onClick={() => onAction('posted', s.id, 'tiktok_scripts')} />
+                      <QueueActionBtn label="Dismiss"     color="red"   disabled={acting === s.id} onClick={() => onAction('dismiss', s.id, 'tiktok_scripts')} />
+                    </div>
+                  </td>
+                </tr>
+                {expanded === s.id && (
+                  <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--cream)' }}>
+                    <td colSpan={4} style={{ padding: '1.25rem 1.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                        <CopyButton text={fullText} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        <div>
+                          <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 0.3rem' }}>Hook</p>
+                          <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--char)', margin: 0 }}>&ldquo;{s.hook}&rdquo;</p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 0.3rem' }}>Script</p>
+                          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'var(--font-dm-sans)', fontSize: '0.88rem', color: 'var(--char)', lineHeight: 1.7 }}>
+                            {s.script_body}
+                          </pre>
+                        </div>
+                        <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '0.75rem 1rem' }}>
+                          <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 0.25rem' }}>CTA</p>
+                          <p style={{ fontSize: '0.9rem', color: 'var(--char)', margin: 0, fontWeight: 500 }}>{s.cta}</p>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── Kite Replies queue ─────────────────────────────────────────────────────
+
+function KiteQueue({
+  replies, acting, onAction,
+}: {
+  replies: KiteReply[]
+  acting: string | null
+  onAction: (action: string, id: string, table: string) => void
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  if (replies.length === 0) return <EmptyQueue />
+  return (
+    <div style={Q_CARD}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--cream)' }}>
+            {['Platform', 'Post Snippet', 'Created', 'Actions'].map(h => <th key={h} style={Q_TH}>{h}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {replies.map(r => (
+            <Fragment key={r.id}>
+              <tr
+                style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                onClick={() => setExpanded(expanded === r.id ? null : r.id)}
+              >
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--char)' }}>
+                  <span style={{ marginRight: '0.4rem', color: 'var(--text3)', fontSize: '0.7rem' }}>
+                    {expanded === r.id ? '▼' : '▶'}
+                  </span>
+                  {r.source_platform}
+                </td>
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--text2)', maxWidth: 280 }}>
+                  {r.original_post_snippet
+                    ? r.original_post_snippet.slice(0, 80) + (r.original_post_snippet.length > 80 ? '…' : '')
+                    : <em style={{ color: 'var(--text3)' }}>—</em>}
+                </td>
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+                  {fmtDate(r.created_at)}
+                </td>
+                <td style={{ padding: '0.85rem 1rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem' }} onClick={e => e.stopPropagation()}>
+                    <QueueActionBtn label="Mark Posted" color="green" disabled={acting === r.id} onClick={() => onAction('posted', r.id, 'kite_replies')} />
+                    <QueueActionBtn label="Dismiss"     color="red"   disabled={acting === r.id} onClick={() => onAction('dismiss', r.id, 'kite_replies')} />
+                  </div>
+                </td>
+              </tr>
+              {expanded === r.id && (
+                <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--cream)' }}>
+                  <td colSpan={4} style={{ padding: '1.25rem 1.5rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+                      <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1rem' }}>
+                        <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 0.5rem' }}>
+                          Original Post
+                        </p>
+                        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'var(--font-dm-sans)', fontSize: '0.85rem', color: 'var(--char)', lineHeight: 1.65 }}>
+                          {r.original_post_snippet ?? 'No snippet captured.'}
+                        </pre>
+                        <a href={r.source_url} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--ember)', textDecoration: 'underline' }}>
+                          View original →
+                        </a>
+                      </div>
+                      <div style={{ background: 'white', border: '1px solid rgba(74,112,85,0.3)', borderRadius: 'var(--r)', padding: '1rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--sage)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: 0 }}>
+                            Draft Reply
+                          </p>
+                          <CopyButton text={r.draft_reply} />
+                        </div>
+                        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'var(--font-dm-sans)', fontSize: '0.85rem', color: 'var(--char)', lineHeight: 1.65 }}>
+                          {r.draft_reply}
+                        </pre>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── Outreach Stats view ────────────────────────────────────────────────────
+
+function OutreachStatsView({
+  stats, report,
+}: {
+  stats: OutreachStats
+  report: BridgeReport | null
+}) {
+  return (
+    <div>
+      <div style={gridStyle(4)}>
+        <StatCard label="Total Contacts" value={stats.total}   sub="in outreach DB" />
+        <StatCard label="Emailed"        value={stats.emailed} sub="touch 1+ sent" accent />
+        <StatCard label="Replied"        value={stats.replied} sub="responded" />
+        <StatCard label="Pending"        value={stats.pending} sub="not yet emailed" warn />
+      </div>
+
+      <SectionLabel>Source</SectionLabel>
+      <div style={gridStyle(2)}>
+        <StatCard label="TPB Register"  value={stats.tpb}    sub="verified licensed accountants" accent />
+        <StatCard label="Tavily Search" value={stats.tavily} sub="scraped via web search" />
+      </div>
+
+      <SectionLabel>Sequence Progress</SectionLabel>
+      <div style={gridStyle(3)}>
+        <StatCard label="Touch 1 Sent" value={stats.touch1} sub="day 0 — intro email" />
+        <StatCard label="Touch 2 Sent" value={stats.touch2} sub="day 4 — follow-up" />
+        <StatCard label="Touch 3 Sent" value={stats.touch3} sub="day 8 — final touch" />
+      </div>
+
+      {report && (
+        <>
+          <SectionLabel>Latest Bridge Report</SectionLabel>
+          <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: 'var(--r2)', padding: '1.25rem', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem' }}>
+              <div>
+                <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: '0 0 0.25rem' }}>Week Starting</p>
+                <p style={{ fontSize: '0.9rem', color: 'var(--char)', margin: 0, fontWeight: 500 }}>{report.week_starting}</p>
+              </div>
+              <div>
+                <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: '0 0 0.25rem' }}>Referrals</p>
+                <p style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--char)', margin: 0 }}>{report.referral_count}</p>
+              </div>
+              <div>
+                <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: '0 0 0.25rem' }}>Commission</p>
+                <p style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--sage)', margin: 0 }}>${report.commission_owed.toFixed(2)}</p>
+              </div>
+              {report.top_referrer && (
+                <div>
+                  <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: '0 0 0.25rem' }}>Top Referrer</p>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--char)', margin: 0, fontWeight: 500 }}>{report.top_referrer}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

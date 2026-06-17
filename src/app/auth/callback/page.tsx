@@ -13,6 +13,15 @@ export default function AuthCallbackPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
+    // Check for OAuth error returned by Supabase/Google in the query string
+    const params = new URLSearchParams(window.location.search)
+    const oauthError = params.get('error')
+    const oauthDesc  = params.get('error_description')
+    if (oauthError) {
+      setError(oauthDesc ? decodeURIComponent(oauthDesc.replace(/\+/g, ' ')) : 'Sign in failed. Please try again.')
+      return
+    }
+
     const supabase = createBrowserClient()
 
     // Listen for Supabase to process the OAuth token from the URL fragment

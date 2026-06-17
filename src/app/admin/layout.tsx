@@ -16,22 +16,40 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [supabase] = useState(() => createBrowserClient())
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // onAuthStateChange fires INITIAL_SESSION on subscribe with whatever session
+    // is in storage — eliminating the race where getSession() returns null briefly
+    // after the OAuth redirect before the session is committed to localStorage.
+    // SIGNED_IN also fires for late-arriving sessions (e.g. mid-navigation).
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setReady(false)
+        if (pathname !== '/admin/login') router.replace('/admin/login')
+        return
+      }
+
+      if (event !== 'INITIAL_SESSION' && event !== 'SIGNED_IN') return
+
       if (!session) {
         if (pathname !== '/admin/login') router.replace('/admin/login')
         else setReady(true)
         return
       }
+
       if (!ADMIN_EMAILS.includes(session.user.email ?? '')) {
         setDenied(true)
         return
       }
+
       if (pathname === '/admin/login') {
+        setReady(true)
         router.replace('/admin')
         return
       }
+
       setReady(true)
     })
+
+    return () => subscription.unsubscribe()
   }, [pathname])
 
   async function signOut() {
