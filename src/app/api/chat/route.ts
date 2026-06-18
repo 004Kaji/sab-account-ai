@@ -271,6 +271,7 @@ export async function POST(req: NextRequest) {
               toolBlock.input as Record<string, unknown>,
               user.id,
               supabase,
+              token,
             )
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'tool_end', tool: toolBlock.name })}\n\n`))
             toolResults.push({ type: 'tool_result', tool_use_id: toolBlock.id, content: JSON.stringify(result) })
