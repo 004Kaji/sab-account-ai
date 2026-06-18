@@ -622,7 +622,7 @@ ${inv.has_gst ? `<tr><td style="padding:6px 0;color:#57534E;font-size:13px;borde
         const pdfFilename = `Invoice-${inv.invoice_number as string}-${(inv.business_name as string).replace(/\s+/g, '-')}.pdf`
 
         const { error: sendErr } = await resend.emails.send({
-          from:    process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+          from:    process.env.EMAIL_FROM || 'onboarding@resend.dev',
           to:      [clientEmail],
           subject: `Invoice ${inv.invoice_number as string} from ${inv.business_name as string}`,
           html,
@@ -855,7 +855,7 @@ ${(ps.help_repayment as number) > 0 ? `<tr><td style="padding:6px 0;color:#57534
         const pdfFilename = `Payslip-${ps.payslip_number as string}-${(ps.employee_name as string).replace(/\s+/g, '-')}.pdf`
 
         const { error: sendErr } = await resend.emails.send({
-          from:    process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+          from:    process.env.EMAIL_FROM || 'onboarding@resend.dev',
           to:      [employeeEmail],
           subject: `Your payslip ${ps.payslip_number as string} from ${ps.employer_name as string}`,
           html,
@@ -1194,7 +1194,7 @@ ${(ps.help_repayment as number) > 0 ? `<tr><td style="padding:6px 0;color:#57534
 </td></tr></table></body></html>`
 
           const { error: sendErr } = await resend.emails.send({
-            from:    process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+            from:    process.env.EMAIL_FROM || 'onboarding@resend.dev',
             to:      [item.employee_email],
             subject: `Your payslip ${ps.payslip_number as string} from ${ps.employer_name as string}`,
             html,
@@ -1307,7 +1307,7 @@ ${(ps.help_repayment as number) > 0 ? `<tr><td style="padding:6px 0;color:#57534
         const filename = `BAS-${periodLabel.replace(/[^a-zA-Z0-9-]/g, '-')}-${((biz?.business_name as string) || 'Business').replace(/\s+/g, '-')}.pdf`
 
         const { error: sendErr } = await resend.emails.send({
-          from:    process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+          from:    process.env.EMAIL_FROM || 'onboarding@resend.dev',
           to:      [accountantEmail],
           subject: `BAS Summary ${periodLabel} — ${(biz?.business_name as string) || 'Your Business'}`,
           html,

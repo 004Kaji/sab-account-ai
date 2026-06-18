@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
 </html>`
 
   const { error } = await resend.emails.send({
-    from: process.env.EMAIL_FROM ?? 'hello@sabaccountai.com',
+    from: process.env.EMAIL_FROM || 'hello@sabaccountai.com',
     to: [to],
     subject: `Payment confirmed — ${invoiceNumber.replace(/[\r\n]/g, '')} from ${businessName.replace(/[\r\n]/g, '')} (${amount})`,
     html,

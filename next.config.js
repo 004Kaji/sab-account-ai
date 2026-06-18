@@ -37,7 +37,12 @@ const noindexRoutes = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ['jspdf'],
+  serverExternalPackages: ['jspdf', 'pdfkit'],
+  outputFileTracingIncludes: {
+    '/api/chat':                   ['./node_modules/pdfkit/js/data/**/*'],
+    '/api/email/bas':              ['./node_modules/pdfkit/js/data/**/*'],
+    '/api/cron/bas-reminder':      ['./node_modules/pdfkit/js/data/**/*'],
+  },
   eslint: { ignoreDuringBuilds: true }, // ESLint 9 flat config; run `npx eslint src/` separately
   async headers() {
     return [

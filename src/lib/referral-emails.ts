@@ -13,7 +13,7 @@ function getResend() {
 }
 
 function getFrom(): string {
-  return process.env.EMAIL_FROM ?? 'onboarding@resend.dev'
+  return process.env.EMAIL_FROM || 'onboarding@resend.dev'
 }
 
 export async function sendFriendSignedUpEmail(params: {

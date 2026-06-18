@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
 </html>`
 
   const { error } = await resend.emails.send({
-    from: process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+    from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
     to: [to],
     subject: `Your payslip ${escSubject(payslipNumber)} from ${escSubject(employerName)}`,
     html,

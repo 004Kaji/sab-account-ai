@@ -124,7 +124,7 @@ export async function GET(req: NextRequest) {
 </td></tr></table></body></html>`
 
       await resend.emails.send({
-        from:    process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+        from:    process.env.EMAIL_FROM || 'onboarding@resend.dev',
         to:      [user.email as string],
         subject: `Your ${range.label} business summary — SAB Account AI`,
         html,

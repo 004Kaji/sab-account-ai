@@ -143,7 +143,7 @@ export async function GET(req: NextRequest) {
 </td></tr></table></body></html>`
 
       await resend.emails.send({
-        from:    process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+        from:    process.env.EMAIL_FROM || 'onboarding@resend.dev',
         to:      [profile.email as string],
         subject: `Super due now — ${fmt(totalSuper)} from ${payDateFormatted} payrun`,
         html,

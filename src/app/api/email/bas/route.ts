@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
   const filename = `BAS-Summary-${quarter.replace(/\s/g, '-')}.pdf`
 
   const { error } = await resend.emails.send({
-    from: process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+    from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
     to: [to],
     subject: `BAS Summary ${escSubject(quarter)} — ${escSubject(businessName)}`,
     html,

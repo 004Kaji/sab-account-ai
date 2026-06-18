@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
   console.log(`[abn-payment] Sending ${paymentType} email to ${to}, attachment ${attachmentContent.length} bytes`)
 
   const { data, error } = await resend.emails.send({
-    from: process.env.EMAIL_FROM ?? 'onboarding@resend.dev',
+    from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
     to: [to],
     subject,
     html,
