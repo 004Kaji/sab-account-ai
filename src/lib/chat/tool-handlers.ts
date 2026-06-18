@@ -5,6 +5,7 @@ import { calculatePayslip, isMedicareExemptByResidency } from '@/lib/ato'
 import { formatABN } from '@/lib/utils'
 import PDFDocument from 'pdfkit'
 import { getPayslipPDFBase64, getInvoicePDFBase64 } from '@/lib/pdf'
+import { sendPayslipEmail, sendInvoiceEmail } from '@/lib/send-email'
 
 // ── Generate BAS PDF as a Buffer ──────────────────────────────────────
 async function generateBasPdf(data: {
@@ -395,26 +396,18 @@ export async function executeToolCall(
         const pdfFilename  = `Invoice-${inv.invoice_number as string}-${(inv.business_name as string).replace(/\s+/g, '-')}.pdf`
         const clientAbn    = (inv.client_abn    as string | null) ?? ''
         const totalIncGst  = inv.total_inc_gst  as number
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
-        const invEmailRes = await fetch(`${appUrl}/api/email/invoice`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({
-            to:            clientEmail,
-            clientName:    inv.client_name    as string,
-            businessName:  inv.business_name  as string,
-            invoiceNumber: inv.invoice_number as string,
-            totalDue,
-            dueDate:       inv.due_date       as string,
-            pdfBase64,
-            clientAbn:     clientAbn || undefined,
-            totalIncGst,
-          }),
+        await sendInvoiceEmail({
+          to:            clientEmail,
+          clientName:    inv.client_name    as string,
+          businessName:  inv.business_name  as string,
+          invoiceNumber: inv.invoice_number as string,
+          totalDue,
+          dueDate:       inv.due_date       as string,
+          pdfBase64,
+          logoUrl:       (bizPro?.logo_url  as string | null) ?? undefined,
+          clientAbn:     clientAbn || undefined,
+          totalIncGst,
         })
-        if (!invEmailRes.ok) {
-          const invEmailErr = await invEmailRes.json().catch(() => ({}))
-          throw new Error((invEmailErr as { error?: string }).error ?? 'Email send failed')
-        }
 
         await supabase.from('invoices').update({ status: 'pending' }).eq('id', invoiceId)
 
@@ -670,24 +663,16 @@ export async function executeToolCall(
         const pdfFilename = `Payslip-${ps.payslip_number as string}-${(ps.employee_name as string).replace(/\s+/g, '-')}.pdf`
         const payPeriod   = `${ps.pay_period_start as string} to ${ps.pay_period_end as string}`
 
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
-        const psEmailRes = await fetch(`${appUrl}/api/email/payslip`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({
-            to:            employeeEmail,
-            employeeName:  ps.employee_name   as string,
-            employerName:  ps.employer_name   as string,
-            payslipNumber: ps.payslip_number  as string,
-            netPay:        fmt(ps.net_pay     as number),
-            payPeriod,
-            pdfBase64,
-          }),
+        await sendPayslipEmail({
+          to:            employeeEmail,
+          employeeName:  ps.employee_name  as string,
+          employerName:  ps.employer_name  as string,
+          payslipNumber: ps.payslip_number as string,
+          netPay:        fmt(ps.net_pay    as number),
+          payPeriod,
+          pdfBase64,
+          logoUrl:       (biz?.logo_url    as string | null) ?? undefined,
         })
-        if (!psEmailRes.ok) {
-          const psEmailErr = await psEmailRes.json().catch(() => ({}))
-          throw new Error((psEmailErr as { error?: string }).error ?? 'Email send failed')
-        }
 
         return { ok: true, payslip_number: ps.payslip_number, sent_to: employeeEmail, net_pay: fmt(ps.net_pay as number), pdf_attached: pdfFilename }
       }
@@ -1047,11 +1032,10 @@ export async function executeToolCall(
           })
 
           const payPeriod = `${ps.pay_period_start as string} to ${ps.pay_period_end as string}`
-          const allAppUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
-          const allEmailRes = await fetch(`${allAppUrl}/api/email/payslip`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({
+          let allSendOk = true
+          let allSendErr: string | undefined
+          try {
+            await sendPayslipEmail({
               to:            item.employee_email,
               employeeName:  ps.employee_name  as string,
               employerName:  ps.employer_name  as string,
@@ -1059,10 +1043,12 @@ export async function executeToolCall(
               netPay:        fmt(ps.net_pay    as number),
               payPeriod,
               pdfBase64,
-            }),
-          })
-          const allSendOk  = allEmailRes.ok
-          const allSendErr = allSendOk ? undefined : ((await allEmailRes.json().catch(() => ({}))).error ?? 'Send failed')
+              logoUrl:       (biz?.logo_url    as string | null) ?? undefined,
+            })
+          } catch (e) {
+            allSendOk  = false
+            allSendErr = e instanceof Error ? e.message : 'Send failed'
+          }
           sentResults.push({ name: ps.employee_name as string, email: item.employee_email, ok: allSendOk, error: allSendErr })
         }
 
