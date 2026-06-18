@@ -507,35 +507,43 @@ export async function executeToolCall(
         })
 
         const payslipNumber = await nextPayslipNumber(userId, supabase)
-        const paymentDate = periodEnd
+        const paymentDate   = periodEnd
+        const baseRate      = (emp.hourly_rate as number | null) ?? 0
+        const savedPayItems = payItemInputs.map(i => ({
+          description: i.description,
+          hours:       i.hours,
+          rate:        Math.round(baseRate * i.rate_mult * 100) / 100,
+        }))
 
         const { data: ps, error: psErr } = await supabase.from('payslips').insert({
-          user_id:         userId,
-          payslip_number:  payslipNumber,
-          employee_name:   emp.name as string,
-          employment_type: (emp.employment_type as string) || 'casual',
-          pay_cycle:       payCycle,
-          super_fund_name: (emp.super_fund_name as string | null) ?? null,
-          member_number:   (emp.member_number as string | null) ?? null,
-          employer_name:   (biz?.business_name as string) || '',
-          employer_abn:    (biz?.abn as string | null) ?? null,
-          pay_period_start: periodStart!,
-          pay_period_end:   periodEnd,
-          payment_date:     paymentDate,
-          gross_pay:        numbers.grossPay,
-          salary_sacrifice: numbers.salarySacrifice,
-          taxable_gross:    numbers.taxableGross,
-          income_tax:       numbers.incomeTax,
-          medicare_levy:    numbers.medicareLevy,
-          help_repayment:   numbers.helpRepayment,
-          net_pay:          numbers.netPay,
-          super_sg:         numbers.superSG,
-          super_sal_sac:    numbers.superSalSac,
+          user_id:              userId,
+          payslip_number:       payslipNumber,
+          employee_name:        emp.name as string,
+          employment_type:      (emp.employment_type as string) || 'casual',
+          pay_cycle:            payCycle,
+          super_fund_name:      (emp.super_fund_name as string | null) ?? null,
+          member_number:        (emp.member_number as string | null) ?? null,
+          employer_name:        (biz?.business_name as string) || '',
+          employer_abn:         (biz?.abn as string | null) ?? null,
+          pay_period_start:     periodStart!,
+          pay_period_end:       periodEnd,
+          payment_date:         paymentDate,
+          gross_pay:            numbers.grossPay,
+          salary_sacrifice:     numbers.salarySacrifice,
+          taxable_gross:        numbers.taxableGross,
+          income_tax:           numbers.incomeTax,
+          medicare_levy:        numbers.medicareLevy,
+          help_repayment:       numbers.helpRepayment,
+          net_pay:              numbers.netPay,
+          super_sg:             numbers.superSG,
+          super_sal_sac:        numbers.superSalSac,
+          pay_items:            savedPayItems,
+          allowances:           [],
+          leave_loading_amount: 0,
         }).select('id').single()
 
         if (psErr) throw new Error(psErr.message)
 
-        const baseRate = (emp.hourly_rate as number | null) ?? 0
         const payItemLines = payItemInputs.map(i => ({
           description: i.description,
           hours:       i.hours,
@@ -627,9 +635,9 @@ export async function executeToolCall(
           residency_status:   residencyStatus,
           annual_leave_hours:   (emp?.annual_leave_hours   as number | null) ?? undefined,
           personal_leave_hours: (emp?.personal_leave_hours as number | null) ?? undefined,
-          payItems: [],
-          allowances: [],
-          leave_loading_amount: 0,
+          payItems:             (ps.pay_items as Array<{description: string; hours: number; rate: number}> | null) ?? [],
+          allowances:           (ps.allowances as Array<{description: string; amount: number}> | null) ?? [],
+          leave_loading_amount: (ps.leave_loading_amount as number | null) ?? 0,
           ytdIsActual: true,
           numbers: {
             ordinaryEarnings: ps.gross_pay       as number,

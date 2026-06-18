@@ -31,6 +31,9 @@ interface Payslip {
   net_pay: number
   super_sg: number
   super_sal_sac: number
+  pay_items: Array<{description: string; hours: number; rate: number}> | null
+  allowances: Array<{description: string; amount: number}> | null
+  leave_loading_amount: number | null
   created_at: string
 }
 
@@ -81,29 +84,36 @@ export default function PayslipHistoryPage() {
       const totalDeductions = Number(ps.income_tax) + Number(ps.medicare_levy) + Number(ps.help_repayment)
       const totalSuper      = Number(ps.super_sg) + Number(ps.super_sal_sac)
       const grossPay        = Number(ps.gross_pay)
+      const payItems            = (ps.pay_items ?? []) as Array<{description: string; hours: number; rate: number}>
+      const allowances          = (ps.allowances ?? []) as Array<{description: string; amount: number}>
+      const leaveLoadingAmount  = Number(ps.leave_loading_amount ?? 0)
+      const payItemsTotal       = payItems.reduce((s, i) => s + i.hours * i.rate, 0) + leaveLoadingAmount
       await downloadPayslipPDF({
-        payslip_number:    ps.payslip_number,
-        pay_period_start:  ps.pay_period_start,
-        pay_period_end:    ps.pay_period_end,
-        payment_date:      ps.payment_date,
-        employer_name:     ps.employer_name,
-        employer_abn:      ps.employer_abn ? formatABN(ps.employer_abn) : '',
-        employee_name:     ps.employee_name,
-        employment_type:   ps.employment_type,
-        pay_cycle:         ps.pay_cycle,
-        pay_basis:         'salary',
-        annual_salary:     0,
-        hourly_rate:       0,
-        ordinary_hours:    0,
-        super_fund_name:   ps.super_fund_name ?? '',
-        member_number:     ps.member_number   ?? '',
-        claiming_threshold: false,
-        has_help:           Number(ps.help_repayment) > 0,
-        medicare_exempt:    Number(ps.medicare_levy) === 0,
-        logo_url:           logoUrl,
+        payslip_number:       ps.payslip_number,
+        pay_period_start:     ps.pay_period_start,
+        pay_period_end:       ps.pay_period_end,
+        payment_date:         ps.payment_date,
+        employer_name:        ps.employer_name,
+        employer_abn:         ps.employer_abn ? formatABN(ps.employer_abn) : '',
+        employee_name:        ps.employee_name,
+        employment_type:      ps.employment_type,
+        pay_cycle:            ps.pay_cycle,
+        pay_basis:            'salary',
+        annual_salary:        0,
+        hourly_rate:          0,
+        ordinary_hours:       0,
+        super_fund_name:      ps.super_fund_name ?? '',
+        member_number:        ps.member_number   ?? '',
+        claiming_threshold:   false,
+        has_help:             Number(ps.help_repayment) > 0,
+        medicare_exempt:      Number(ps.medicare_levy) === 0,
+        logo_url:             logoUrl,
+        payItems,
+        allowances,
+        leave_loading_amount: leaveLoadingAmount,
         numbers: {
           ordinaryEarnings: grossPay,
-          overtimePay:      0,
+          overtimePay:      payItemsTotal,
           grossPay,
           salarySacrifice:  Number(ps.salary_sacrifice),
           taxableGross:     Number(ps.taxable_gross),
