@@ -217,9 +217,9 @@ async function nextPayslipNumber(userId: string, supabase: SupabaseClient): Prom
 
   if (data?.payslip_number) {
     const match = (data.payslip_number as string).match(/(\d+)$/)
-    if (match) return `PAY-${String(parseInt(match[1]) + 1).padStart(4, '0')}`
+    if (match) return `PS-${new Date().getFullYear()}-${String(parseInt(match[1]) + 1).padStart(3, '0')}`
   }
-  return 'PAY-0001'
+  return `PS-${new Date().getFullYear()}-001`
 }
 
 function fmt(n: number) {
@@ -591,7 +591,7 @@ export async function executeToolCall(
 
         // Fetch employee + business data for full-fidelity jsPDF
         const [{ data: emp }, { data: biz }] = await Promise.all([
-          supabase.from('employees').select('pay_basis, annual_salary, hourly_rate, ordinary_hours, salary_sacrifice, claiming_threshold, has_help, residency_status, annual_leave_hours, personal_leave_hours, tfn').eq('user_id', userId).eq('name', ps.employee_name as string).maybeSingle(),
+          supabase.from('employees').select('pay_basis, annual_salary, hourly_rate, ordinary_hours, salary_sacrifice, claiming_threshold, has_help, residency_status, annual_leave_hours, personal_leave_hours, tfn').eq('user_id', userId).ilike('name', ps.employee_name as string).maybeSingle(),
           supabase.from('business_profiles').select('address, logo_url').eq('id', userId).single(),
         ])
 
@@ -638,6 +638,7 @@ export async function executeToolCall(
           payItems:             (ps.pay_items as Array<{description: string; hours: number; rate: number}> | null) ?? [],
           allowances:           (ps.allowances as Array<{description: string; amount: number}> | null) ?? [],
           leave_loading_amount: (ps.leave_loading_amount as number | null) ?? 0,
+          logo_url:             (biz?.logo_url as string | null) ?? undefined,
           ytdIsActual: true,
           numbers: {
             ordinaryEarnings: ps.gross_pay       as number,
@@ -978,7 +979,7 @@ export async function executeToolCall(
           if (fetchErr || !ps) { sentResults.push({ name: item.employee_name || 'Unknown', email: item.employee_email, ok: false, error: 'Payslip not found' }); continue }
 
           // Fetch employee record and YTD for full-fidelity PDF
-          const { data: emp } = await supabase.from('employees').select('pay_basis, annual_salary, hourly_rate, ordinary_hours, claiming_threshold, has_help, residency_status, annual_leave_hours, personal_leave_hours, tfn').eq('user_id', userId).eq('name', ps.employee_name as string).maybeSingle()
+          const { data: emp } = await supabase.from('employees').select('pay_basis, annual_salary, hourly_rate, ordinary_hours, claiming_threshold, has_help, residency_status, annual_leave_hours, personal_leave_hours, tfn').eq('user_id', userId).ilike('name', ps.employee_name as string).maybeSingle()
           const payDate     = new Date(ps.payment_date as string)
           const fyStartYear = payDate.getMonth() >= 6 ? payDate.getFullYear() : payDate.getFullYear() - 1
           const { data: ytdSlips } = await supabase.from('payslips').select('gross_pay, income_tax, medicare_levy, help_repayment, super_sg, super_sal_sac').eq('user_id', userId).eq('employee_name', ps.employee_name as string).gte('payment_date', `${fyStartYear}-07-01`).lte('payment_date', ps.payment_date as string)
@@ -1011,9 +1012,10 @@ export async function executeToolCall(
             residency_status:   residencyStatus,
             annual_leave_hours:   (emp?.annual_leave_hours   as number | null) ?? undefined,
             personal_leave_hours: (emp?.personal_leave_hours as number | null) ?? undefined,
-            payItems: [],
-            allowances: [],
-            leave_loading_amount: 0,
+            payItems:             (ps.pay_items as Array<{description: string; hours: number; rate: number}> | null) ?? [],
+            allowances:           (ps.allowances as Array<{description: string; amount: number}> | null) ?? [],
+            leave_loading_amount: (ps.leave_loading_amount as number | null) ?? 0,
+            logo_url:             (biz?.logo_url as string | null) ?? undefined,
             ytdIsActual: true,
             numbers: {
               ordinaryEarnings: ps.gross_pay       as number,

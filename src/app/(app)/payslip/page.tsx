@@ -115,7 +115,7 @@ function defaultPeriod(cycle: PayCycle): { start: string; end: string } {
   }
 }
 
-function makeForm(num: string, employerName = '', employerAbn = ''): PayslipForm {
+function makeForm(num: string, employerName = '', employerAbn = '', employerAddress = ''): PayslipForm {
   const today  = todayISO()
   const cycle: PayCycle = 'fortnightly'
   const period = defaultPeriod(cycle)
@@ -123,7 +123,7 @@ function makeForm(num: string, employerName = '', employerAbn = ''): PayslipForm
     payslip_number:       num,
     employer_name:        employerName,
     employer_abn:         employerAbn,
-    employer_address:     '',
+    employer_address:     employerAddress,
     employee_name:        '',
     employee_tfn:         '',
     employment_type:      'full-time',
@@ -401,7 +401,7 @@ export default function PayslipPage() {
       if (!user) return
       const { data: { session } } = await supabase.auth.getSession()
       const [{ data: bizData }, { data: lastSlip }, empRes] = await Promise.all([
-        supabase.from('business_profiles').select('business_name,abn,email,logo_url,industry,sat_rate_mult,sun_rate_mult,ph_rate_mult,evening_rate_mult').eq('id', user.id).single(),
+        supabase.from('business_profiles').select('business_name,abn,address,email,logo_url,industry,sat_rate_mult,sun_rate_mult,ph_rate_mult,evening_rate_mult').eq('id', user.id).single(),
         supabase.from('payslips').select('payslip_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
         fetch('/api/employees', { headers: { Authorization: `Bearer ${session?.access_token ?? ''}` } }),
       ])
@@ -412,7 +412,7 @@ export default function PayslipPage() {
         ? parseInt(lastSlip.payslip_number.split('-').pop() ?? '0', 10)
         : 0
       const num = `PS-${yr}-${String(lastSeq + 1).padStart(3, '0')}`
-      setForm(makeForm(num, bizData?.business_name ?? '', bizData?.abn ?? ''))
+      setForm(makeForm(num, bizData?.business_name ?? '', bizData?.abn ?? '', bizData?.address ?? ''))
     }
     load()
   }, [])
