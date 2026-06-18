@@ -296,12 +296,11 @@ export async function executeToolCall(
         }))
 
         const { data: inv, error } = await supabase.from('invoices').insert({
-          user_id:              userId,
-          invoice_number:       invoiceNumber,
-          status:               'draft',
-          client_name:          (input.client_name as string) || '',
-          client_business_name: (input.client_business_name as string) || null,
-          client_email:         (input.client_email as string) || null,
+          user_id:        userId,
+          invoice_number: invoiceNumber,
+          status:         'draft',
+          client_name:    (input.client_name as string) || '',
+          client_email:   (input.client_email as string) || null,
           business_name:   (biz?.business_name as string) || '',
           business_abn:    (biz?.abn as string) || null,
           business_email:  (biz?.email as string) || null,
