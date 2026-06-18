@@ -197,7 +197,7 @@ async function nextInvoiceNumber(userId: string, supabase: SupabaseClient): Prom
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
 
   if (data?.invoice_number) {
     const match = (data.invoice_number as string).match(/(\d+)$/)
@@ -214,7 +214,7 @@ async function nextPayslipNumber(userId: string, supabase: SupabaseClient): Prom
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
 
   if (data?.payslip_number) {
     const match = (data.payslip_number as string).match(/(\d+)$/)
@@ -296,11 +296,12 @@ export async function executeToolCall(
         }))
 
         const { data: inv, error } = await supabase.from('invoices').insert({
-          user_id:         userId,
-          invoice_number:  invoiceNumber,
-          status:          'draft',
-          client_name:     (input.client_name as string) || '',
-          client_email:    (input.client_email as string) || null,
+          user_id:              userId,
+          invoice_number:       invoiceNumber,
+          status:               'draft',
+          client_name:          (input.client_name as string) || '',
+          client_business_name: (input.client_business_name as string) || null,
+          client_email:         (input.client_email as string) || null,
           business_name:   (biz?.business_name as string) || '',
           business_abn:    (biz?.abn as string) || null,
           business_email:  (biz?.email as string) || null,
@@ -895,9 +896,12 @@ export async function executeToolCall(
               income_tax:       numbers.incomeTax,
               medicare_levy:    numbers.medicareLevy,
               help_repayment:   numbers.helpRepayment,
-              net_pay:          numbers.netPay,
-              super_sg:         numbers.superSG,
-              super_sal_sac:    numbers.superSalSac,
+              net_pay:              numbers.netPay,
+              super_sg:             numbers.superSG,
+              super_sal_sac:        numbers.superSalSac,
+              pay_items:            [],
+              allowances:           [],
+              leave_loading_amount: 0,
             }).select('id').single()
 
             if (psErr) throw new Error(psErr.message)

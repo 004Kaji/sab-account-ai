@@ -24,8 +24,9 @@ export const SAB_CHAT_TOOLS: Anthropic.Tool[] = [
       type: 'object' as const,
       properties: {
         description:  { type: 'string', description: 'Plain-English description of what was done, used as the invoice notes' },
-        client_name:  { type: 'string', description: 'Full name or business name of the client' },
-        client_email: { type: 'string', description: 'Client email address' },
+        client_name:          { type: 'string', description: 'Contact person name of the client' },
+        client_business_name: { type: 'string', description: 'Business/company name of the client (optional)' },
+        client_email:         { type: 'string', description: 'Client email address' },
         items: {
           type: 'array',
           description: 'Line items on the invoice',
