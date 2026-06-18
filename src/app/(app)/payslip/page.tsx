@@ -504,6 +504,7 @@ export default function PayslipPage() {
         payslip_number:   form.payslip_number,
         employee_name:    form.employee_name,
         employment_type:  form.employment_type,
+        pay_basis:        form.pay_basis,
         pay_cycle:        form.pay_cycle,
         super_fund_name:  form.super_fund_name,
         member_number:    form.member_number,

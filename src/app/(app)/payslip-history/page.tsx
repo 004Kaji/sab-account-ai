@@ -16,6 +16,7 @@ interface Payslip {
   employer_name: string
   employer_abn: string
   employment_type: string
+  pay_basis: string | null
   pay_cycle: string
   super_fund_name: string | null
   member_number: string | null
@@ -81,13 +82,30 @@ export default function PayslipHistoryPage() {
     setDownloadingId(ps.id)
     try {
       const { downloadPayslipPDF } = await import('@/lib/pdf')
+      const supabase        = createBrowserClient()
       const totalDeductions = Number(ps.income_tax) + Number(ps.medicare_levy) + Number(ps.help_repayment)
       const totalSuper      = Number(ps.super_sg) + Number(ps.super_sal_sac)
       const grossPay        = Number(ps.gross_pay)
-      const payItems            = (ps.pay_items ?? []) as Array<{description: string; hours: number; rate: number}>
-      const allowances          = (ps.allowances ?? []) as Array<{description: string; amount: number}>
-      const leaveLoadingAmount  = Number(ps.leave_loading_amount ?? 0)
-      const payItemsTotal       = payItems.reduce((s, i) => s + i.hours * i.rate, 0) + leaveLoadingAmount
+      const payItems           = (ps.pay_items  ?? []) as Array<{description: string; hours: number; rate: number}>
+      const allowances         = (ps.allowances ?? []) as Array<{description: string; amount: number}>
+      const leaveLoadingAmount = Number(ps.leave_loading_amount ?? 0)
+
+      // Accumulate YTD from all payslips in the same financial year for this employee
+      const payDate  = new Date(ps.payment_date)
+      const fyStart  = payDate.getMonth() >= 6
+        ? `${payDate.getFullYear()}-07-01`
+        : `${payDate.getFullYear() - 1}-07-01`
+      const { data: ytdRows } = await supabase
+        .from('payslips')
+        .select('gross_pay, income_tax, medicare_levy, help_repayment, super_sg, super_sal_sac, payment_date')
+        .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+        .eq('employee_name', ps.employee_name)
+        .gte('payment_date', fyStart)
+        .lte('payment_date', ps.payment_date)
+      const ytdGross = (ytdRows ?? []).reduce((s, r) => s + Number(r.gross_pay), 0)
+      const ytdTax   = (ytdRows ?? []).reduce((s, r) => s + Number(r.income_tax) + Number(r.medicare_levy) + Number(r.help_repayment), 0)
+      const ytdSuper = (ytdRows ?? []).reduce((s, r) => s + Number(r.super_sg) + Number(r.super_sal_sac), 0)
+
       await downloadPayslipPDF({
         payslip_number:       ps.payslip_number,
         pay_period_start:     ps.pay_period_start,
@@ -98,7 +116,7 @@ export default function PayslipHistoryPage() {
         employee_name:        ps.employee_name,
         employment_type:      ps.employment_type,
         pay_cycle:            ps.pay_cycle,
-        pay_basis:            'salary',
+        pay_basis:            (ps.pay_basis === 'hourly' ? 'hourly' : 'salary'),
         annual_salary:        0,
         hourly_rate:          0,
         ordinary_hours:       0,
@@ -113,7 +131,7 @@ export default function PayslipHistoryPage() {
         leave_loading_amount: leaveLoadingAmount,
         numbers: {
           ordinaryEarnings: grossPay,
-          overtimePay:      payItemsTotal,
+          overtimePay:      0,
           grossPay,
           salarySacrifice:  Number(ps.salary_sacrifice),
           taxableGross:     Number(ps.taxable_gross),
@@ -125,9 +143,9 @@ export default function PayslipHistoryPage() {
           superSG:          Number(ps.super_sg),
           superSalSac:      Number(ps.super_sal_sac),
           totalSuper,
-          ytdGross:         grossPay,
-          ytdTax:           totalDeductions,
-          ytdSuper:         totalSuper,
+          ytdGross,
+          ytdTax,
+          ytdSuper,
         },
       })
     } catch (err) {

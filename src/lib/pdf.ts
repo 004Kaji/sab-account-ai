@@ -39,6 +39,7 @@ async function addLogoToPdf(
         dataUri = logoUrl
       } else {
         const res = await fetch(logoUrl)
+        if (!res.ok) throw new Error(`Logo fetch failed: ${res.status}`)
         buf = Buffer.from(await res.arrayBuffer())
         isPng = buf[0] === 0x89 && buf[1] === 0x50
         const mime = isPng ? 'image/png' : 'image/jpeg'

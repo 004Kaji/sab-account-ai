@@ -191,40 +191,50 @@ Small Business Super Clearing House (SBSHC) is free for businesses with fewer th
 
 // ── Helper: generate sequential invoice number ─────────────────────
 async function nextInvoiceNumber(userId: string, supabase: SupabaseClient): Promise<string> {
+  const year = new Date().getFullYear()
   const { data } = await supabase
     .from('invoices')
     .select('invoice_number')
     .eq('user_id', userId)
+    .like('invoice_number', `INV-${year}-%`)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
   if (data?.invoice_number) {
     const match = (data.invoice_number as string).match(/(\d+)$/)
-    if (match) return `INV-${new Date().getFullYear()}-${String(parseInt(match[1]) + 1).padStart(3, '0')}`
+    if (match) return `INV-${year}-${String(parseInt(match[1]) + 1).padStart(3, '0')}`
   }
-  return `INV-${new Date().getFullYear()}-001`
+  return `INV-${year}-001`
 }
 
 // ── Helper: generate sequential payslip number ──────────────────────
 async function nextPayslipNumber(userId: string, supabase: SupabaseClient): Promise<string> {
+  const year = new Date().getFullYear()
   const { data } = await supabase
     .from('payslips')
     .select('payslip_number')
     .eq('user_id', userId)
+    .like('payslip_number', `PS-${year}-%`)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
   if (data?.payslip_number) {
     const match = (data.payslip_number as string).match(/(\d+)$/)
-    if (match) return `PS-${new Date().getFullYear()}-${String(parseInt(match[1]) + 1).padStart(3, '0')}`
+    if (match) return `PS-${year}-${String(parseInt(match[1]) + 1).padStart(3, '0')}`
   }
-  return `PS-${new Date().getFullYear()}-001`
+  return `PS-${year}-001`
 }
 
 function fmt(n: number) {
   return `$${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
+}
+
+// Only allow https:// and data: URIs — blocks SSRF via http:// internal hosts
+function safeLogoUrl(url: string | null | undefined): string | undefined {
+  if (!url) return undefined
+  return (url.startsWith('https://') || url.startsWith('data:')) ? url : undefined
 }
 
 // ── Main dispatcher ────────────────────────────────────────────────
@@ -375,7 +385,7 @@ export async function executeToolCall(
           business_email:       (inv.business_email       as string | null) ?? '',
           business_phone:       (inv.business_phone       as string | null) ?? '',
           business_address:     (inv.business_address     as string | null) || (bizPro?.address      as string | null) || '',
-          logo_url:             (bizPro?.logo_url         as string | null) ?? undefined,
+          logo_url:             safeLogoUrl(bizPro?.logo_url as string | null),
           client_name:          inv.client_name           as string,
           client_business_name: (inv.client_business_name as string | null) ?? undefined,
           client_abn:           (inv.client_abn           as string | null) ?? '',
@@ -404,7 +414,7 @@ export async function executeToolCall(
           totalDue,
           dueDate:       inv.due_date       as string,
           pdfBase64,
-          logoUrl:       (bizPro?.logo_url  as string | null) ?? undefined,
+          logoUrl:       safeLogoUrl(bizPro?.logo_url as string | null),
           clientAbn:     clientAbn || undefined,
           totalIncGst,
         })
@@ -508,7 +518,10 @@ export async function executeToolCall(
 
         const payslipNumber = await nextPayslipNumber(userId, supabase)
         const paymentDate   = periodEnd
-        const baseRate      = (emp.hourly_rate as number | null) ?? 0
+        // For hourly employees use stored hourly_rate; for salaried derive from annual / (52 × 5 days × 7.6 hrs)
+        const baseRate = payBasis === 'hourly'
+          ? ((emp.hourly_rate as number | null) ?? 0)
+          : Math.round(((emp.annual_salary as number | null) ?? 0) / (52 * 5 * 7.6) * 100) / 100
         const savedPayItems = payItemInputs.map(i => ({
           description: i.description,
           hours:       i.hours,
@@ -520,6 +533,7 @@ export async function executeToolCall(
           payslip_number:       payslipNumber,
           employee_name:        emp.name as string,
           employment_type:      (emp.employment_type as string) || 'casual',
+          pay_basis:            payBasis,
           pay_cycle:            payCycle,
           super_fund_name:      (emp.super_fund_name as string | null) ?? null,
           member_number:        (emp.member_number as string | null) ?? null,
@@ -638,7 +652,7 @@ export async function executeToolCall(
           payItems:             (ps.pay_items as Array<{description: string; hours: number; rate: number}> | null) ?? [],
           allowances:           (ps.allowances as Array<{description: string; amount: number}> | null) ?? [],
           leave_loading_amount: (ps.leave_loading_amount as number | null) ?? 0,
-          logo_url:             (biz?.logo_url as string | null) ?? undefined,
+          logo_url:             safeLogoUrl(biz?.logo_url as string | null),
           ytdIsActual: true,
           numbers: {
             ordinaryEarnings: ps.gross_pay       as number,
@@ -671,7 +685,7 @@ export async function executeToolCall(
           netPay:        fmt(ps.net_pay    as number),
           payPeriod,
           pdfBase64,
-          logoUrl:       (biz?.logo_url    as string | null) ?? undefined,
+          logoUrl:       safeLogoUrl(biz?.logo_url as string | null),
         })
 
         return { ok: true, payslip_number: ps.payslip_number, sent_to: employeeEmail, net_pay: fmt(ps.net_pay as number), pdf_attached: pdfFilename }
@@ -881,6 +895,7 @@ export async function executeToolCall(
               payslip_number:   payslipNumber,
               employee_name:    emp.name as string,
               employment_type:  (emp.employment_type as string) || 'casual',
+              pay_basis:        ((emp.pay_basis as string | null) === 'hourly' ? 'hourly' : 'salary'),
               pay_cycle:        payCycle,
               super_fund_name:  (emp.super_fund_name  as string | null) ?? null,
               member_number:    (emp.member_number    as string | null) ?? null,
@@ -1014,7 +1029,7 @@ export async function executeToolCall(
             payItems:             (ps.pay_items as Array<{description: string; hours: number; rate: number}> | null) ?? [],
             allowances:           (ps.allowances as Array<{description: string; amount: number}> | null) ?? [],
             leave_loading_amount: (ps.leave_loading_amount as number | null) ?? 0,
-            logo_url:             (biz?.logo_url as string | null) ?? undefined,
+            logo_url:             safeLogoUrl(biz?.logo_url as string | null),
             ytdIsActual: true,
             numbers: {
               ordinaryEarnings: ps.gross_pay       as number,
@@ -1046,7 +1061,7 @@ export async function executeToolCall(
               netPay:        fmt(ps.net_pay    as number),
               payPeriod,
               pdfBase64,
-              logoUrl:       (biz?.logo_url    as string | null) ?? undefined,
+              logoUrl:       safeLogoUrl(biz?.logo_url as string | null),
             })
           } catch (e) {
             allSendOk  = false
@@ -1102,20 +1117,21 @@ export async function executeToolCall(
         const totalPayable  = netGst + paygWithheld
         const outcome       = netGst > 0 ? `Net GST payable to ATO: ${fmt(netGst)}` : netGst < 0 ? `GST refund from ATO: ${fmt(Math.abs(netGst))}` : 'Net zero — nothing owing'
 
+        const he = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
         const invoiceRows = (invoices ?? []).map(i =>
-          `<tr><td style="padding:5px 0;color:#57534E;font-size:13px">${i.invoice_number as string}</td><td style="padding:5px 0;color:#57534E;font-size:13px">${i.client_name as string}</td><td style="padding:5px 0;color:#57534E;font-size:13px">${i.issue_date as string}</td><td align="right" style="padding:5px 0;color:#1C1917;font-size:13px;font-weight:600">${fmt(i.total_inc_gst as number)}</td><td align="right" style="padding:5px 0;color:#57534E;font-size:12px">${fmt(i.total_gst as number)}</td></tr>`
+          `<tr><td style="padding:5px 0;color:#57534E;font-size:13px">${he(i.invoice_number as string)}</td><td style="padding:5px 0;color:#57534E;font-size:13px">${he(i.client_name as string)}</td><td style="padding:5px 0;color:#57534E;font-size:13px">${he(i.issue_date as string)}</td><td align="right" style="padding:5px 0;color:#1C1917;font-size:13px;font-weight:600">${fmt(i.total_inc_gst as number)}</td><td align="right" style="padding:5px 0;color:#57534E;font-size:12px">${fmt(i.total_gst as number)}</td></tr>`
         ).join('')
 
         const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;background:#F5F0E8;margin:0;padding:40px 0">
 <table width="620" align="center" style="background:#fff;border-radius:10px;overflow:hidden">
 <tr><td style="background:#1C1917;padding:28px 36px">
-  <p style="margin:0;color:#fff;font-size:18px;font-weight:700">${(biz?.business_name as string) || 'Your Business'}</p>
-  <p style="margin:6px 0 0;color:#A09590;font-size:13px">BAS Summary — ${periodLabel}</p>
-  ${biz?.abn ? `<p style="margin:4px 0 0;color:#A09590;font-size:12px">ABN: ${biz.abn as string}</p>` : ''}
+  <p style="margin:0;color:#fff;font-size:18px;font-weight:700">${he((biz?.business_name as string) || 'Your Business')}</p>
+  <p style="margin:6px 0 0;color:#A09590;font-size:13px">BAS Summary — ${he(periodLabel)}</p>
+  ${biz?.abn ? `<p style="margin:4px 0 0;color:#A09590;font-size:12px">ABN: ${he(biz.abn as string)}</p>` : ''}
 </td></tr>
 <tr><td style="padding:36px">
-  <p style="color:#1C1917;font-size:15px">Dear ${accountantName},</p>
-  <p style="color:#57534E;font-size:14px">Please find the BAS summary for <strong>${periodLabel}</strong> below.</p>
+  <p style="color:#1C1917;font-size:15px">Dear ${he(accountantName)},</p>
+  <p style="color:#57534E;font-size:14px">Please find the BAS summary for <strong>${he(periodLabel)}</strong> below.</p>
 
   <table width="100%" style="background:#F5F0E8;border-radius:8px;margin:20px 0"><tr><td style="padding:20px 24px">
   <table width="100%">
