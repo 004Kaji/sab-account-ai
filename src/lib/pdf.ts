@@ -52,8 +52,8 @@ async function addLogoToPdf(
         if (w > 0 && h > 0) logoW = Math.min(Math.round(logoH * w / h), maxW)
       }
       const fmt = isPng ? 'PNG' : 'JPEG'
-      try { doc.addImage(dataUri, fmt, x, y, logoW, logoH) } catch { /* skip */ }
-    } catch { /* logo load failed — skip silently */ }
+      doc.addImage(dataUri, fmt, x, y, logoW, logoH)
+    } catch (e) { console.error('[addLogoToPdf]', e instanceof Error ? e.message : String(e)) }
   }
 }
 
