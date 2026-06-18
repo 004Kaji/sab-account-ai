@@ -243,15 +243,16 @@ export function calculatePAYG(input: PaygInput): PaygResult {
 }
 
 // ── Super guarantee ───────────────────────────────────────────────────
-// ✅ This is the one number to update each 1 July.
-//    FY2024-25: 11.5%  |  FY2025-26: 12.0%
-//    Verify at ato.gov.au/super before changing.
-export function getSuperRate(useNewRate: boolean): number {
-  return useNewRate ? 0.12 : 0.115
+// ATO mandates 12% from 1 July 2025. Rate is automatic — derived from
+// the payment date, not a user setting.
+// FY2024-25: 11.5% | FY2025-26+: 12.0%
+export function getSuperRate(paymentDate?: Date): number {
+  const date = paymentDate ?? new Date()
+  return date >= new Date('2025-07-01') ? 0.12 : 0.115
 }
 
-export function calculateSuper(ordinaryEarnings: number, useNewRate: boolean): number {
-  return Math.round(ordinaryEarnings * getSuperRate(useNewRate) * 100) / 100
+export function calculateSuper(ordinaryEarnings: number, paymentDate?: Date): number {
+  return Math.round(ordinaryEarnings * getSuperRate(paymentDate) * 100) / 100
 }
 
 // ── Full payslip calculation ──────────────────────────────────────────
@@ -264,7 +265,7 @@ export type PayslipInput = {
   claimingThreshold: boolean
   hasHELP: boolean
   medicareLevyExemption: boolean
-  useNewSuperRate: boolean
+  paymentDate?: Date
   residencyStatus?: ResidencyStatus
 }
 
@@ -290,7 +291,7 @@ export type PayslipNumbers = {
 export function calculatePayslip(input: PayslipInput): PayslipNumbers {
   const {
     annualSalary, salarySacrifice, overtimeHours, overtimeRate,
-    payCycle, claimingThreshold, hasHELP, medicareLevyExemption, useNewSuperRate,
+    payCycle, claimingThreshold, hasHELP, medicareLevyExemption, paymentDate,
     residencyStatus = 'citizen_pr',
   } = input
 
@@ -316,7 +317,7 @@ export function calculatePayslip(input: PayslipInput): PayslipNumbers {
   const totalDeductions = payg.periodTotal
   const netPay          = Math.round((taxableGross - totalDeductions) * 100) / 100
 
-  const superSG      = calculateSuper(ordinaryEarnings, useNewSuperRate)
+  const superSG      = calculateSuper(ordinaryEarnings, paymentDate)
   const superSalSac  = salSacPeriod
   const totalSuper   = Math.round((superSG + superSalSac) * 100) / 100
 

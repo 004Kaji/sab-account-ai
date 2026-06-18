@@ -51,7 +51,6 @@ export interface PayslipPDFData {
   ordinary_hours: number
   super_fund_name: string
   member_number: string
-  use_new_super_rate: boolean
   claiming_threshold: boolean
   has_help: boolean
   medicare_exempt?: boolean
@@ -75,7 +74,7 @@ async function buildPayslipDoc(data: PayslipPDFData) {
   const cW       = pageW - margin * 2
   const n        = data.numbers
   const isHourly = data.pay_basis === 'hourly'
-  const sgRate   = data.use_new_super_rate ? '12%' : '11.5%'
+  const sgRate   = new Date(data.payment_date) >= new Date('2025-07-01') ? '12%' : '11.5%'
 
   // Table column right-edges
   const colHours  = margin + 88   // hours (hourly only)
@@ -507,6 +506,7 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
   if (data.client_abn)           clientLines.push(`ABN: ${data.client_abn}`)
   if (data.client_email)         clientLines.push(data.client_email)
   if (data.client_address)       clientLines.push(data.client_address)
+  const needsAbnNote = data.total_inc_gst >= 1000 && !data.client_abn
 
   const payMethodRows: [string, string][] = []
   if (data.account_name)   payMethodRows.push(['Account Name:', data.account_name])
@@ -525,6 +525,14 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
     doc.text(l, margin, leftY)
     leftY += 4.5
   })
+  if (needsAbnNote) {
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(7.5)
+    doc.setTextColor(160, 100, 60)
+    doc.text('Please provide your ABN for invoices over $1,000 (ATO requirement)', margin, leftY)
+    doc.setFont('helvetica', 'normal')
+    leftY += 4.5
+  }
   payMethodRows.forEach(([label, val]) => {
     doc.setTextColor(100, 95, 90)
     doc.text(label, colRight, rightY)

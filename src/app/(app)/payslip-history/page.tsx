@@ -97,7 +97,6 @@ export default function PayslipHistoryPage() {
         ordinary_hours:    0,
         super_fund_name:   ps.super_fund_name ?? '',
         member_number:     ps.member_number   ?? '',
-        use_new_super_rate: true,
         claiming_threshold: false,
         has_help:           Number(ps.help_repayment) > 0,
         medicare_exempt:    Number(ps.medicare_levy) === 0,

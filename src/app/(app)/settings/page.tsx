@@ -32,7 +32,6 @@ interface BizSettings {
   default_footer:       string
   gst_registered:       boolean
   bas_frequency:        string
-  super_rate_new:       boolean
   notify_overdue:       boolean
   notify_bas:           boolean
   notify_super:         boolean
@@ -45,7 +44,7 @@ const EMPTY: BizSettings = {
   sat_rate_mult: '', sun_rate_mult: '', ph_rate_mult: '', evening_rate_mult: '',
   default_payment_terms: '14 days', default_gst: true, starting_invoice_num: 1,
   default_currency: 'AUD', default_footer: '',
-  gst_registered: false, bas_frequency: 'quarterly', super_rate_new: true,
+  gst_registered: false, bas_frequency: 'quarterly',
   notify_overdue: true, notify_bas: true, notify_super: true, notify_payment: true, notify_weekly: false,
 }
 
@@ -691,13 +690,6 @@ function AtoTab({ biz, setField, saving, save }: SharedTabProps) {
         </div>
       )}
 
-      <Toggle
-        label="Use 12% super rate (from 1 July 2025)"
-        hint="The super guarantee rate increased from 11.5% to 12% on 1 July 2025. Applies to payslip calculations."
-        checked={biz.super_rate_new}
-        onChange={v => setField('super_rate_new', v)}
-      />
-
       {/* ATO reference card */}
       <div style={{ background: 'var(--cream)', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
         <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.125rem' }}>ATO Key Dates (2025–26)</p>
@@ -719,7 +711,7 @@ function AtoTab({ biz, setField, saving, save }: SharedTabProps) {
       </div>
 
       <div>
-        <button onClick={() => save({ gst_registered: biz.gst_registered, bas_frequency: biz.bas_frequency, super_rate_new: biz.super_rate_new })}
+        <button onClick={() => save({ gst_registered: biz.gst_registered, bas_frequency: biz.bas_frequency })}
           disabled={saving} className="btn btn-ember">
           {saving && <span className="spinner" style={{ width: '0.875rem', height: '0.875rem', borderWidth: '2px' }} />}
           {saving ? 'Saving…' : 'Save ATO Settings'}
@@ -1350,7 +1342,6 @@ function SettingsPageInner() {
           default_footer:       data.default_footer       ?? '',
           gst_registered:       data.gst_registered       ?? false,
           bas_frequency:        data.bas_frequency        ?? 'quarterly',
-          super_rate_new:       data.super_rate_new       ?? true,
           notify_overdue:       data.notify_overdue       ?? true,
           notify_bas:           data.notify_bas           ?? true,
           notify_super:         data.notify_super         ?? true,

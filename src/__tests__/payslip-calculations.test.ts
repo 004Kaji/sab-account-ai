@@ -48,7 +48,7 @@ function slip(annual: number, opts?: {
   medExempt?: boolean
   residency?: 'citizen_pr' | 'student' | 'temp_work' | 'whm' | 'partner' | 'other_temp'
   salSac?: number
-  newSuper?: boolean
+  paymentDate?: Date
   overtime?: { hours: number; rate: number }
 }) {
   return calculatePayslip({
@@ -60,7 +60,7 @@ function slip(annual: number, opts?: {
     claimingThreshold: opts?.threshold ?? true,
     hasHELP: opts?.help ?? false,
     medicareLevyExemption: opts?.medExempt ?? false,
-    useNewSuperRate: opts?.newSuper ?? false,
+    paymentDate: opts?.paymentDate,
     residencyStatus: opts?.residency ?? 'citizen_pr',
   })
 }
@@ -70,27 +70,27 @@ function slip(annual: number, opts?: {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('getSuperRate', () => {
-  it('returns 11.5% for FY2024-25', () => {
-    expect(getSuperRate(false)).toBe(0.115)
+  it('returns 11.5% for dates before 1 July 2025', () => {
+    expect(getSuperRate(new Date('2025-06-30'))).toBe(0.115)
   })
-  it('returns 12.0% for FY2025-26', () => {
-    expect(getSuperRate(true)).toBe(0.12)
+  it('returns 12.0% from 1 July 2025 onwards', () => {
+    expect(getSuperRate(new Date('2025-07-01'))).toBe(0.12)
   })
 })
 
 describe('calculateSuper', () => {
-  it('calculates 11.5% correctly', () => {
-    expect(calculateSuper(3076.92, false)).toBe(353.85)
+  it('calculates 11.5% for pre-2025-07-01 dates', () => {
+    expect(calculateSuper(3076.92, new Date('2025-06-30'))).toBe(353.85)
   })
-  it('calculates 12.0% correctly', () => {
-    expect(calculateSuper(3076.92, true)).toBe(369.23)
+  it('calculates 12.0% from 2025-07-01 onwards', () => {
+    expect(calculateSuper(3076.92, new Date('2025-07-01'))).toBe(369.23)
   })
   it('returns 0 for zero earnings', () => {
-    expect(calculateSuper(0, false)).toBe(0)
+    expect(calculateSuper(0)).toBe(0)
   })
-  it('rounds to 2 decimal places', () => {
+  it('rounds to 2 decimal places (11.5%)', () => {
     // $1,000 * 11.5% = $115.00 exactly
-    expect(calculateSuper(1000, false)).toBe(115.00)
+    expect(calculateSuper(1000, new Date('2025-06-30'))).toBe(115.00)
   })
 })
 
@@ -335,26 +335,27 @@ describe('HELP repayment (2025-26 marginal rates)', () => {
 
 describe('calculatePayslip — full scenarios', () => {
 
-  describe('UC1: $80k salary, fortnightly, Scale 2, no HELP, 11.5% super', () => {
-    const r = slip(80000)
+  describe('UC1: $80k salary, fortnightly, Scale 2, no HELP', () => {
+    const rPre  = slip(80000, { paymentDate: new Date('2025-06-30') })
+    const rPost = slip(80000, { paymentDate: new Date('2025-07-01') })
 
     it('ordinary earnings = $3,076.92', () => {
-      expect(r.ordinaryEarnings).toBe(3076.92)
+      expect(rPost.ordinaryEarnings).toBe(3076.92)
     })
     it('gross pay = ordinary earnings (no overtime)', () => {
-      expect(r.grossPay).toBe(r.ordinaryEarnings)
+      expect(rPost.grossPay).toBe(rPost.ordinaryEarnings)
     })
     it('PAYG total = $632', () => {
-      expect(r.totalDeductions).toBe(632)
+      expect(rPost.totalDeductions).toBe(632)
     })
     it('net pay = gross - tax = $2,444.92', () => {
-      expect(r.netPay).toBe(2444.92)
+      expect(rPost.netPay).toBe(2444.92)
     })
-    it('super SG at 11.5% = $353.85', () => {
-      expect(r.superSG).toBe(353.85)
+    it('super SG at 11.5% (pre-1 July 2025) = $353.85', () => {
+      expect(rPre.superSG).toBe(353.85)
     })
-    it('super at 12% = $369.23', () => {
-      expect(slip(80000, { newSuper: true }).superSG).toBe(369.23)
+    it('super SG at 12% (from 1 July 2025) = $369.23', () => {
+      expect(rPost.superSG).toBe(369.23)
     })
   })
 
@@ -413,7 +414,7 @@ describe('calculatePayslip — full scenarios', () => {
   describe('UC5: Scale 5 (Medicare exempt), $109,473.60/yr fortnightly', () => {
     // Shakti's payslip scenario — salary basis with penalty rates factored in
     const annualEffective = 109473.60
-    const r = slip(annualEffective, { medExempt: true, newSuper: false })
+    const r = slip(annualEffective, { medExempt: true, paymentDate: new Date('2025-06-30') })
 
     it('ordinary earnings = $4,210.52', () => {
       expect(r.ordinaryEarnings).toBe(4210.52)

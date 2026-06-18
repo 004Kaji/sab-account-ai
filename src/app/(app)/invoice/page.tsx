@@ -532,6 +532,8 @@ export default function InvoicePage() {
           totalDue: formatCurrency(totals.total_inc_gst),
           dueDate: form.due_date ? formatDateAU(form.due_date) : '',
           pdfBase64,
+          clientAbn: form.client_abn ? formatABN(form.client_abn) : undefined,
+          totalIncGst: totals.total_inc_gst,
         }),
       })
       const json = await res.json()

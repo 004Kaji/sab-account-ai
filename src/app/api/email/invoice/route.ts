@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
   if (authErr || !user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-  const { to, clientName, businessName, invoiceNumber, totalDue, dueDate, pdfBase64 } =
+  const { to, clientName, businessName, invoiceNumber, totalDue, dueDate, pdfBase64, clientAbn, totalIncGst } =
     await req.json() as {
       to: string
       clientName: string
@@ -22,6 +22,8 @@ export async function POST(req: NextRequest) {
       totalDue: string
       dueDate: string
       pdfBase64: string
+      clientAbn?: string
+      totalIncGst?: number
     }
 
   if (!to || !pdfBase64) {
@@ -69,6 +71,10 @@ export async function POST(req: NextRequest) {
                       <td style="padding:6px 0;color:#78716C;font-size:13px">Due Date</td>
                       <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(dueDate)}</td>
                     </tr>
+                    ${clientAbn ? `<tr>
+                      <td style="padding:6px 0;color:#78716C;font-size:13px">Your ABN</td>
+                      <td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${esc(clientAbn)}</td>
+                    </tr>` : ''}
                     <tr>
                       <td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Total Due (inc GST)</td>
                       <td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${esc(totalDue)}</td>
@@ -78,8 +84,11 @@ export async function POST(req: NextRequest) {
               </tr>
             </table>
 
+            ${!clientAbn && (totalIncGst ?? 0) >= 1000 ? `<p style="margin:0 0 16px;color:#92400E;font-size:12px;line-height:1.5;background:#FEF3C7;border-radius:6px;padding:10px 14px">
+              Please provide your ABN to ${esc(businessName)} for invoices over $1,000 (ATO requirement).
+            </p>` : ''}
             <p style="margin:0 0 6px;color:#57534E;font-size:13px;line-height:1.6">
-              Please reference the invoice number when making payment. If you have any questions, reply to this email or contact ${businessName} directly.
+              Please reference the invoice number when making payment. If you have any questions, reply to this email or contact ${esc(businessName)} directly.
             </p>
           </td>
         </tr>

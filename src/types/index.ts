@@ -81,7 +81,6 @@ export type PayslipFormData = {
   // ATO flags
   claimingThreshold: boolean  // tax-free threshold ($18,200)
   hasHELP: boolean            // HECS/HELP/VSL debt
-  useNewSuperRate: boolean    // 12% from 1 Jul 2025
   medicareLevyExemption: boolean
 
   // Employer / pay period

@@ -722,7 +722,7 @@ export async function executeToolCall(
 
         const { data: biz } = await supabase
           .from('business_profiles')
-          .select('business_name, abn, super_rate_new')
+          .select('business_name, abn')
           .eq('id', userId)
           .single()
 
@@ -735,7 +735,6 @@ export async function executeToolCall(
           ? Math.round(grossPay! * periodsPerYear * 100) / 100
           : ((emp.annual_salary as number | null) ?? Math.round(grossPay! * periodsPerYear * 100) / 100)
         const residencyStatus = (emp.residency_status as 'citizen_pr' | 'student' | 'temp_work' | 'whm' | 'partner' | 'other_temp') ?? 'citizen_pr'
-        const useNewSuperRate = (biz?.super_rate_new as boolean | null) ?? true
 
         const numbers = calculatePayslip({
           annualSalary,
@@ -746,7 +745,7 @@ export async function executeToolCall(
           claimingThreshold:     (emp.claiming_threshold as boolean | null) ?? true,
           hasHELP:               (emp.has_help           as boolean | null) ?? false,
           medicareLevyExemption: isMedicareExemptByResidency(residencyStatus),
-          useNewSuperRate,
+          paymentDate:           new Date(periodEnd),
           residencyStatus,
         })
 
@@ -828,7 +827,7 @@ export async function executeToolCall(
         // Fetch employee + business data for full-fidelity jsPDF
         const [{ data: emp }, { data: biz }] = await Promise.all([
           supabase.from('employees').select('pay_basis, annual_salary, hourly_rate, ordinary_hours, salary_sacrifice, claiming_threshold, has_help, residency_status, annual_leave_hours, personal_leave_hours, tfn').eq('user_id', userId).eq('name', ps.employee_name as string).maybeSingle(),
-          supabase.from('business_profiles').select('address, logo_url, super_rate_new').eq('id', userId).single(),
+          supabase.from('business_profiles').select('address, logo_url').eq('id', userId).single(),
         ])
 
         // YTD: all payslips for this employee in the current ATO financial year up to (and including) this payslip
@@ -865,7 +864,6 @@ export async function executeToolCall(
           ordinary_hours:    (emp?.ordinary_hours as number | null) ?? 0,
           super_fund_name:   (ps.super_fund_name as string | null) ?? '',
           member_number:     (ps.member_number  as string | null) ?? '',
-          use_new_super_rate: (biz?.super_rate_new as boolean | null) ?? true,
           claiming_threshold: (emp?.claiming_threshold as boolean | null) ?? true,
           has_help:           (emp?.has_help          as boolean | null) ?? false,
           medicare_exempt:    isMedicareExemptByResidency(residencyStatus as 'citizen_pr' | 'student' | 'temp_work' | 'whm' | 'partner' | 'other_temp'),
@@ -1036,7 +1034,7 @@ export async function executeToolCall(
 
         const { data: biz } = await supabase
           .from('business_profiles')
-          .select('business_name, abn, super_rate_new')
+          .select('business_name, abn')
           .eq('id', userId)
           .single()
 
@@ -1096,8 +1094,6 @@ export async function executeToolCall(
 
             const annualSalary = (emp.annual_salary as number | null) ?? (grossPay * (payCycle === 'weekly' ? 52 : payCycle === 'monthly' ? 12 : 26))
             const residencyStatus = (emp.residency_status as 'citizen_pr' | 'student' | 'temp_work' | 'whm' | 'partner' | 'other_temp') ?? 'citizen_pr'
-            const useNewSuperRate = (biz?.super_rate_new as boolean | null) ?? true
-
             const numbers = calculatePayslip({
               annualSalary,
               salarySacrifice:       (emp.salary_sacrifice as number | null) ?? 0,
@@ -1107,7 +1103,7 @@ export async function executeToolCall(
               claimingThreshold:     (emp.claiming_threshold as boolean | null) ?? true,
               hasHELP:               (emp.has_help           as boolean | null) ?? false,
               medicareLevyExemption: isMedicareExemptByResidency(residencyStatus),
-              useNewSuperRate,
+              paymentDate:           new Date(periodEnd),
               residencyStatus,
             })
 
@@ -1191,7 +1187,7 @@ export async function executeToolCall(
 
         const { data: biz } = await supabase
           .from('business_profiles')
-          .select('business_name, address, logo_url, super_rate_new')
+          .select('business_name, address, logo_url')
           .eq('id', userId)
           .single()
 
@@ -1240,7 +1236,6 @@ export async function executeToolCall(
             ordinary_hours:    (emp?.ordinary_hours as number | null) ?? 0,
             super_fund_name:   (ps.super_fund_name as string | null) ?? '',
             member_number:     (ps.member_number  as string | null) ?? '',
-            use_new_super_rate: (biz?.super_rate_new as boolean | null) ?? true,
             claiming_threshold: (emp?.claiming_threshold as boolean | null) ?? true,
             has_help:           (emp?.has_help          as boolean | null) ?? false,
             medicare_exempt:    isMedicareExemptByResidency(residencyStatus as 'citizen_pr' | 'student' | 'temp_work' | 'whm' | 'partner' | 'other_temp'),

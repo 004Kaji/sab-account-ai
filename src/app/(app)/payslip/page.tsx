@@ -71,7 +71,6 @@ interface PayslipForm {
   claiming_threshold:   boolean
   has_help:             boolean
   medicare_exemption:   boolean
-  use_new_super_rate:   boolean
   annual_salary:        number
   hourly_rate:          number
   ordinary_hours:       number
@@ -98,7 +97,6 @@ interface BizProfile {
   abn: string
   email: string
   logo_url?: string
-  super_rate_new?: boolean | null
   industry?: string | null
   sat_rate_mult?: number | null
   sun_rate_mult?: number | null
@@ -117,7 +115,7 @@ function defaultPeriod(cycle: PayCycle): { start: string; end: string } {
   }
 }
 
-function makeForm(num: string, employerName = '', employerAbn = '', useNewSuperRate = true): PayslipForm {
+function makeForm(num: string, employerName = '', employerAbn = ''): PayslipForm {
   const today  = todayISO()
   const cycle: PayCycle = 'fortnightly'
   const period = defaultPeriod(cycle)
@@ -135,7 +133,6 @@ function makeForm(num: string, employerName = '', employerAbn = '', useNewSuperR
     claiming_threshold:   true,
     has_help:             false,
     medicare_exemption:   false,
-    use_new_super_rate:   useNewSuperRate,
     annual_salary:        0,
     hourly_rate:          0,
     ordinary_hours:       76,
@@ -194,7 +191,7 @@ function PayslipPreview({ form, biz, numbers, ytdIsActual, payItemsThisPeriod, l
   payItemsThisPeriod: number
   leaveLoadingAmount: number
 }) {
-  const superRate  = form.use_new_super_rate ? '12%' : '11.5%'
+  const superRate  = new Date(form.payment_date) >= new Date('2025-07-01') ? '12%' : '11.5%'
   const allExtras  = payItemsThisPeriod + leaveLoadingAmount
 
   return (
@@ -382,7 +379,7 @@ export default function PayslipPage() {
     claimingThreshold:     form.claiming_threshold,
     hasHELP:               form.has_help,
     medicareLevyExemption: form.medicare_exemption,
-    useNewSuperRate:       form.use_new_super_rate,
+    paymentDate:           new Date(form.payment_date),
     residencyStatus:       form.residency_status,
   })
 
@@ -404,7 +401,7 @@ export default function PayslipPage() {
       if (!user) return
       const { data: { session } } = await supabase.auth.getSession()
       const [{ data: bizData }, { data: lastSlip }, empRes] = await Promise.all([
-        supabase.from('business_profiles').select('business_name,abn,email,logo_url,super_rate_new,industry,sat_rate_mult,sun_rate_mult,ph_rate_mult,evening_rate_mult').eq('id', user.id).single(),
+        supabase.from('business_profiles').select('business_name,abn,email,logo_url,industry,sat_rate_mult,sun_rate_mult,ph_rate_mult,evening_rate_mult').eq('id', user.id).single(),
         supabase.from('payslips').select('payslip_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
         fetch('/api/employees', { headers: { Authorization: `Bearer ${session?.access_token ?? ''}` } }),
       ])
@@ -415,7 +412,7 @@ export default function PayslipPage() {
         ? parseInt(lastSlip.payslip_number.split('-').pop() ?? '0', 10)
         : 0
       const num = `PS-${yr}-${String(lastSeq + 1).padStart(3, '0')}`
-      setForm(makeForm(num, bizData?.business_name ?? '', bizData?.abn ?? '', bizData?.super_rate_new ?? true))
+      setForm(makeForm(num, bizData?.business_name ?? '', bizData?.abn ?? ''))
     }
     load()
   }, [])
@@ -575,7 +572,6 @@ export default function PayslipPage() {
       ordinary_hours:     form.ordinary_hours,
       super_fund_name:    form.super_fund_name,
       member_number:      form.member_number,
-      use_new_super_rate: form.use_new_super_rate,
       claiming_threshold: form.claiming_threshold,
       has_help:           form.has_help,
       medicare_exempt:    form.medicare_exemption,
@@ -679,7 +675,7 @@ export default function PayslipPage() {
               setHasUnusual(false)
               const yr      = new Date().getFullYear()
               const nextNum = parseInt(savedSlip.number.split('-')[2] ?? '1') + 1
-              setForm(makeForm(`PS-${yr}-${String(nextNum).padStart(3, '0')}`, form.employer_name, form.employer_abn, biz?.super_rate_new ?? true))
+              setForm(makeForm(`PS-${yr}-${String(nextNum).padStart(3, '0')}`, form.employer_name, form.employer_abn))
             }}
             className="btn btn-outline"
             style={{ width: '100%' }}
@@ -952,8 +948,6 @@ export default function PayslipPage() {
                 {form.residency_status === 'citizen_pr' && (
                   <Toggle label="Apply Medicare levy (2%)" hint="Turn off only if employee holds a valid Medicare levy exemption certificate." checked={!form.medicare_exemption} onChange={v => setField('medicare_exemption', !v)} />
                 )}
-                <Toggle label="Super at 12% (from 1 July 2025)" hint="Untick to use the previous 11.5% rate for periods before 1 July 2025." checked={form.use_new_super_rate} onChange={v => setField('use_new_super_rate', v)} />
-
                 <hr style={{ border: 'none', borderTop: '1px solid var(--border)' }} />
 
                 {/* Super fund */}
