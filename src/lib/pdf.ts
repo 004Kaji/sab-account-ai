@@ -1,6 +1,48 @@
 import { formatCurrency, formatDateAU, formatABN } from '@/lib/utils'
 import { getPaygScaleLabel, type PayslipNumbers } from '@/lib/ato'
 
+// Works in both browser (HTMLImageElement) and Node/Vercel serverless (fetch + Buffer).
+async function addLogoToPdf(
+  doc: import('jspdf').jsPDF,
+  logoUrl: string,
+  x: number,
+  y: number,
+  logoH: number,
+  maxW: number,
+): Promise<void> {
+  if (typeof Image !== 'undefined') {
+    await new Promise<void>(resolve => {
+      const timer = setTimeout(resolve, 3000)
+      const img = new Image()
+      img.onload = () => {
+        clearTimeout(timer)
+        const logoW = Math.min(Math.round(logoH * img.naturalWidth / img.naturalHeight), maxW)
+        const fmt = logoUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+        try { doc.addImage(logoUrl, fmt, x, y, logoW, logoH) } catch { /* skip */ }
+        resolve()
+      }
+      img.onerror = () => { clearTimeout(timer); resolve() }
+      img.src = logoUrl
+    })
+  } else {
+    // Server-side: fetch the image, parse PNG dimensions from the IHDR chunk
+    try {
+      const res  = await fetch(logoUrl)
+      const buf  = Buffer.from(await res.arrayBuffer())
+      const isPng = buf[0] === 0x89 && buf[1] === 0x50
+      let logoW = Math.round(logoH * 3)  // 3:1 fallback for unknown aspect ratio
+      if (isPng && buf.length > 24) {
+        const w = (buf[16] << 24) | (buf[17] << 16) | (buf[18] << 8) | buf[19]
+        const h = (buf[20] << 24) | (buf[21] << 16) | (buf[22] << 8) | buf[23]
+        if (w > 0 && h > 0) logoW = Math.min(Math.round(logoH * w / h), maxW)
+      }
+      const fmt  = isPng ? 'PNG' : 'JPEG'
+      const mime = isPng ? 'image/png' : 'image/jpeg'
+      try { doc.addImage(`data:${mime};base64,${buf.toString('base64')}`, fmt, x, y, logoW, logoH) } catch { /* skip */ }
+    } catch { /* logo load failed — skip silently */ }
+  }
+}
+
 function triggerPdfDownload(doc: import('jspdf').jsPDF, filename: string) {
   // iOS (all browsers on iPhone/iPad) ignores <a download> for blob/data URIs.
   // iPad in desktop mode reports MacIntel but has maxTouchPoints > 1.
@@ -86,20 +128,7 @@ async function buildPayslipDoc(data: PayslipPDFData) {
 
   // ── Logo (if provided) ───────────────────────────────────────────────
   if (data.logo_url) {
-    await new Promise<void>(resolve => {
-      const timer = setTimeout(resolve, 3000)
-      const img = new Image()
-      img.onload = () => {
-        clearTimeout(timer)
-        const logoH = 10
-        const logoW = Math.min(Math.round(logoH * img.naturalWidth / img.naturalHeight), 45)
-        const fmt = data.logo_url!.startsWith('data:image/png') ? 'PNG' : 'JPEG'
-        try { doc.addImage(data.logo_url!, fmt, margin, y, logoW, logoH) } catch {}
-        resolve()
-      }
-      img.onerror = () => { clearTimeout(timer); resolve() }
-      img.src = data.logo_url!
-    })
+    await addLogoToPdf(doc, data.logo_url, margin, y, 10, 45)
     y += 13
   }
 
@@ -447,19 +476,7 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
 
   if (data.logo_url) {
     const logoH = 12
-    await new Promise<void>(resolve => {
-      const timer = setTimeout(resolve, 3000)
-      const img = new Image()
-      img.onload = () => {
-        clearTimeout(timer)
-        const logoW = Math.min(Math.round(logoH * img.naturalWidth / img.naturalHeight), 50)
-        const fmt = data.logo_url!.startsWith('data:image/png') ? 'PNG' : 'JPEG'
-        try { doc.addImage(data.logo_url!, fmt, margin, y, logoW, logoH) } catch {}
-        resolve()
-      }
-      img.onerror = () => { clearTimeout(timer); resolve() }
-      img.src = data.logo_url!
-    })
+    await addLogoToPdf(doc, data.logo_url, margin, y, logoH, 50)
     y += logoH + 3
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(10)
