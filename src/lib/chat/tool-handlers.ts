@@ -200,9 +200,9 @@ async function nextInvoiceNumber(userId: string, supabase: SupabaseClient): Prom
 
   if (data?.invoice_number) {
     const match = (data.invoice_number as string).match(/(\d+)$/)
-    if (match) return `INV-${String(parseInt(match[1]) + 1).padStart(4, '0')}`
+    if (match) return `INV-${new Date().getFullYear()}-${String(parseInt(match[1]) + 1).padStart(3, '0')}`
   }
-  return 'INV-0001'
+  return `INV-${new Date().getFullYear()}-001`
 }
 
 // ── Helper: generate sequential payslip number ──────────────────────
