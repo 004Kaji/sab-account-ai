@@ -25,20 +25,34 @@ async function addLogoToPdf(
       img.src = logoUrl
     })
   } else {
-    // Server-side: fetch the image, parse PNG dimensions from the IHDR chunk
+    // Server-side: handle data URIs directly; fetch only for https:// URLs
     try {
-      const res  = await fetch(logoUrl)
-      const buf  = Buffer.from(await res.arrayBuffer())
-      const isPng = buf[0] === 0x89 && buf[1] === 0x50
+      let buf: Buffer
+      let isPng: boolean
+      let dataUri: string
+
+      if (logoUrl.startsWith('data:')) {
+        // Data URI — base64 is already inline, no network request needed
+        isPng = logoUrl.startsWith('data:image/png')
+        const base64 = logoUrl.split(',')[1] ?? ''
+        buf = Buffer.from(base64, 'base64')
+        dataUri = logoUrl
+      } else {
+        const res = await fetch(logoUrl)
+        buf = Buffer.from(await res.arrayBuffer())
+        isPng = buf[0] === 0x89 && buf[1] === 0x50
+        const mime = isPng ? 'image/png' : 'image/jpeg'
+        dataUri = `data:${mime};base64,${buf.toString('base64')}`
+      }
+
       let logoW = Math.round(logoH * 3)  // 3:1 fallback for unknown aspect ratio
       if (isPng && buf.length > 24) {
         const w = (buf[16] << 24) | (buf[17] << 16) | (buf[18] << 8) | buf[19]
         const h = (buf[20] << 24) | (buf[21] << 16) | (buf[22] << 8) | buf[23]
         if (w > 0 && h > 0) logoW = Math.min(Math.round(logoH * w / h), maxW)
       }
-      const fmt  = isPng ? 'PNG' : 'JPEG'
-      const mime = isPng ? 'image/png' : 'image/jpeg'
-      try { doc.addImage(`data:${mime};base64,${buf.toString('base64')}`, fmt, x, y, logoW, logoH) } catch { /* skip */ }
+      const fmt = isPng ? 'PNG' : 'JPEG'
+      try { doc.addImage(dataUri, fmt, x, y, logoW, logoH) } catch { /* skip */ }
     } catch { /* logo load failed — skip silently */ }
   }
 }
