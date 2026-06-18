@@ -13,6 +13,9 @@ export async function POST(req: NextRequest) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
   if (authErr || !user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
+  const { data: bizProfile } = await supabase.from('business_profiles').select('logo_url').eq('id', user.id).single()
+  const logoUrl = bizProfile?.logo_url && (bizProfile.logo_url as string).startsWith('https://') ? (bizProfile.logo_url as string) : ''
+
   const { to, employeeName, employerName, payslipNumber, netPay, payPeriod, pdfBase64 } =
     await req.json() as {
       to: string
@@ -43,6 +46,7 @@ export async function POST(req: NextRequest) {
         <!-- Header -->
         <tr>
           <td style="background:#1C1917;padding:28px 36px">
+            ${logoUrl ? `<img src="${logoUrl}" alt="${esc(employerName)}" style="max-height:60px;max-width:200px;object-fit:contain;margin-bottom:8px;display:block;" />` : ''}
             <p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${esc(employerName || 'Your Employer')}</p>
             <p style="margin:6px 0 0;color:#A09590;font-size:13px">Payslip Notification</p>
           </td>

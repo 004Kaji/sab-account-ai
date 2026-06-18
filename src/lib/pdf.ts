@@ -142,9 +142,6 @@ async function buildPayslipDoc(data: PayslipPDFData) {
     doc.text(addrLines, margin, yL)
     yL += addrLines.length * 4.5
   }
-  if (data.super_fund_name) { doc.text(`Fund: ${data.super_fund_name}`, margin, yL); yL += 4.5 }
-  if (data.member_number)   { doc.text(`Member: ${data.member_number}`, margin, yL); yL += 4.5 }
-
   // ── Right column: Employee ──
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
@@ -308,10 +305,22 @@ async function buildPayslipDoc(data: PayslipPDFData) {
 
   // ── SUPERANNUATION ───────────────────────────────────────────────────
   sectionLabel('SUPERANNUATION')
-  const sgFundLine = data.super_fund_name
-    ? `SGC ${sgRate} — ${data.super_fund_name}`
-    : `Employer SGC (${sgRate})`
-  lineItem(sgFundLine, formatCurrency(n.superSG))
+  lineItem(`Employer SGC (${sgRate})`, formatCurrency(n.superSG))
+  if (data.super_fund_name) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(130, 125, 120)
+    doc.text(`Fund: ${data.super_fund_name}`, margin + 2, y)
+    y += 4.5
+  }
+  if (data.member_number) {
+    const maskedMember = data.member_number.toString().slice(0, 3) + '*'.repeat(Math.max(data.member_number.toString().length - 3, 4))
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(130, 125, 120)
+    doc.text(`Member: ${maskedMember}`, margin + 2, y)
+    y += 4.5
+  }
   if (n.superSalSac > 0) lineItem('Salary Sacrifice Super', formatCurrency(n.superSalSac))
   sectionTotal(formatCurrency(n.totalSuper), formatCurrency(n.ytdSuper))
 

@@ -2,6 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import * as Sentry from '@sentry/nextjs'
 import { calculatePayslip, isMedicareExemptByResidency } from '@/lib/ato'
+import { formatABN } from '@/lib/utils'
 import PDFDocument from 'pdfkit'
 import { getPayslipPDFBase64, getInvoicePDFBase64 } from '@/lib/pdf'
 
@@ -126,253 +127,6 @@ async function generateBasPdf(data: {
 // ── REPLACED: payslip PDF now uses getPayslipPDFBase64 from @/lib/pdf ──
 // (jsPDF gold standard — identical output to the UI payslip wizard)
 
-// placeholder so nothing below shifts unexpectedly
-function _unused_invoice_placeholder(inv: {
-  invoice_number: string
-  business_name: string
-  business_abn: string | null
-  business_address: string | null
-  business_email: string | null
-  business_phone: string | null
-  client_name: string
-  client_email: string | null
-  client_address: string | null
-  issue_date: string
-  due_date: string
-  line_items: Array<{ description: string; qty: number; unit_price: number; gst_amount: number; total: number }>
-  has_gst: boolean
-  subtotal_ex_gst: number
-  total_gst: number
-  total_inc_gst: number
-  payment_terms: string | null
-  bank_name: string | null
-  account_name: string | null
-  bsb: string | null
-  account_number: string | null
-  notes: string | null
-}): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 50, size: 'A4' })
-    const chunks: Buffer[] = []
-    doc.on('data', (chunk: Buffer) => chunks.push(chunk))
-    doc.on('end', () => resolve(Buffer.concat(chunks)))
-    doc.on('error', reject)
-
-    const DARK   = '#1C1917'
-    const MID    = '#57534E'
-    const LIGHT  = '#A09590'
-    const RED    = '#C84B2F'
-    const BORDER = '#E5DDD5'
-    const BG     = '#F5F0E8'
-    const pageW  = doc.page.width - 100
-    const fmtN   = (n: number) => `$${Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
-
-    // Header
-    doc.rect(50, 50, pageW, 80).fill(DARK)
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(16).text(inv.business_name, 70, 65)
-    doc.fillColor(LIGHT).font('Helvetica').fontSize(9)
-    if (inv.business_abn) doc.text(`ABN: ${inv.business_abn}`, 70, 85)
-    if (inv.business_address) doc.text(inv.business_address, 70, 97)
-
-    // Invoice meta
-    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(22).text('INVOICE', pageW - 60, 60, { align: 'right', width: 130 })
-    doc.font('Helvetica').fontSize(9).fillColor(LIGHT)
-      .text(`#${inv.invoice_number}`, pageW - 60, 88, { align: 'right', width: 130 })
-      .text(`Issued: ${inv.issue_date}`, pageW - 60, 100, { align: 'right', width: 130 })
-      .text(`Due: ${inv.due_date}`, pageW - 60, 112, { align: 'right', width: 130 })
-
-    // Bill to
-    let y = 150
-    doc.fillColor(LIGHT).font('Helvetica').fontSize(8).text('BILL TO', 50, y)
-    y += 12
-    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text(inv.client_name, 50, y)
-    y += 14
-    doc.font('Helvetica').fontSize(9).fillColor(MID)
-    if (inv.client_email)   { doc.text(inv.client_email,   50, y); y += 12 }
-    if (inv.client_address) { doc.text(inv.client_address, 50, y); y += 12 }
-
-    // Line items table header
-    y += 8
-    doc.rect(50, y, pageW, 18).fill(DARK)
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8)
-      .text('DESCRIPTION', 65, y + 5)
-      .text('QTY',         350, y + 5, { width: 40, align: 'right' })
-      .text('UNIT PRICE',  395, y + 5, { width: 70, align: 'right' })
-      .text('AMOUNT',      470, y + 5, { width: 60, align: 'right' })
-    y += 18
-
-    inv.line_items.forEach((li, i) => {
-      if (i % 2 === 0) doc.rect(50, y, pageW, 20).fill(BG)
-      doc.fillColor(MID).font('Helvetica').fontSize(9)
-        .text(li.description,       65,  y + 5, { width: 280 })
-        .text(String(li.qty),       350, y + 5, { width: 40, align: 'right' })
-        .text(fmtN(li.unit_price),  395, y + 5, { width: 70, align: 'right' })
-        .text(fmtN(li.total),       470, y + 5, { width: 60, align: 'right' })
-      y += 20
-      if (y > doc.page.height - 150) { doc.addPage(); y = 50 }
-    })
-
-    // Totals
-    y += 8
-    doc.moveTo(50, y).lineTo(50 + pageW, y).strokeColor(BORDER).lineWidth(0.5).stroke()
-    y += 10
-    const totRow = (label: string, value: string, bold = false, color = MID) => {
-      doc.fillColor(color).font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 11 : 9)
-        .text(label, 350, y, { width: 120 })
-        .text(value, 470, y, { width: 60, align: 'right' })
-      y += bold ? 18 : 14
-    }
-    totRow('Subtotal (ex GST)', fmtN(inv.subtotal_ex_gst))
-    if (inv.has_gst) totRow('GST (10%)', fmtN(inv.total_gst))
-    doc.moveTo(350, y).lineTo(530, y).strokeColor(BORDER).lineWidth(0.5).stroke()
-    y += 4
-    totRow('TOTAL DUE', fmtN(inv.total_inc_gst), true, RED)
-
-    // Payment details
-    if (inv.bsb || inv.account_number) {
-      y += 12
-      doc.rect(50, y, pageW, 14).fill(DARK)
-      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text('PAYMENT DETAILS', 65, y + 3)
-      y += 20
-      doc.fillColor(MID).font('Helvetica').fontSize(9)
-      if (inv.bank_name)      { doc.text(`Bank: ${inv.bank_name}`,               50, y); y += 12 }
-      if (inv.account_name)   { doc.text(`Account Name: ${inv.account_name}`,    50, y); y += 12 }
-      if (inv.bsb)            { doc.text(`BSB: ${inv.bsb}`,                      50, y); y += 12 }
-      if (inv.account_number) { doc.text(`Account Number: ${inv.account_number}`, 50, y); y += 12 }
-      if (inv.payment_terms)  { doc.text(`Terms: ${inv.payment_terms}`,           50, y); y += 12 }
-    }
-
-    if (inv.notes) {
-      y += 8
-      doc.fillColor(LIGHT).font('Helvetica').fontSize(8).text(`Notes: ${inv.notes}`, 50, y)
-    }
-
-    // Footer
-    const footerY = doc.page.height - 50
-    doc.moveTo(50, footerY).lineTo(50 + pageW, footerY).strokeColor(BORDER).lineWidth(0.5).stroke()
-    doc.fillColor(LIGHT).font('Helvetica').fontSize(8)
-      .text('Generated by SAB Account AI · sabaccountai.com', 50, footerY + 8, { align: 'center', width: pageW })
-
-    doc.end()
-  })
-}
-
-// ── Generate Payslip PDF as a Buffer ─────────────────────────────────
-function generatePayslipPdf(ps: {
-  payslip_number: string
-  employer_name: string
-  employer_abn: string | null
-  employee_name: string
-  employment_type: string
-  pay_cycle: string
-  pay_period_start: string
-  pay_period_end: string
-  payment_date: string
-  gross_pay: number
-  salary_sacrifice: number
-  taxable_gross: number
-  income_tax: number
-  medicare_levy: number
-  help_repayment: number
-  net_pay: number
-  super_sg: number
-  super_sal_sac: number
-  super_fund_name: string | null
-  member_number: string | null
-}): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 50, size: 'A4' })
-    const chunks: Buffer[] = []
-    doc.on('data', (chunk: Buffer) => chunks.push(chunk))
-    doc.on('end', () => resolve(Buffer.concat(chunks)))
-    doc.on('error', reject)
-
-    const DARK   = '#1C1917'
-    const MID    = '#57534E'
-    const LIGHT  = '#A09590'
-    const RED    = '#C84B2F'
-    const BORDER = '#E5DDD5'
-    const BG     = '#F5F0E8'
-    const pageW  = doc.page.width - 100
-    const fmtN   = (n: number) => `$${Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
-
-    // Header
-    doc.rect(50, 50, pageW, 80).fill(DARK)
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(16).text(ps.employer_name, 70, 65)
-    doc.fillColor(LIGHT).font('Helvetica').fontSize(9)
-    if (ps.employer_abn) doc.text(`ABN: ${ps.employer_abn}`, 70, 85)
-    doc.fillColor(LIGHT).fontSize(9)
-      .text(`Payslip ${ps.payslip_number}`, pageW - 60, 65, { align: 'right', width: 130 })
-      .text(`${ps.pay_period_start} to ${ps.pay_period_end}`, pageW - 60, 80, { align: 'right', width: 130 })
-      .text(`Payment date: ${ps.payment_date}`, pageW - 60, 95, { align: 'right', width: 130 })
-
-    // Employee info
-    let y = 150
-    doc.rect(50, y, pageW, 18).fill(DARK)
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text('EMPLOYEE', 65, y + 5)
-    y += 18
-    doc.rect(50, y, pageW, 32).fill(BG)
-    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text(ps.employee_name, 65, y + 6)
-    doc.fillColor(MID).font('Helvetica').fontSize(8)
-      .text(`${ps.employment_type} · ${ps.pay_cycle}`, 65, y + 20)
-    y += 40
-
-    // Earnings & deductions header
-    doc.rect(50, y, pageW, 18).fill(DARK)
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8)
-      .text('EARNINGS & DEDUCTIONS', 65, y + 5)
-      .text('AMOUNT', 470, y + 5, { width: 60, align: 'right' })
-    y += 18
-
-    const row = (label: string, value: string, bold = false, color = MID, bg?: string) => {
-      if (bg) doc.rect(50, y, pageW, 18).fill(bg)
-      doc.fillColor(color).font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 10 : 9)
-        .text(label, 65, y + 4)
-        .text(value, 470, y + 4, { width: 60, align: 'right' })
-      y += 18
-    }
-
-    row('Gross Pay', fmtN(ps.gross_pay), false, MID, BG)
-    if (ps.salary_sacrifice > 0) row('Salary Sacrifice Super', `-${fmtN(ps.salary_sacrifice)}`)
-    row('Taxable Gross', fmtN(ps.taxable_gross), false, MID, BG)
-    doc.moveTo(50, y).lineTo(50 + pageW, y).strokeColor(BORDER).lineWidth(0.5).stroke(); y += 6
-    row('Income Tax (PAYG)', `-${fmtN(ps.income_tax)}`)
-    row('Medicare Levy', `-${fmtN(ps.medicare_levy)}`, false, MID, BG)
-    if (ps.help_repayment > 0) row('HELP Repayment', `-${fmtN(ps.help_repayment)}`)
-    doc.moveTo(50, y).lineTo(50 + pageW, y).strokeColor(BORDER).lineWidth(0.5).stroke(); y += 6
-    row('NET PAY', fmtN(ps.net_pay), true, RED)
-
-    // Super
-    y += 10
-    doc.rect(50, y, pageW, 18).fill(DARK)
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text('SUPERANNUATION', 65, y + 5)
-    y += 18
-    doc.rect(50, y, pageW, 18).fill(BG)
-    doc.fillColor(MID).font('Helvetica').fontSize(9)
-      .text('Employer SG (12%)', 65, y + 4)
-      .text(fmtN(ps.super_sg), 470, y + 4, { width: 60, align: 'right' })
-    y += 18
-    if (ps.super_sal_sac > 0) {
-      doc.fillColor(MID).font('Helvetica').fontSize(9)
-        .text('Salary Sacrifice', 65, y + 4)
-        .text(fmtN(ps.super_sal_sac), 470, y + 4, { width: 60, align: 'right' })
-      y += 18
-    }
-    if (ps.super_fund_name) {
-      doc.fillColor(LIGHT).font('Helvetica').fontSize(8)
-        .text(`Fund: ${ps.super_fund_name}${ps.member_number ? `  ·  Member: ${ps.member_number}` : ''}`, 65, y + 4)
-      y += 18
-    }
-
-    // Footer
-    const footerY = doc.page.height - 50
-    doc.moveTo(50, footerY).lineTo(50 + pageW, footerY).strokeColor(BORDER).lineWidth(0.5).stroke()
-    doc.fillColor(LIGHT).font('Helvetica').fontSize(8)
-      .text('Generated by SAB Account AI · ATO-compliant PAYG withholding · sabaccountai.com', 50, footerY + 8, { align: 'center', width: pageW })
-
-    doc.end()
-  })
-}
 
 // ── ATO static knowledge ──────────────────────────────────────────────
 const ATO_RULES: Record<string, string> = {
@@ -637,10 +391,13 @@ export async function executeToolCall(
           document_type:        (inv.document_type        as 'invoice' | 'quote' | null) ?? 'invoice',
         })
 
-        const pdfFilename = `Invoice-${inv.invoice_number as string}-${(inv.business_name as string).replace(/\s+/g, '-')}.pdf`
-        const resend      = new Resend(process.env.RESEND_API_KEY)
+        const pdfFilename  = `Invoice-${inv.invoice_number as string}-${(inv.business_name as string).replace(/\s+/g, '-')}.pdf`
+        const clientAbn    = (inv.client_abn    as string | null) ?? ''
+        const totalIncGst  = inv.total_inc_gst  as number
+        const invLogoUrl   = bizPro?.logo_url && (bizPro.logo_url as string).startsWith('https://') ? (bizPro.logo_url as string) : ''
+        const resend       = new Resend(process.env.RESEND_API_KEY)
 
-        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#F5F0E8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;padding:40px 0"><tr><td align="center"><table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)"><tr><td style="background:#1C1917;padding:28px 36px"><p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${inv.business_name as string}</p><p style="margin:6px 0 0;color:#A09590;font-size:13px">Tax Invoice</p></td></tr><tr><td style="padding:36px"><p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${inv.client_name as string},</p><p style="margin:0 0 28px;color:#57534E;font-size:14px;line-height:1.6">Please find your invoice <strong>${inv.invoice_number as string}</strong> from <strong>${inv.business_name as string}</strong> attached to this email.</p><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;border-radius:8px;margin-bottom:28px"><tr><td style="padding:20px 24px"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:6px 0;color:#78716C;font-size:13px">Invoice Number</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${inv.invoice_number as string}</td></tr><tr><td style="padding:6px 0;color:#78716C;font-size:13px">Due Date</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${inv.due_date as string}</td></tr><tr><td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Total Due (inc GST)</td><td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${totalDue}</td></tr></table></td></tr></table><p style="margin:0 0 6px;color:#57534E;font-size:13px;line-height:1.6">Please reference the invoice number when making payment. If you have any questions, reply to this email or contact ${inv.business_name as string} directly.</p></td></tr><tr><td style="background:#F5F0E8;padding:20px 36px;border-top:1px solid #E5DDD5"><p style="margin:0;color:#A09590;font-size:11px;text-align:center">Generated by SAB Account AI</p></td></tr></table></td></tr></table></body></html>`
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#F5F0E8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;padding:40px 0"><tr><td align="center"><table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)"><tr><td style="background:#1C1917;padding:28px 36px">${invLogoUrl ? `<img src="${invLogoUrl}" alt="${(inv.business_name as string).replace(/"/g, '&quot;')}" style="max-height:60px;max-width:200px;object-fit:contain;margin-bottom:8px;display:block;" />` : ''}<p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${inv.business_name as string}</p><p style="margin:6px 0 0;color:#A09590;font-size:13px">Tax Invoice</p></td></tr><tr><td style="padding:36px"><p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${inv.client_name as string},</p><p style="margin:0 0 28px;color:#57534E;font-size:14px;line-height:1.6">Please find your invoice <strong>${inv.invoice_number as string}</strong> from <strong>${inv.business_name as string}</strong> attached to this email.</p><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;border-radius:8px;margin-bottom:28px"><tr><td style="padding:20px 24px"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:6px 0;color:#78716C;font-size:13px">Invoice Number</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${inv.invoice_number as string}</td></tr><tr><td style="padding:6px 0;color:#78716C;font-size:13px">Due Date</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${inv.due_date as string}</td></tr>${clientAbn ? `<tr><td style="padding:6px 0;color:#78716C;font-size:13px">Your ABN</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${clientAbn}</td></tr>` : ''}<tr><td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Total Due (inc GST)</td><td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${totalDue}</td></tr></table></td></tr></table>${!clientAbn && totalIncGst >= 1000 ? `<p style="margin:0 0 16px;color:#92400E;font-size:12px;line-height:1.5;background:#FEF3C7;border-radius:6px;padding:10px 14px">Please provide your ABN to ${inv.business_name as string} for invoices over $1,000 (ATO requirement).</p>` : ''}<p style="margin:0 0 6px;color:#57534E;font-size:13px;line-height:1.6">Please reference the invoice number when making payment. If you have any questions, reply to this email or contact ${inv.business_name as string} directly.</p></td></tr><tr><td style="background:#F5F0E8;padding:20px 36px;border-top:1px solid #E5DDD5"><p style="margin:0;color:#A09590;font-size:11px;text-align:center">Generated by SAB Account AI</p></td></tr></table></td></tr></table></body></html>`
 
         const { error: sendErr } = await resend.emails.send({
           from:    process.env.EMAIL_FROM || 'onboarding@resend.dev',
@@ -852,7 +609,7 @@ export async function executeToolCall(
           pay_period_end:    ps.pay_period_end  as string,
           payment_date:      ps.payment_date    as string,
           employer_name:     ps.employer_name   as string,
-          employer_abn:      (ps.employer_abn   as string | null) ?? '',
+          employer_abn:      ps.employer_abn ? formatABN(ps.employer_abn as string) : '',
           employer_address:  (biz?.address      as string | null) ?? undefined,
           employee_name:     ps.employee_name   as string,
           employee_tfn:      (emp?.tfn          as string | null) ?? undefined,
@@ -870,6 +627,9 @@ export async function executeToolCall(
           residency_status:   residencyStatus,
           annual_leave_hours:   (emp?.annual_leave_hours   as number | null) ?? undefined,
           personal_leave_hours: (emp?.personal_leave_hours as number | null) ?? undefined,
+          payItems: [],
+          allowances: [],
+          leave_loading_amount: 0,
           ytdIsActual: true,
           numbers: {
             ordinaryEarnings: ps.gross_pay       as number,
@@ -893,9 +653,10 @@ export async function executeToolCall(
 
         const pdfFilename = `Payslip-${ps.payslip_number as string}-${(ps.employee_name as string).replace(/\s+/g, '-')}.pdf`
         const payPeriod   = `${ps.pay_period_start as string} to ${ps.pay_period_end as string}`
+        const psLogoUrl   = biz?.logo_url && (biz.logo_url as string).startsWith('https://') ? (biz.logo_url as string) : ''
 
         const resend = new Resend(process.env.RESEND_API_KEY)
-        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#F5F0E8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;padding:40px 0"><tr><td align="center"><table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)"><tr><td style="background:#1C1917;padding:28px 36px"><p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${ps.employer_name as string}</p><p style="margin:6px 0 0;color:#A09590;font-size:13px">Payslip Notification</p></td></tr><tr><td style="padding:36px"><p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${ps.employee_name as string},</p><p style="margin:0 0 28px;color:#57534E;font-size:14px;line-height:1.6">Your payslip for <strong>${payPeriod}</strong> is ready. Please find it attached to this email.</p><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;border-radius:8px;margin-bottom:28px"><tr><td style="padding:20px 24px"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:6px 0;color:#78716C;font-size:13px">Payslip Number</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${ps.payslip_number as string}</td></tr><tr><td style="padding:6px 0;color:#78716C;font-size:13px">Pay Period</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${payPeriod}</td></tr><tr><td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Net Pay</td><td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${fmt(ps.net_pay as number)}</td></tr></table></td></tr></table><p style="margin:0 0 6px;color:#57534E;font-size:13px;line-height:1.6">If you have any questions about your payslip, please contact your employer directly.</p></td></tr><tr><td style="background:#F5F0E8;padding:20px 36px;border-top:1px solid #E5DDD5"><p style="margin:0;color:#A09590;font-size:11px;text-align:center">Generated by SAB Account AI · ATO-compliant PAYG withholding</p></td></tr></table></td></tr></table></body></html>`
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#F5F0E8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;padding:40px 0"><tr><td align="center"><table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)"><tr><td style="background:#1C1917;padding:28px 36px">${psLogoUrl ? `<img src="${psLogoUrl}" alt="${(ps.employer_name as string).replace(/"/g, '&quot;')}" style="max-height:60px;max-width:200px;object-fit:contain;margin-bottom:8px;display:block;" />` : ''}<p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${ps.employer_name as string}</p><p style="margin:6px 0 0;color:#A09590;font-size:13px">Payslip Notification</p></td></tr><tr><td style="padding:36px"><p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${ps.employee_name as string},</p><p style="margin:0 0 28px;color:#57534E;font-size:14px;line-height:1.6">Your payslip for <strong>${payPeriod}</strong> is ready. Please find it attached to this email.</p><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;border-radius:8px;margin-bottom:28px"><tr><td style="padding:20px 24px"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:6px 0;color:#78716C;font-size:13px">Payslip Number</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${ps.payslip_number as string}</td></tr><tr><td style="padding:6px 0;color:#78716C;font-size:13px">Pay Period</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${payPeriod}</td></tr><tr><td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Net Pay</td><td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${fmt(ps.net_pay as number)}</td></tr></table></td></tr></table><p style="margin:0 0 6px;color:#57534E;font-size:13px;line-height:1.6">If you have any questions about your payslip, please contact your employer directly.</p></td></tr><tr><td style="background:#F5F0E8;padding:20px 36px;border-top:1px solid #E5DDD5"><p style="margin:0;color:#A09590;font-size:11px;text-align:center">Generated by SAB Account AI · ATO-compliant PAYG withholding</p></td></tr></table></td></tr></table></body></html>`
 
         const { error: sendErr } = await resend.emails.send({
           from:    process.env.EMAIL_FROM || 'onboarding@resend.dev',
@@ -927,12 +688,12 @@ export async function executeToolCall(
         const [{ data: invoices }, { data: records }, { data: payslipsW2 }] = await Promise.all([
           supabase.from('invoices').select('total_gst, total_inc_gst').eq('user_id', userId).gte('issue_date', from).lte('issue_date', to),
           supabase.from('records').select('gst_amount, type').eq('user_id', userId).eq('type', 'expense').gte('date', from).lte('date', to),
-          supabase.from('payslips').select('income_tax').eq('user_id', userId).gte('payment_date', from).lte('payment_date', to),
+          supabase.from('payslips').select('income_tax, medicare_levy, help_repayment').eq('user_id', userId).gte('payment_date', from).lte('payment_date', to),
         ])
 
         const gstCollected  = (invoices    ?? []).reduce((s, i) => s + (i.total_gst   as number), 0)
         const gstCredits    = (records     ?? []).reduce((s, r) => s + (r.gst_amount  as number), 0)
-        const paygWithheld  = (payslipsW2  ?? []).reduce((s, p) => s + (p.income_tax  as number), 0)
+        const paygWithheld  = (payslipsW2  ?? []).reduce((s, p) => s + (p.income_tax  as number) + (p.medicare_levy as number) + (p.help_repayment as number), 0)
         const netGst        = gstCollected - gstCredits
         const totalPayable  = netGst + paygWithheld
         const quarterNames  = ['', 'Q1 (Jul–Sep)', 'Q2 (Oct–Dec)', 'Q3 (Jan–Mar)', 'Q4 (Apr–Jun)']
@@ -1224,7 +985,7 @@ export async function executeToolCall(
             pay_period_end:    ps.pay_period_end  as string,
             payment_date:      ps.payment_date    as string,
             employer_name:     ps.employer_name   as string,
-            employer_abn:      (ps.employer_abn   as string | null) ?? '',
+            employer_abn:      ps.employer_abn ? formatABN(ps.employer_abn as string) : '',
             employer_address:  (biz?.address      as string | null) ?? undefined,
             employee_name:     ps.employee_name   as string,
             employee_tfn:      (emp?.tfn          as string | null) ?? undefined,
@@ -1242,6 +1003,9 @@ export async function executeToolCall(
             residency_status:   residencyStatus,
             annual_leave_hours:   (emp?.annual_leave_hours   as number | null) ?? undefined,
             personal_leave_hours: (emp?.personal_leave_hours as number | null) ?? undefined,
+            payItems: [],
+            allowances: [],
+            leave_loading_amount: 0,
             ytdIsActual: true,
             numbers: {
               ordinaryEarnings: ps.gross_pay       as number,
@@ -1263,7 +1027,8 @@ export async function executeToolCall(
 
           const pdfFilename = `Payslip-${ps.payslip_number as string}-${(ps.employee_name as string).replace(/\s+/g, '-')}.pdf`
           const payPeriod   = `${ps.pay_period_start as string} to ${ps.pay_period_end as string}`
-          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#F5F0E8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;padding:40px 0"><tr><td align="center"><table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)"><tr><td style="background:#1C1917;padding:28px 36px"><p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${ps.employer_name as string}</p><p style="margin:6px 0 0;color:#A09590;font-size:13px">Payslip Notification</p></td></tr><tr><td style="padding:36px"><p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${ps.employee_name as string},</p><p style="margin:0 0 28px;color:#57534E;font-size:14px;line-height:1.6">Your payslip for <strong>${payPeriod}</strong> is ready. Please find it attached to this email.</p><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;border-radius:8px;margin-bottom:28px"><tr><td style="padding:20px 24px"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:6px 0;color:#78716C;font-size:13px">Payslip Number</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${ps.payslip_number as string}</td></tr><tr><td style="padding:6px 0;color:#78716C;font-size:13px">Pay Period</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${payPeriod}</td></tr><tr><td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Net Pay</td><td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${fmt(ps.net_pay as number)}</td></tr></table></td></tr></table><p style="margin:0 0 6px;color:#57534E;font-size:13px;line-height:1.6">If you have any questions about your payslip, please contact your employer directly.</p></td></tr><tr><td style="background:#F5F0E8;padding:20px 36px;border-top:1px solid #E5DDD5"><p style="margin:0;color:#A09590;font-size:11px;text-align:center">Generated by SAB Account AI · ATO-compliant PAYG withholding</p></td></tr></table></td></tr></table></body></html>`
+          const allLogoUrl  = biz?.logo_url && (biz.logo_url as string).startsWith('https://') ? (biz.logo_url as string) : ''
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#F5F0E8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;padding:40px 0"><tr><td align="center"><table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)"><tr><td style="background:#1C1917;padding:28px 36px">${allLogoUrl ? `<img src="${allLogoUrl}" alt="${(ps.employer_name as string).replace(/"/g, '&quot;')}" style="max-height:60px;max-width:200px;object-fit:contain;margin-bottom:8px;display:block;" />` : ''}<p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">${ps.employer_name as string}</p><p style="margin:6px 0 0;color:#A09590;font-size:13px">Payslip Notification</p></td></tr><tr><td style="padding:36px"><p style="margin:0 0 8px;color:#1C1917;font-size:15px">Hi ${ps.employee_name as string},</p><p style="margin:0 0 28px;color:#57534E;font-size:14px;line-height:1.6">Your payslip for <strong>${payPeriod}</strong> is ready. Please find it attached to this email.</p><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F0E8;border-radius:8px;margin-bottom:28px"><tr><td style="padding:20px 24px"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:6px 0;color:#78716C;font-size:13px">Payslip Number</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${ps.payslip_number as string}</td></tr><tr><td style="padding:6px 0;color:#78716C;font-size:13px">Pay Period</td><td align="right" style="padding:6px 0;color:#1C1917;font-size:13px;font-weight:600">${payPeriod}</td></tr><tr><td style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#1C1917;font-size:14px;font-weight:700">Net Pay</td><td align="right" style="padding:10px 0 6px;border-top:1px solid #E5DDD5;color:#C84B2F;font-size:18px;font-weight:700">${fmt(ps.net_pay as number)}</td></tr></table></td></tr></table><p style="margin:0 0 6px;color:#57534E;font-size:13px;line-height:1.6">If you have any questions about your payslip, please contact your employer directly.</p></td></tr><tr><td style="background:#F5F0E8;padding:20px 36px;border-top:1px solid #E5DDD5"><p style="margin:0;color:#A09590;font-size:11px;text-align:center">Generated by SAB Account AI · ATO-compliant PAYG withholding</p></td></tr></table></td></tr></table></body></html>`
 
           const { error: sendErr } = await resend.emails.send({
             from:    process.env.EMAIL_FROM || 'onboarding@resend.dev',
@@ -1310,7 +1075,7 @@ export async function executeToolCall(
           supabase.from('business_profiles').select('business_name, abn, email').eq('id', userId).single(),
           supabase.from('invoices').select('invoice_number, client_name, total_inc_gst, total_gst, issue_date').eq('user_id', userId).gte('issue_date', from).lte('issue_date', to).order('issue_date', { ascending: false }),
           supabase.from('records').select('amount, gst_amount, type, description, date').eq('user_id', userId).gte('date', from).lte('date', to),
-          supabase.from('payslips').select('income_tax').eq('user_id', userId).gte('payment_date', from).lte('payment_date', to),
+          supabase.from('payslips').select('income_tax, medicare_levy, help_repayment').eq('user_id', userId).gte('payment_date', from).lte('payment_date', to),
         ])
 
         const gstCollected  = (invoices   ?? []).reduce((s, i) => s + (i.total_gst    as number), 0)
@@ -1318,7 +1083,7 @@ export async function executeToolCall(
         const expenses      = (records    ?? []).filter(r => (r.type as string) === 'expense')
         const gstCredits    = expenses.reduce((s, r) => s + (r.gst_amount as number), 0)
         const totalExpenses = expenses.reduce((s, r) => s + (r.amount     as number), 0)
-        const paygWithheld  = (payslipsW2 ?? []).reduce((s, p) => s + (p.income_tax   as number), 0)
+        const paygWithheld  = (payslipsW2 ?? []).reduce((s, p) => s + (p.income_tax as number) + (p.medicare_levy as number) + (p.help_repayment as number), 0)
         const netGst        = gstCollected - gstCredits
         const totalPayable  = netGst + paygWithheld
         const outcome       = netGst > 0 ? `Net GST payable to ATO: ${fmt(netGst)}` : netGst < 0 ? `GST refund from ATO: ${fmt(Math.abs(netGst))}` : 'Net zero — nothing owing'

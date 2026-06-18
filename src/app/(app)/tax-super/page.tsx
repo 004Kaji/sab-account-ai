@@ -290,7 +290,7 @@ export default function TaxSuperPage() {
           .lte('date', q.end),
         supabase
           .from('payslips')
-          .select('employee_name, income_tax, super_sg, super_sal_sac')
+          .select('employee_name, income_tax, medicare_levy, help_repayment, super_sg, super_sal_sac')
           .eq('user_id', user.id)
           .gte('pay_period_end', q.start)
           .lte('pay_period_end', q.end),
@@ -299,7 +299,7 @@ export default function TaxSuperPage() {
       const gstCollected = (invoices ?? []).reduce((s, r) => s + Number(r.total_gst), 0)
       const gstCredits   = (expenseRecs ?? []).reduce((s, r) => s + Number(r.gst_amount), 0)
       const netGST       = gstCollected - gstCredits
-      const paygWithheld = (payslips ?? []).reduce((s, p) => s + Number(p.income_tax), 0)
+      const paygWithheld = (payslips ?? []).reduce((s, p) => s + Number(p.income_tax) + Number(p.medicare_levy) + Number(p.help_repayment), 0)
 
       // Super per employee
       const empMap = new Map<string, number>()
