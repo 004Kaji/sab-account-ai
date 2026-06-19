@@ -218,13 +218,11 @@ export default function ChatPage() {
     setToolActivity(null)
 
     // Build message history for API.
-    // When an assistant message had a confirm card, include the action + payload so
-    // Claude knows create_payslip/create_invoice was already called and doesn't redo it.
+    // Confirm cards are now executed via /api/chat/confirm (bypassing Claude),
+    // so we just include the assistant's visible text for context.
     const history = [...messages, userMsg].map(m => ({
       role:    m.role,
-      content: m.confirmCard
-        ? (m.text ? m.text + '\n\n' : '') + `[Confirm card shown — ${m.confirmCard.action} ready with payload: ${JSON.stringify(m.confirmCard.action_payload)}]`
-        : m.text || '…',
+      content: m.text || (m.confirmCard ? `[Confirm card shown: "${m.confirmCard.title}"]` : '…'),
     }))
 
     try {
@@ -296,13 +294,62 @@ export default function ChatPage() {
   }, [messages, loading])
 
   // ── Handle confirm card action ─────────────────────────────────────
+  // Calls /api/chat/confirm directly — bypasses Claude entirely so it
+  // can't re-create the payslip/invoice instead of sending the existing one.
   const handleConfirm = useCallback(async (msgId: string, card: ConfirmCard) => {
-    // Mark this card as confirmed immediately
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, confirmed: true } : m))
+    setLoading(true)
 
-    const confirmText = `Confirmed. Call ${card.action} now with this exact payload: ${JSON.stringify(card.action_payload)}`
-    await send(confirmText)
-  }, [send])
+    try {
+      const supabase = createBrowserClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
+
+      const res = await fetch('/api/chat/confirm', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body:    JSON.stringify({ action: card.action, action_payload: card.action_payload }),
+      })
+
+      const data = await res.json() as Record<string, unknown>
+
+      // Build a human-readable result message from the tool response
+      let resultText: string
+      if (!res.ok || data.error) {
+        resultText = `Sorry, couldn't send — ${String(data.error ?? 'something went wrong')}.`
+      } else if (data.already_sent) {
+        resultText = `Already sent! ${String(data.message ?? '')}`
+      } else if (data.ok && data.payslip_number) {
+        resultText = `${String(data.payslip_number)} sent to ${String(data.sent_to)}. ✓`
+      } else if (data.ok && data.invoice_number) {
+        resultText = `${String(data.invoice_number)} sent to ${String(data.sent_to)}. ✓`
+      } else if (data.sent_count != null) {
+        resultText = `${String(data.sent_count)} payslips sent. ✓`
+      } else {
+        resultText = 'Done!'
+      }
+
+      // Persist both messages to chat_messages
+      const supabaseSvc = createBrowserClient()
+      const confirmMsg  = `Confirmed — ${card.title}`
+      await supabaseSvc.from('chat_messages').insert([
+        { user_id: session.user.id, role: 'user',      content: confirmMsg },
+        { user_id: session.user.id, role: 'assistant', content: resultText },
+      ])
+
+      setMessages(prev => [
+        ...prev,
+        { id: crypto.randomUUID(), role: 'user',      text: confirmMsg },
+        { id: crypto.randomUUID(), role: 'assistant', text: resultText },
+      ])
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong'
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', text: `Sorry, something went wrong: ${msg}` }])
+    } finally {
+      setLoading(false)
+      textareaRef.current?.focus()
+    }
+  }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {

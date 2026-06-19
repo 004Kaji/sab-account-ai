@@ -132,9 +132,7 @@ CRITICAL — action_payload must contain EVERYTHING needed to execute the action
 - send_invoice:      {"invoice_id":"<uuid>","client_email":"<email>"}
 - send_all_payslips: {"payslips":[{"payslip_id":"<uuid>","employee_email":"<email>","employee_name":"<name>"},...]}
 
-When the user clicks confirm, the UI sends: "Confirmed. Call <action> now with this exact payload: <action_payload>"
-You must then immediately call that tool with exactly those parameters — NO questions, NO re-confirmation, NO new create_payslip or create_invoice call.
-The payslip or invoice ALREADY EXISTS — it was created in the previous turn. The message history shows the confirm card with the existing ID. Just call the send tool directly.`
+When the user clicks the confirm button, the UI handles the send action directly — you will NOT receive a follow-up confirm message. Your job ends after outputting the confirm_card. Do NOT call send_payslip or send_invoice yourself after outputting a confirm_card.`
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '')
