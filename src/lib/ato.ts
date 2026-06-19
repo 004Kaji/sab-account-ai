@@ -30,6 +30,8 @@ export type PaygInput = {
   medicareLevyExemption: boolean
   payCycle: 'weekly' | 'fortnightly' | 'monthly'
   residencyStatus?: ResidencyStatus
+  // NAT 1004 Scale 4: employee has not quoted a TFN — flat 47%, no brackets, no HELP
+  noTfn?: boolean
 }
 
 export type PaygResult = {
@@ -162,7 +164,7 @@ function helpRepayment(annual: number): number {
   if (annual <= 67000)   return 0
   if (annual <= 125000)  return Math.round((annual - 67000) * 0.15)
   if (annual <= 179285)  return Math.round(8700 + (annual - 125000) * 0.17)
-  return Math.round(annual * 0.10)
+  return Math.round(8700 + (179285 - 125000) * 0.17 + (annual - 179285) * 0.10)
 }
 
 // ── Scale label for UI display ────────────────────────────────────────
@@ -170,7 +172,9 @@ export function getPaygScaleLabel(
   claimingThreshold: boolean,
   residencyStatus: ResidencyStatus,
   medicareLevyExemption: boolean,
+  noTfn?: boolean,
 ): string {
+  if (noTfn) return 'Scale 4 (no TFN — 47%)'
   const exempt = medicareLevyExemption || isMedicareExemptByResidency(residencyStatus)
   if (residencyStatus === 'whm') return 'WHM (Schedule 15)'
   if (claimingThreshold && !exempt)  return 'Scale 2 (threshold)'
@@ -183,10 +187,27 @@ export function getPaygScaleLabel(
 export function calculatePAYG(input: PaygInput): PaygResult {
   const {
     annualSalary, claimingThreshold, hasHELP, medicareLevyExemption,
-    payCycle, residencyStatus = 'citizen_pr',
+    payCycle, residencyStatus = 'citizen_pr', noTfn,
   } = input
   const periods = PERIODS_PER_YEAR[payCycle]
   const periodEarnings = annualSalary / periods
+
+  // Scale 4 — employee has not quoted a TFN (NAT 1004 Scale 4).
+  // Flat 47% on gross ordinary earnings. No brackets, no LITO, no Medicare adjustment,
+  // no HELP. Must be checked FIRST — takes precedence over all other scales.
+  if (noTfn) {
+    const periodWithholding = Math.round(periodEarnings * 0.47)
+    return {
+      annualTax:      Math.round(periodWithholding * periods),
+      annualMedicare: 0,
+      annualHELP:     0,
+      annualTotal:    Math.round(periodWithholding * periods),
+      periodTax:      periodWithholding,
+      periodMedicare: 0,
+      periodHELP:     0,
+      periodTotal:    periodWithholding,
+    }
+  }
 
   const isWHM = residencyStatus === 'whm'
   const effectiveMedExempt = medicareLevyExemption || isMedicareExemptByResidency(residencyStatus)
@@ -267,6 +288,8 @@ export type PayslipInput = {
   medicareLevyExemption: boolean
   paymentDate?: Date
   residencyStatus?: ResidencyStatus
+  // Scale 4: employee has not provided TFN — flat 47%, no LITO/Medicare/HELP
+  noTfn?: boolean
 }
 
 export type PayslipNumbers = {
@@ -292,7 +315,7 @@ export function calculatePayslip(input: PayslipInput): PayslipNumbers {
   const {
     annualSalary, salarySacrifice, overtimeHours, overtimeRate,
     payCycle, claimingThreshold, hasHELP, medicareLevyExemption, paymentDate,
-    residencyStatus = 'citizen_pr',
+    residencyStatus = 'citizen_pr', noTfn,
   } = input
 
   const periods = PERIODS_PER_YEAR[payCycle]
@@ -312,6 +335,7 @@ export function calculatePayslip(input: PayslipInput): PayslipNumbers {
     medicareLevyExemption,
     payCycle,
     residencyStatus,
+    noTfn,
   })
 
   const totalDeductions = payg.periodTotal

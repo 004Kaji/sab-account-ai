@@ -50,6 +50,7 @@ function slip(annual: number, opts?: {
   salSac?: number
   paymentDate?: Date
   overtime?: { hours: number; rate: number }
+  noTfn?: boolean
 }) {
   return calculatePayslip({
     annualSalary: annual,
@@ -62,6 +63,7 @@ function slip(annual: number, opts?: {
     medicareLevyExemption: opts?.medExempt ?? false,
     paymentDate: opts?.paymentDate,
     residencyStatus: opts?.residency ?? 'citizen_pr',
+    noTfn: opts?.noTfn,
   })
 }
 
@@ -493,5 +495,54 @@ describe('Mathematical properties', () => {
     const monthly = slip(80000, { cycle: 'monthly' }).grossPay * 12
     const weekly  = slip(80000, { cycle: 'weekly'  }).grossPay * 52
     expect(Math.abs(monthly - weekly)).toBeLessThan(1)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scale 4 — no TFN (NAT 1004): flat 47%, no brackets, no LITO, no Medicare
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Scale 4 — no TFN (47% flat)', () => {
+  it('weekly $1,000 gross → exactly $470 withheld', () => {
+    const result = calculatePAYG({
+      annualSalary: 1000 * 52,
+      claimingThreshold: true,
+      hasHELP: false,
+      medicareLevyExemption: false,
+      payCycle: 'weekly',
+      residencyStatus: 'citizen_pr',
+      noTfn: true,
+    })
+    expect(result.periodTotal).toBe(470)
+    expect(result.periodTax).toBe(470)
+    expect(result.periodMedicare).toBe(0)
+    expect(result.periodHELP).toBe(0)
+  })
+
+  it('calculatePayslip with noTfn=true: totalDeductions = 47% of grossPay', () => {
+    const result = slip(1000 * 52, { cycle: 'weekly', noTfn: true })
+    expect(result.incomeTax).toBe(470)
+    expect(result.medicareLevy).toBe(0)
+    expect(result.helpRepayment).toBe(0)
+    expect(result.totalDeductions).toBe(470)
+  })
+
+  it('Scale 4 ignores claiming_threshold — same result regardless', () => {
+    const withThreshold    = calculatePAYG({ annualSalary: 52000, claimingThreshold: true,  hasHELP: false, medicareLevyExemption: false, payCycle: 'weekly', residencyStatus: 'citizen_pr', noTfn: true })
+    const withoutThreshold = calculatePAYG({ annualSalary: 52000, claimingThreshold: false, hasHELP: false, medicareLevyExemption: false, payCycle: 'weekly', residencyStatus: 'citizen_pr', noTfn: true })
+    expect(withThreshold.periodTotal).toBe(withoutThreshold.periodTotal)
+  })
+
+  it('Scale 4 ignores hasHELP — same result regardless', () => {
+    const withHelp    = calculatePAYG({ annualSalary: 52000, claimingThreshold: true, hasHELP: true,  medicareLevyExemption: false, payCycle: 'weekly', residencyStatus: 'citizen_pr', noTfn: true })
+    const withoutHelp = calculatePAYG({ annualSalary: 52000, claimingThreshold: true, hasHELP: false, medicareLevyExemption: false, payCycle: 'weekly', residencyStatus: 'citizen_pr', noTfn: true })
+    expect(withHelp.periodTotal).toBe(withoutHelp.periodTotal)
+  })
+
+  it('Scale 1 is unaffected by noTfn being absent — byte-identical to baseline', () => {
+    const baseline = calculatePAYG({ annualSalary: 80000, claimingThreshold: true, hasHELP: false, medicareLevyExemption: false, payCycle: 'fortnightly', residencyStatus: 'citizen_pr' })
+    const noFlag   = calculatePAYG({ annualSalary: 80000, claimingThreshold: true, hasHELP: false, medicareLevyExemption: false, payCycle: 'fortnightly', residencyStatus: 'citizen_pr', noTfn: false })
+    expect(baseline.periodTotal).toBe(noFlag.periodTotal)
+    expect(baseline.periodMedicare).toBe(noFlag.periodMedicare)
   })
 })

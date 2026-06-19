@@ -17,8 +17,14 @@ async function addLogoToPdf(
       img.onload = () => {
         clearTimeout(timer)
         const logoW = Math.min(Math.round(logoH * img.naturalWidth / img.naturalHeight), maxW)
-        const fmt = logoUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
-        try { doc.addImage(logoUrl, fmt, x, y, logoW, logoH) } catch { /* skip */ }
+        const format = logoUrl.startsWith('data:image/png')
+          ? 'PNG'
+          : logoUrl.startsWith('data:image/jpeg') || logoUrl.startsWith('data:image/jpg')
+          ? 'JPEG'
+          : logoUrl.startsWith('data:image/webp')
+          ? 'WEBP'
+          : 'PNG'
+        try { doc.addImage(logoUrl, format, x, y, logoW, logoH) } catch (err) { console.error('[addLogoToPdf] jsPDF addImage failed:', err) }
         resolve()
       }
       img.onerror = () => { clearTimeout(timer); resolve() }
@@ -119,6 +125,7 @@ export interface PayslipPDFData {
   leave_loading_amount?: number
   annual_leave_hours?: number
   personal_leave_hours?: number
+  noTfn?: boolean
   numbers: PayslipNumbers
 }
 
@@ -336,12 +343,12 @@ async function buildPayslipDoc(data: PayslipPDFData) {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.5)
   doc.setTextColor(130, 125, 120)
-  doc.text(`Tax Scale: ${getPaygScaleLabel(data.claiming_threshold, (data.residency_status ?? 'citizen_pr') as Parameters<typeof getPaygScaleLabel>[1], data.medicare_exempt ?? false)}${data.has_help ? ' + HELP' : ''}`, margin + 2, y)
+  doc.text(`Tax Scale: ${getPaygScaleLabel(data.claiming_threshold, (data.residency_status ?? 'citizen_pr') as Parameters<typeof getPaygScaleLabel>[1], data.medicare_exempt ?? false, data.noTfn)}${data.has_help && !data.noTfn ? ' + HELP' : ''}`, margin + 2, y)
   y += 4.5
   if (n.totalDeductions === 0) {
     lineItem('PAYG Withholding', '$0.00', '$0.00')
   } else {
-    if (n.incomeTax > 0)     lineItem('PAYG Income Tax',      formatCurrency(n.incomeTax))
+    if (n.incomeTax > 0)     lineItem(data.noTfn ? 'No TFN — 47% withholding' : 'PAYG Income Tax', formatCurrency(n.incomeTax))
     if (n.medicareLevy > 0)  lineItem('Medicare Levy (2%)',   formatCurrency(n.medicareLevy))
     if (n.helpRepayment > 0) lineItem('HELP / HECS Repayment', formatCurrency(n.helpRepayment))
   }
@@ -467,7 +474,7 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
   doc.setFontSize(22)
   doc.setTextColor(isQuote ? 37 : 200, isQuote ? 99 : 75, isQuote ? 235 : 47)
   doc.text(isQuote ? 'QUOTE' : 'TAX INVOICE', pageW / 2, y, { align: 'center' })
-  y += 9
+  y += 7
 
   // ── Left: Logo + Business  ·  Right: Invoice meta ─────────────────────
   const invMetaX = margin + cW * 0.55
@@ -514,14 +521,14 @@ async function buildInvoiceDoc(data: InvoicePDFData) {
   if (data.business_phone)   { doc.text(data.business_phone, margin, y); y += 4.5 }
   if (data.business_address) { doc.text(data.business_address, margin, y); y += 4.5 }
 
-  y = Math.max(y, metaY) + 5
+  y = Math.max(y, metaY) + 3
 
   // Separator
   doc.setDrawColor(28, 25, 23)
   doc.setLineWidth(0.4)
   doc.line(margin, y, pageW - margin, y)
   doc.setLineWidth(0.2)
-  y += 7
+  y += 5
 
   // ── Invoice To (left) + Payment Method (right) ───────────────────────
   const colRight = margin + cW * 0.55

@@ -294,7 +294,7 @@ export async function executeToolCall(
 
         const { data: biz } = await supabase
           .from('business_profiles')
-          .select('business_name, abn, email, phone, address')
+          .select('business_name, abn, email, phone, address, default_payment_terms, default_footer, bank_name, account_name, bsb, account_number')
           .eq('id', userId)
           .single()
 
@@ -306,22 +306,29 @@ export async function executeToolCall(
         }))
 
         const { data: inv, error } = await supabase.from('invoices').insert({
-          user_id:        userId,
-          invoice_number: invoiceNumber,
-          status:         'draft',
-          client_name:    (input.client_name as string) || '',
-          client_email:   (input.client_email as string) || null,
-          business_name:   (biz?.business_name as string) || '',
-          business_abn:    (biz?.abn as string) || null,
-          business_email:  (biz?.email as string) || null,
-          line_items:      lineItems,
-          has_gst:         includeGst,
-          subtotal_ex_gst: subtotal,
-          total_gst:       gst,
-          total_inc_gst:   total,
-          issue_date:      today.toISOString().slice(0, 10),
-          due_date:        dueDate.toISOString().slice(0, 10),
-          notes:           (input.description as string) || null,
+          user_id:          userId,
+          invoice_number:   invoiceNumber,
+          status:           'draft',
+          client_name:      (input.client_name as string) || '',
+          client_email:     (input.client_email as string) || null,
+          business_name:    (biz?.business_name as string) || '',
+          business_abn:     (biz?.abn as string) || null,
+          business_email:   (biz?.email as string) || null,
+          business_phone:   (biz?.phone as string) || null,
+          business_address: (biz?.address as string) || null,
+          payment_terms:    (biz?.default_payment_terms as string) || 'Due on receipt',
+          bank_name:        (biz?.bank_name as string) || null,
+          account_name:     (biz?.account_name as string) || null,
+          bsb:              (biz?.bsb as string) || null,
+          account_number:   (biz?.account_number as string) || null,
+          line_items:       lineItems,
+          has_gst:          includeGst,
+          subtotal_ex_gst:  subtotal,
+          total_gst:        gst,
+          total_inc_gst:    total,
+          issue_date:       today.toISOString().slice(0, 10),
+          due_date:         dueDate.toISOString().slice(0, 10),
+          notes:            (input.description as string) || (biz?.default_footer as string) || null,
         }).select('id').single()
 
         if (error) throw new Error(error.message)
@@ -330,7 +337,10 @@ export async function executeToolCall(
           invoice_id:     inv.id,
           invoice_number: invoiceNumber,
           client_name:    input.client_name,
-          client_email:   input.client_email,
+          // client_email intentionally excluded — returning it causes Claude to call
+          // send_invoice immediately in the same turn (before user confirmation),
+          // resulting in a duplicate email. Claude reads the email from the CLIENTS
+          // list when building the confirm card action_payload.
           subtotal:       fmt(subtotal),
           gst:            fmt(gst),
           total:          fmt(total),
@@ -341,13 +351,17 @@ export async function executeToolCall(
             includeGst ? ['GST (10%)', fmt(gst)] : null,
             ['Total', fmt(total)],
           ].filter(Boolean),
+          next_step: 'STOP HERE. Output a confirm_card and nothing else. Do NOT call send_invoice in this turn — not even using the email from the CLIENTS list. Do NOT create another invoice. Wait for the user to click the confirm button.',
         }
       }
 
       // ── send_invoice ────────────────────────────────────────────
       case 'send_invoice': {
-        const invoiceId  = input.invoice_id as string
-        const clientEmail = input.client_email as string
+        const invoiceId   = input.invoice_id as string
+        const clientEmail = input.client_email as string | undefined
+        if (!clientEmail || !clientEmail.includes('@')) {
+          return { error: 'A valid client email is required to send this invoice. Please provide the client\'s email address.' }
+        }
 
         const { data: inv, error: fetchErr } = await supabase
           .from('invoices')
@@ -358,12 +372,23 @@ export async function executeToolCall(
 
         if (fetchErr || !inv) return { error: 'Invoice not found or access denied' }
 
-        // Fetch business profile for logo, address, banking (fallback for fields not stored on invoice)
+        // Idempotency guard: invoice has already been sent if status is not 'draft'
+        if (inv.status !== 'draft') {
+          return {
+            already_sent: true,
+            invoice_number: inv.invoice_number,
+            status: inv.status,
+            message: `Invoice ${inv.invoice_number as string} has already been sent (status: ${inv.status as string}). It does not need to be sent again.`,
+          }
+        }
+
+        // Fetch business profile for logo, address, phone, and banking fallback
         const { data: bizPro } = await supabase
           .from('business_profiles')
-          .select('address, logo_url, bank_name, account_name, bsb, account_number')
+          .select('address, logo_url, phone, bank_name, account_name, bsb, account_number')
           .eq('id', userId)
           .single()
+        if (!bizPro) console.warn('[send_invoice] business_profiles row missing for userId', userId)
 
         const lineItems = (inv.line_items as Array<{ description: string; qty?: number; unit_price?: number; total?: number; amount?: number; has_gst?: boolean }>)
           .map(li => ({
@@ -383,7 +408,7 @@ export async function executeToolCall(
           business_name:        (inv.business_name        as string) || '',
           business_abn:         (inv.business_abn         as string | null) ?? '',
           business_email:       (inv.business_email       as string | null) ?? '',
-          business_phone:       (inv.business_phone       as string | null) ?? '',
+          business_phone:       (inv.business_phone       as string | null) || (bizPro?.phone        as string | null) || '',
           business_address:     (inv.business_address     as string | null) || (bizPro?.address      as string | null) || '',
           logo_url:             safeLogoUrl(bizPro?.logo_url as string | null),
           client_name:          inv.client_name           as string,
@@ -514,6 +539,7 @@ export async function executeToolCall(
           medicareLevyExemption: isMedicareExemptByResidency(residencyStatus),
           paymentDate:           new Date(periodEnd),
           residencyStatus,
+          noTfn:                 !emp.tfn,
         })
 
         const payslipNumber = await nextPayslipNumber(userId, supabase)
@@ -569,7 +595,10 @@ export async function executeToolCall(
           payslip_id:      ps.id,
           payslip_number:  payslipNumber,
           employee_name:   emp.name,
-          employee_email:  emp.email,
+          // employee_email intentionally excluded — it was causing Claude to call
+          // send_payslip immediately in the same turn (before user confirmation),
+          // resulting in a duplicate email. Claude reads the email from the EMPLOYEES
+          // list when building the confirm card action_payload.
           pay_period:      `${periodStart!} to ${periodEnd}`,
           gross_pay:       fmt(numbers.grossPay),
           income_tax:      fmt(numbers.incomeTax),
@@ -578,6 +607,7 @@ export async function executeToolCall(
           net_pay:         fmt(numbers.netPay),
           super_sg:        fmt(numbers.superSG),
           ...(payItemLines.length > 0 && { pay_items_applied: payItemLines }),
+          next_step: 'STOP HERE. Output a confirm_card and nothing else. Do NOT call send_payslip in this turn — not even using the email from the EMPLOYEES list. Do NOT create another payslip. Wait for the user to click the confirm button.',
           rows: [
             ['Gross Pay',      fmt(numbers.grossPay)],
             ['Income Tax',     fmt(numbers.incomeTax)],
@@ -603,11 +633,22 @@ export async function executeToolCall(
 
         if (fetchErr || !ps) return { error: 'Payslip not found or access denied' }
 
+        // Idempotency guard: payslip already emailed — prevent accidental double-send
+        if (ps.sent_at) {
+          return {
+            already_sent: true,
+            payslip_number: ps.payslip_number,
+            sent_at: ps.sent_at,
+            message: `Payslip ${ps.payslip_number as string} was already emailed on ${ps.sent_at as string}. It does not need to be sent again.`,
+          }
+        }
+
         // Fetch employee + business data for full-fidelity jsPDF
         const [{ data: emp }, { data: biz }] = await Promise.all([
           supabase.from('employees').select('pay_basis, annual_salary, hourly_rate, ordinary_hours, salary_sacrifice, claiming_threshold, has_help, residency_status, annual_leave_hours, personal_leave_hours, tfn').eq('user_id', userId).ilike('name', ps.employee_name as string).maybeSingle(),
           supabase.from('business_profiles').select('address, logo_url').eq('id', userId).single(),
         ])
+        if (!biz) console.warn('[send_payslip] business_profiles row missing for userId', userId)
 
         // YTD: all payslips for this employee in the current ATO financial year up to (and including) this payslip
         const payDate     = new Date(ps.payment_date as string)
@@ -653,6 +694,7 @@ export async function executeToolCall(
           allowances:           (ps.allowances as Array<{description: string; amount: number}> | null) ?? [],
           leave_loading_amount: (ps.leave_loading_amount as number | null) ?? 0,
           logo_url:             safeLogoUrl(biz?.logo_url as string | null),
+          noTfn:                !emp?.tfn,
           ytdIsActual: true,
           numbers: {
             ordinaryEarnings: ps.gross_pay       as number,
@@ -688,6 +730,8 @@ export async function executeToolCall(
           logoUrl:       safeLogoUrl(biz?.logo_url as string | null),
         })
 
+        await supabase.from('payslips').update({ sent_at: new Date().toISOString() }).eq('id', payslipId)
+
         return { ok: true, payslip_number: ps.payslip_number, sent_to: employeeEmail, net_pay: fmt(ps.net_pay as number), pdf_attached: pdfFilename }
       }
 
@@ -706,7 +750,7 @@ export async function executeToolCall(
         const [from, to] = quarterRanges[quarter]
 
         const [{ data: invoices }, { data: records }, { data: payslipsW2 }] = await Promise.all([
-          supabase.from('invoices').select('total_gst, total_inc_gst').eq('user_id', userId).gte('issue_date', from).lte('issue_date', to),
+          supabase.from('invoices').select('total_gst, total_inc_gst').eq('user_id', userId).in('status', ['pending', 'paid', 'overdue']).gte('issue_date', from).lte('issue_date', to),
           supabase.from('records').select('gst_amount, type').eq('user_id', userId).eq('type', 'expense').gte('date', from).lte('date', to),
           supabase.from('payslips').select('income_tax, medicare_levy, help_repayment').eq('user_id', userId).gte('payment_date', from).lte('payment_date', to),
         ])
@@ -777,7 +821,7 @@ export async function executeToolCall(
         const to   = input.date_to as string
 
         const [{ data: invoices }, { data: records }] = await Promise.all([
-          supabase.from('invoices').select('total_inc_gst, total_gst').eq('user_id', userId).gte('issue_date', from).lte('issue_date', to),
+          supabase.from('invoices').select('total_inc_gst, total_gst').eq('user_id', userId).in('status', ['pending', 'paid', 'overdue']).gte('issue_date', from).lte('issue_date', to),
           supabase.from('records').select('amount, gst_amount, type').eq('user_id', userId).gte('date', from).lte('date', to),
         ])
 
@@ -886,6 +930,7 @@ export async function executeToolCall(
               medicareLevyExemption: isMedicareExemptByResidency(residencyStatus),
               paymentDate:           new Date(periodEnd),
               residencyStatus,
+              noTfn:                 !emp.tfn,
             })
 
             const payslipNumber = await nextPayslipNumber(userId, supabase)
@@ -1030,6 +1075,7 @@ export async function executeToolCall(
             allowances:           (ps.allowances as Array<{description: string; amount: number}> | null) ?? [],
             leave_loading_amount: (ps.leave_loading_amount as number | null) ?? 0,
             logo_url:             safeLogoUrl(biz?.logo_url as string | null),
+            noTfn:                !emp?.tfn,
             ytdIsActual: true,
             numbers: {
               ordinaryEarnings: ps.gross_pay       as number,
@@ -1102,7 +1148,7 @@ export async function executeToolCall(
 
         const [{ data: biz }, { data: invoices }, { data: records }, { data: payslipsW2 }] = await Promise.all([
           supabase.from('business_profiles').select('business_name, abn, email').eq('id', userId).single(),
-          supabase.from('invoices').select('invoice_number, client_name, total_inc_gst, total_gst, issue_date').eq('user_id', userId).gte('issue_date', from).lte('issue_date', to).order('issue_date', { ascending: false }),
+          supabase.from('invoices').select('invoice_number, client_name, total_inc_gst, total_gst, issue_date').eq('user_id', userId).in('status', ['pending', 'paid', 'overdue']).gte('issue_date', from).lte('issue_date', to).order('issue_date', { ascending: false }),
           supabase.from('records').select('amount, gst_amount, type, description, date').eq('user_id', userId).gte('date', from).lte('date', to),
           supabase.from('payslips').select('income_tax, medicare_levy, help_repayment').eq('user_id', userId).gte('payment_date', from).lte('payment_date', to),
         ])

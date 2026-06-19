@@ -140,7 +140,7 @@ export default function EmployeesPage() {
   async function handleSave() {
     if (!form.name.trim()) { toast('Name is required', 'error'); return }
     if (!form.tfn.trim() && !form.abn.trim()) { toast('TFN or ABN is required', 'error'); return }
-    if (!validateTFN(form.tfn)) { toast('TFN must be 9 digits', 'error'); return }
+    if (form.tfn.trim() && !validateTFN(form.tfn)) { toast('TFN must be 9 digits', 'error'); return }
     if (!validateABN(form.abn)) { toast('ABN must be 11 digits', 'error'); return }
 
     setSaving(true)
@@ -385,6 +385,11 @@ export default function EmployeesPage() {
           <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '-0.5rem' }}>
             Employees have a TFN (9 digits). Contractors/sole traders use an ABN (11 digits). At least one is required.
           </p>
+          {!form.tfn.trim() && !form.abn.trim() && (
+            <p style={{ fontSize: '0.75rem', color: '#B45309', marginTop: '-0.25rem' }}>
+              Without a TFN, PAYG withholding will be 47% of gross earnings (ATO Scale 4).
+            </p>
+          )}
 
           {/* Employment type / pay cycle / pay basis */}
           <div className="form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>

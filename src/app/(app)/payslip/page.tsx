@@ -222,7 +222,7 @@ function PayslipPreview({ form, biz, numbers, ytdIsActual, payItemsThisPeriod, l
           </p>
           <p style={{ fontSize: '0.75rem', color: '#A09590' }}>Payment: {form.payment_date ? formatDateAU(form.payment_date) : '—'}</p>
           <p style={{ fontSize: '0.75rem', color: '#A09590' }}>
-            {getPaygScaleLabel(form.claiming_threshold, form.residency_status, form.medicare_exemption)}
+            {getPaygScaleLabel(form.claiming_threshold, form.residency_status, form.medicare_exemption, !form.employee_tfn?.trim())}
           </p>
           {form.residency_status !== 'whm' && (
             <p style={{ fontSize: '0.75rem', color: '#A09590' }}>
@@ -370,6 +370,7 @@ export default function PayslipPage() {
     ? (form.hourly_rate * form.ordinary_hours + allExtras) * PERIODS_PER_YEAR[form.pay_cycle]
     : form.annual_salary + allExtras * PERIODS_PER_YEAR[form.pay_cycle]
 
+  const noTfn = !form.employee_tfn.trim()
   const numbers: PayslipNumbers = calculatePayslip({
     annualSalary:          effectiveAnnualSalary,
     salarySacrifice:       form.salary_sacrifice,
@@ -381,6 +382,7 @@ export default function PayslipPage() {
     medicareLevyExemption: form.medicare_exemption,
     paymentDate:           new Date(form.payment_date),
     residencyStatus:       form.residency_status,
+    noTfn,
   })
 
   const ytdIsActual = ytdPrev !== null
@@ -588,6 +590,7 @@ export default function PayslipPage() {
       leave_loading_amount:  leaveLoadingAmount > 0 ? leaveLoadingAmount : undefined,
       annual_leave_hours:    form.annual_leave_hours   != null ? Math.max(0, Math.round((form.annual_leave_hours   - form.annual_leave_taken)   * 100) / 100) : undefined,
       personal_leave_hours:  form.personal_leave_hours != null ? Math.max(0, Math.round((form.personal_leave_hours - form.personal_leave_taken) * 100) / 100) : undefined,
+      noTfn,
     }
   }
 
@@ -975,7 +978,10 @@ export default function PayslipPage() {
                   <div>
                     <label className="sab-label">TFN <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
                     <input className="sab-input" placeholder="XXX XXX XXX" value={form.employee_tfn} onChange={e => setField('employee_tfn', e.target.value)} />
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.25rem' }}>Shown masked on payslip (XXX-XXX-123)</p>
+                    {!form.employee_tfn.trim()
+                      ? <p style={{ fontSize: '0.75rem', color: '#B45309', marginTop: '0.25rem' }}>No TFN — PAYG withholding will be 47% (ATO Scale 4)</p>
+                      : <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.25rem' }}>Shown masked on payslip (XXX-XXX-123)</p>
+                    }
                   </div>
                 </div>
 
