@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 
 const ADMIN_EMAILS = ['sanjog.basnet02@gmail.com', 'basnet@sabaccountai.com']
@@ -42,7 +43,7 @@ KEY FEATURES:
 - AI invoice generation — describe a job in plain English, Claude generates professional line items with GST
 - Payslip generation with ATO-compliant PAYG withholding calculations
 - HELP/HECS repayment calculations (Schedule 8, ATO-accurate)
-- Superannuation tracking (11.5% SGC rate, payday super compliance)
+- Superannuation tracking (12% SGC rate from July 2025, payday super compliance)
 - Single Touch Payroll (STP) compliance
 - ABN payment tracking
 - Tax & Super dashboard
@@ -187,7 +188,9 @@ Return ONLY valid JSON, no markdown or extra text:
     const jsonMatch = extractFirstJSON(text)
     if (!jsonMatch) throw new Error('No JSON in response')
     return NextResponse.json(JSON.parse(jsonMatch))
-  } catch {
+  } catch (err) {
+    console.error('[post-writer] Failed to parse Claude response:', err)
+    Sentry.captureException(err, { tags: { route: 'admin/post-writer' } })
     return NextResponse.json({ error: 'Generation failed' }, { status: 500 })
   }
 }

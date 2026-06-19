@@ -10,12 +10,24 @@ export async function POST(req: NextRequest) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
   if (authErr || !user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-  const { sessionId } = await req.json() as { sessionId: string }
+  let sessionId: string
+  try {
+    const body = await req.json() as { sessionId: string }
+    sessionId = body.sessionId
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
   if (!sessionId) return NextResponse.json({ error: 'Missing session ID' }, { status: 400 })
 
-  const session = await stripe.checkout.sessions.retrieve(sessionId, {
-    expand: ['subscription'],
-  })
+  let session: Awaited<ReturnType<typeof stripe.checkout.sessions.retrieve>>
+  try {
+    session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['subscription'],
+    })
+  } catch (err) {
+    console.error('[stripe/confirm] Session retrieve failed:', err)
+    return NextResponse.json({ error: 'Failed to retrieve payment session' }, { status: 500 })
+  }
 
   if (session.status !== 'complete') {
     return NextResponse.json({ error: 'Payment not complete' }, { status: 400 })

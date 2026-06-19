@@ -261,7 +261,7 @@ export default function PayslipHistoryPage() {
                         <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontSize: '0.8125rem', fontFamily: 'var(--font-mono)', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                           {formatCurrency(ps.gross_pay)}
                         </td>
-                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontSize: '0.875rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--ember)', whiteSpace: 'nowrap' }}>
+                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontSize: '0.875rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#15803d', whiteSpace: 'nowrap' }}>
                           {formatCurrency(ps.net_pay)}
                         </td>
                         <td style={{ padding: '0.75rem 1rem', whiteSpace: 'nowrap' }}>

@@ -148,25 +148,26 @@ async function buildBasDoc(quarter: Quarter, summary: BasSummary, businessName: 
 
   // ── Total Payable Box ────────────────────────────────────────────────
   const totalPayable = summary.netGST + summary.paygWithheld
-  doc.setFillColor(...EMBER)
+  const isRefund = totalPayable < 0
+  doc.setFillColor(...(isRefund ? GREEN : EMBER))
   doc.rect(15, y, pageW - 30, 22, 'F')
   doc.setTextColor(...WHITE)
   doc.setFontSize(9)
   doc.setFont('helvetica', 'bold')
-  doc.text('TOTAL AMOUNT PAYABLE TO ATO', 20, y + 7)
+  doc.text(isRefund ? 'NET REFUND FROM ATO' : 'TOTAL AMOUNT PAYABLE TO ATO', 20, y + 7)
   doc.setFontSize(18)
   doc.text(fc(totalPayable), pageW - 20, y + 16, { align: 'right' })
   doc.setFontSize(8)
   doc.setFont('helvetica', 'normal')
-  doc.text(`Net GST ${fc(summary.netGST)}${summary.paygWithheld > 0 ? `  +  PAYG Withholding ${fc(summary.paygWithheld)}` : ''}`, 20, y + 16)
-  doc.text(`Due by ${quarter.basDue}`, 20, y + 20)
+  doc.text(`Net GST ${summary.netGST < 0 ? `(refund) ${fc(summary.netGST)}` : fc(summary.netGST)}${summary.paygWithheld > 0 ? `  +  PAYG W2 ${fc(summary.paygWithheld)}` : ''}`, 20, y + 16)
+  doc.text(isRefund ? `Lodge by ${quarter.basDue} to claim your refund` : `Due by ${quarter.basDue}`, 20, y + 20)
   y += 28
 
   // ── How to Lodge ─────────────────────────────────────────────────────
   const boxH = 62
   doc.setFillColor(...CREAM)
   doc.rect(15, y, pageW - 30, boxH, 'F')
-  doc.setFillColor(...EMBER)
+  doc.setFillColor(...(isRefund ? GREEN : EMBER))
   doc.rect(15, y, 3, boxH, 'F')
 
   doc.setTextColor(...CHAR)
@@ -178,7 +179,7 @@ async function buildBasDoc(quarter: Quarter, summary: BasSummary, businessName: 
     ['Option 1 - Via your accountant:', 'Email or share this PDF. Your accountant will lodge via the ATO portal.'],
     ['Option 2 - Self-lodge via myGov:', 'Go to my.gov.au, select ATO, then Lodge Activity Statement. Enter 1A, 1B, W2.'],
     ['Option 3 - ATO Business Portal:', 'Go to bp.ato.gov.au, select Activity Statements, enter figures from this PDF.'],
-    ['Payment:', `Pay ${fc(totalPayable)} by ${quarter.basDue} via BPAY or EFT. Reference on your ATO portal.`],
+    [isRefund ? 'Refund:' : 'Payment:', isRefund ? `Lodge by ${quarter.basDue} — ATO will refund ${fc(totalPayable)} to your nominated bank account.` : `Pay ${fc(totalPayable)} by ${quarter.basDue} via BPAY or EFT. Reference on your ATO portal.`],
   ]
 
   const stepStart = y + 16

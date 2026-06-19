@@ -8,7 +8,7 @@ import { useToast } from '@/components/ui/Toast'
 import PlanGate from '@/components/ui/PlanGate'
 import ReferralBanner from '@/components/ui/ReferralBanner'
 import AutocompleteDropdown from '@/components/ui/AutocompleteDropdown'
-import { calculatePayslip, isMedicareExemptByResidency, getPaygScaleLabel, PERIODS_PER_YEAR, type PayslipNumbers, type ResidencyStatus } from '@/lib/ato'
+import { calculatePayslip, isMedicareExemptByResidency, getPaygScaleLabel, getSuperRate, PERIODS_PER_YEAR, type PayslipNumbers, type ResidencyStatus } from '@/lib/ato'
 import { formatCurrency, formatDateAU, todayISO, addDays, formatABN } from '@/lib/utils'
 import { getAwardRates, pct } from '@/lib/award-rates'
 
@@ -191,7 +191,7 @@ function PayslipPreview({ form, biz, numbers, ytdIsActual, payItemsThisPeriod, l
   payItemsThisPeriod: number
   leaveLoadingAmount: number
 }) {
-  const superRate  = new Date(form.payment_date) >= new Date('2025-07-01') ? '12%' : '11.5%'
+  const superRate  = `${(getSuperRate(form.payment_date ? new Date(form.payment_date) : undefined) * 100).toFixed(1).replace('.0', '')}%`
   const allExtras  = payItemsThisPeriod + leaveLoadingAmount
 
   return (

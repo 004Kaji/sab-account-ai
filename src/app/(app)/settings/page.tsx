@@ -37,6 +37,10 @@ interface BizSettings {
   notify_super:         boolean
   notify_payment:       boolean
   notify_weekly:        boolean
+  bank_name:            string
+  account_name:         string
+  bsb:                  string
+  account_number:       string
 }
 
 const EMPTY: BizSettings = {
@@ -46,6 +50,7 @@ const EMPTY: BizSettings = {
   default_currency: 'AUD', default_footer: '',
   gst_registered: false, bas_frequency: 'quarterly',
   notify_overdue: true, notify_bas: true, notify_super: true, notify_payment: true, notify_weekly: false,
+  bank_name: '', account_name: '', bsb: '', account_number: '',
 }
 
 const TABS: { key: TabKey; label: string }[] = [
@@ -611,15 +616,37 @@ function InvoiceDefaultsTab({ biz, setField, saving, save }: SharedTabProps) {
         />
       </div>
 
-      <div style={{ background: 'var(--cream)', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1rem' }}>
-        <p style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--char)', marginBottom: '0.25rem' }}>Bank Details</p>
-        <p style={{ fontSize: '0.8125rem', color: 'var(--text3)' }}>
-          Bank details (BSB, account number) are entered per-invoice when creating invoices. They appear on the invoice PDF under &quot;Payment Details&quot;.
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
+        <p style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.25rem' }}>Bank Details</p>
+        <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', marginBottom: '1rem' }}>
+          SAB Chat uses these details when creating invoices. They also appear on all invoice PDFs under &quot;Payment Method&quot;.
         </p>
+        <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div>
+            <label className="sab-label">Account Name</label>
+            <input className="sab-input" placeholder="e.g. Agro Pty Ltd" value={biz.account_name}
+              onChange={e => setField('account_name', e.target.value)} />
+          </div>
+          <div>
+            <label className="sab-label">Bank Name</label>
+            <input className="sab-input" placeholder="e.g. Commonwealth Bank" value={biz.bank_name}
+              onChange={e => setField('bank_name', e.target.value)} />
+          </div>
+          <div>
+            <label className="sab-label">BSB</label>
+            <input className="sab-input" placeholder="e.g. 062-000" value={biz.bsb}
+              onChange={e => setField('bsb', e.target.value)} />
+          </div>
+          <div>
+            <label className="sab-label">Account Number</label>
+            <input className="sab-input" placeholder="e.g. 12345678" value={biz.account_number}
+              onChange={e => setField('account_number', e.target.value)} />
+          </div>
+        </div>
       </div>
 
       <div>
-        <button onClick={() => save({ default_payment_terms: biz.default_payment_terms, default_gst: biz.default_gst, starting_invoice_num: biz.starting_invoice_num, default_currency: biz.default_currency, default_footer: biz.default_footer })}
+        <button onClick={() => save({ default_payment_terms: biz.default_payment_terms, default_gst: biz.default_gst, starting_invoice_num: biz.starting_invoice_num, default_currency: biz.default_currency, default_footer: biz.default_footer, bank_name: biz.bank_name, account_name: biz.account_name, bsb: biz.bsb, account_number: biz.account_number })}
           disabled={saving} className="btn btn-ember">
           {saving && <span className="spinner" style={{ width: '0.875rem', height: '0.875rem', borderWidth: '2px' }} />}
           {saving ? 'Saving…' : 'Save Invoice Defaults'}
@@ -1347,6 +1374,10 @@ function SettingsPageInner() {
           notify_super:         data.notify_super         ?? true,
           notify_payment:       data.notify_payment       ?? true,
           notify_weekly:        data.notify_weekly        ?? false,
+          bank_name:            data.bank_name            ?? '',
+          account_name:         data.account_name         ?? '',
+          bsb:                  data.bsb                  ?? '',
+          account_number:       data.account_number       ?? '',
         })
       }
       setLoading(false)

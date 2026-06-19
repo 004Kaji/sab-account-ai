@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 
-const ADMIN_EMAILS = ['sanjog.basnet02@gmail.com', 'basnet@sabaccountai.com']
+import { ADMIN_EMAILS } from '@/lib/admin'
 
 async function authenticate(req: NextRequest): Promise<boolean> {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '')

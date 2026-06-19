@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
+import { checkPublicRateLimit } from '@/lib/ratelimit'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export async function POST(req: NextRequest) {
+  const { allowed } = await checkPublicRateLimit(req)
+  if (!allowed) return NextResponse.json({ error: 'Too many requests. Please try again in an hour.' }, { status: 429 })
+
   try {
     const body = await req.json().catch(() => ({})) as { email?: string }
     const email = (body.email ?? '').trim().toLowerCase()

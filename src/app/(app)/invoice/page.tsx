@@ -247,7 +247,7 @@ export default function InvoicePage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const [{ data: bizData }, { data: lastInv }, { data: clientData }] = await Promise.all([
-        supabase.from('business_profiles').select('business_name,abn,email,phone,address,logo_url,default_footer').eq('id', user.id).single(),
+        supabase.from('business_profiles').select('business_name,abn,email,phone,address,logo_url,default_footer,bank_name,account_name,bsb,account_number').eq('id', user.id).single(),
         supabase.from('invoices').select('invoice_number').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('clients').select('id,business_name,contact_name,email,phone,address,abn').eq('user_id', user.id).order('business_name'),
       ])
@@ -258,7 +258,13 @@ export default function InvoicePage() {
         ? parseInt(lastInv.invoice_number.split('-').pop() ?? '0', 10)
         : 0
       const nextNum = generateInvoiceNumber(lastSeq + 1)
-      setForm(makeForm(nextNum, bizData?.default_footer ?? ''))
+      setForm({
+        ...makeForm(nextNum, bizData?.default_footer ?? ''),
+        bank_name:      bizData?.bank_name      ?? '',
+        account_name:   bizData?.account_name   ?? '',
+        bsb:            bizData?.bsb            ?? '',
+        account_number: bizData?.account_number ?? '',
+      })
     }
     load()
   }, [])
@@ -348,6 +354,7 @@ export default function InvoicePage() {
   async function handleSave(status: 'draft' | 'pending', docType: 'invoice' | 'quote' = documentType) {
     if (!form.client_name.trim()) { toast('Client name is required', 'error'); return }
     if (form.line_items.every(it => !it.description.trim())) { toast('Add at least one line item', 'error'); return }
+    if (totals.total_inc_gst <= 0) { toast('Invoice total must be greater than $0', 'error'); return }
 
     if (profile.plan === 'free') {
       const supabase = createBrowserClient()
@@ -594,6 +601,7 @@ export default function InvoicePage() {
               setEmailSent(false)
               setSelectedClientId(null)
               setClientSaved(false)
+              setRecurringActive(false)
               setForm(makeForm(generateInvoiceNumber(parseInt(savedInvoice.number.split('-')[2] ?? '1') + 1), biz?.default_footer ?? ''))
             }}
             className="btn btn-outline"

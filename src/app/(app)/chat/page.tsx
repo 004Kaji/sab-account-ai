@@ -34,6 +34,24 @@ const QUICK_CHIPS = [
   'Create an invoice',
 ]
 
+// ── Minimal markdown renderer (bold + italic only) ────────────────────
+function renderMarkdown(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g)
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={i}>{part.slice(2, -2)}</strong>
+        }
+        if (part.startsWith('*') && part.endsWith('*')) {
+          return <em key={i}>{part.slice(1, -1)}</em>
+        }
+        return part
+      })}
+    </>
+  )
+}
+
 // ── Parse confirm_card from assistant text ────────────────────────────
 function parseConfirmCard(text: string): { clean: string; card: ConfirmCard | null } {
   const match = text.match(/<confirm_card>([\s\S]*?)<\/confirm_card>/)
@@ -329,12 +347,14 @@ export default function ChatPage() {
         resultText = 'Done!'
       }
 
-      // Persist both messages to chat_messages
+      // Persist both messages to chat_messages with explicit timestamps 1ms apart
+      // to guarantee user message always sorts before assistant message.
       const supabaseSvc = createBrowserClient()
       const confirmMsg  = `Confirmed — ${card.title}`
+      const confirmNow  = new Date()
       await supabaseSvc.from('chat_messages').insert([
-        { user_id: session.user.id, role: 'user',      content: confirmMsg },
-        { user_id: session.user.id, role: 'assistant', content: resultText },
+        { user_id: session.user.id, role: 'user',      content: confirmMsg,  created_at: confirmNow.toISOString() },
+        { user_id: session.user.id, role: 'assistant', content: resultText,  created_at: new Date(confirmNow.getTime() + 1).toISOString() },
       ])
 
       setMessages(prev => [
@@ -361,7 +381,7 @@ export default function ChatPage() {
   const isFirstLoad = historyLoaded && messages.length === 0 && !loading
 
   return (
-    <div style={{ maxWidth: '760px', margin: '0 auto', padding: '0 1.5rem', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 60px)' }}>
+    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 1.5rem', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 60px)' }}>
 
       <style>{`
         @keyframes bounce {
@@ -420,7 +440,7 @@ export default function ChatPage() {
                 lineHeight: 1.6,
                 whiteSpace: 'pre-wrap',
               }}>
-                {msg.text || (msg.role === 'assistant' && loading && <TypingDots />)}
+                {msg.text ? renderMarkdown(msg.text) : (msg.role === 'assistant' && loading && <TypingDots />)}
               </div>
               {msg.confirmCard && (
                 <ConfirmCardUI

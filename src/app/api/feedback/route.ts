@@ -13,18 +13,27 @@ export async function POST(req: NextRequest) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
   if (authErr || !user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-  const { rating, category, message, userEmail, businessName, plan } = await req.json() as {
+  // Read only rating/category/message from body — user identity sourced from session
+  const { rating, category, message } = await req.json() as {
     rating: number
     category: string
     message: string
-    userEmail: string
-    businessName: string | null
-    plan: string
   }
 
   if (!message?.trim() || !rating) {
     return NextResponse.json({ error: 'rating and message required' }, { status: 400 })
   }
+
+  // Fetch user details from DB — never trust client-supplied email or plan
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan, business_name')
+    .eq('id', user.id)
+    .single()
+
+  const userEmail   = user.email ?? ''
+  const businessName = (profile?.business_name as string | null) ?? null
+  const plan        = (profile?.plan as string | null) ?? 'free'
 
   const resend = new Resend(process.env.RESEND_API_KEY)
 

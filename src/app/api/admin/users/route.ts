@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
-
-const ADMIN_EMAILS = ['sanjog.basnet02@gmail.com', 'basnet@sabaccountai.com']
+import { ADMIN_EMAILS } from '@/lib/admin'
 
 export async function GET(req: NextRequest) {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '')

@@ -316,10 +316,11 @@ export async function POST(req: NextRequest) {
         const userText = typeof userMsg?.content === 'string' ? userMsg.content
           : Array.isArray(userMsg?.content) ? (userMsg.content as Array<{ type: string; text?: string }>).filter(b => b.type === 'text').map(b => b.text).join('') : ''
 
+        const msgNow = new Date()
         await Promise.all([
           supabase.from('chat_messages').insert([
-            { user_id: user.id, role: 'user',      content: userText },
-            { user_id: user.id, role: 'assistant', content: fullAssistantText },
+            { user_id: user.id, role: 'user',      content: userText,           created_at: msgNow.toISOString() },
+            { user_id: user.id, role: 'assistant', content: fullAssistantText,  created_at: new Date(msgNow.getTime() + 1).toISOString() },
           ]),
           supabase.rpc('increment_chat_usage', { p_user_id: user.id, p_date: today }),
         ])

@@ -136,6 +136,8 @@ function applyScale(periodEarnings: number, payCycle: PayCycle, scale: Bracket[]
 // ── Schedule 15 — Working Holiday Maker ──────────────────────────────
 // Stage 3 rates (from 1 July 2024): 15% → 30% → 37% → 45%
 // No Medicare. No LITO. No tax-free threshold.
+// Source: ato.gov.au/tax-rates-and-codes/tax-rates-working-holiday-makers
+// 2025-26 rates verified 2026-06-19 — all brackets, flat amounts and rates confirmed exact match.
 function whmAnnualTax(annual: number): number {
   if (annual <= 45000)   return annual * 0.15
   if (annual <= 135000)  return 6750 + (annual - 45000) * 0.30
@@ -147,24 +149,49 @@ function whmAnnualTax(annual: number): number {
 // Scale 1 and Scale 2 embed Medicare in their coefficients.
 // This function is used only to split the combined withholding into
 // "income tax" and "Medicare levy" line items on the payslip.
-// 2024-25 / 2025-26 thresholds: lower $27,222, shade-in upper $34,028.
+//
+// 2025-26 thresholds — Source: ATO myTax 2026 instructions, checked 2026-06-19:
+//   ato.gov.au/individuals-and-families/your-tax-return/instructions-to-complete-
+//   your-tax-return/mytax-instructions/2026/medicare-and-private-health-insurance/
+//   medicare-levy-reduction-or-exemption
+//   lower $28,011 | shade-in upper $35,013
+//
+// ATO note on that page: "These figures are based on the increased Medicare levy
+// low-income thresholds announced on 12 May 2026 as part of the 2026–27 Federal
+// Budget. At the time of publication this measure was not law."
+//
+// Prior year (2024-25) confirmed by separate ATO page (last updated 29 Jul 2025):
+//   lower $27,222 | upper $34,027  (previous code had $34,028 — $1 error, now fixed)
 function medicareLevyEstimate(annual: number, exempt: boolean): number {
   if (exempt)            return 0
-  if (annual <= 27222)   return 0
-  if (annual <= 34028)   return (annual - 27222) * 0.10
+  if (annual <= 28011)   return 0
+  if (annual <= 35013)   return (annual - 28011) * 0.10
   return annual * 0.02
 }
 
 // ── HELP / HECS repayment ─────────────────────────────────────────────
 // Schedule 8 updated 24 September 2025 — new MARGINAL rate system from 2025-26.
-// Repayment is calculated ONLY on income above $67,000 (not on total income).
-// Source: ato.gov.au/tax-rates-and-codes/schedule-8-statement-of-formulas-for-calculating-study-and-training-support-loans-components
+// Source: ato.gov.au/tax-rates-and-codes/study-and-training-support-loans-rates-and-repayment-thresholds
+//         ato.gov.au/tax-rates-and-codes/schedule-8-statement-of-formulas-for-calculating-study-and-training-support-loans-components
+// Checked against ATO page: 2026-06-19.
+//
+// 2025-26 confirmed thresholds and ATO-specified formula:
+//   $0–$67,000       → nil
+//   $67,001–$125,000 → 15c for each $1 over $67,000        (marginal)
+//   $125,001–$179,285 → $8,700 + 17c for each $1 over $125,000  (marginal)
+//   $179,286+         → 10% of your TOTAL repayment income  (FLAT, not marginal)
+//
+// The top bracket is explicitly flat-on-total, confirmed by ATO worked Example 3:
+//   Repayment income $238,537 → $238,537 × 10% = $23,854.
+//   A purely marginal formula would give $23,853.65 — wrong by 5¢/year (rounds to $1 error
+//   at specific incomes, e.g. $179,295: marginal = $17,929, ATO flat = $17,930).
+//
 // ⚠️  Check ATO Schedule 8 each July for updated thresholds.
 function helpRepayment(annual: number): number {
   if (annual <= 67000)   return 0
   if (annual <= 125000)  return Math.round((annual - 67000) * 0.15)
   if (annual <= 179285)  return Math.round(8700 + (annual - 125000) * 0.17)
-  return Math.round(8700 + (179285 - 125000) * 0.17 + (annual - 179285) * 0.10)
+  return Math.round(annual * 0.10)  // ATO: "10% of your total repayment income"
 }
 
 // ── Scale label for UI display ────────────────────────────────────────

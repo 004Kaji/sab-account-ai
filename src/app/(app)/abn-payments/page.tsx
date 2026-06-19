@@ -5,12 +5,13 @@ import { createBrowserClient } from '@/lib/supabase'
 import { useToast } from '@/components/ui/Toast'
 import { formatCurrency, formatDateAU, todayISO } from '@/lib/utils'
 import { downloadABNRemittancePDF, downloadNoABNWithholdingPDF, getABNRemittancePDFBase64, getNoABNWithholdingPDFBase64, type ABNRemittancePDFData, type NoABNWithholdingPDFData } from '@/lib/pdf'
+import { getSuperRate } from '@/lib/ato'
 import PlanGate from '@/components/ui/PlanGate'
 import AbnVerifyBadge from '@/components/ui/AbnVerifyBadge'
 
 // ── Constants ─────────────────────────────────────────────────────────────
 const WITHHOLDING_RATE = 0.47
-const SG_RATE = 0.12 // From 1 July 2025
+const SG_RATE = getSuperRate()
 
 type Tab = 'abn' | 'noabn'
 

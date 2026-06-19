@@ -187,12 +187,28 @@ describe('PAYG — Scale 2 (claiming threshold, resident)', () => {
   })
 
   describe('Medicare levy breakdown', () => {
-    it('income below Medicare threshold ($27,222) → $0 Medicare', () => {
+    // 2025-26 thresholds: lower $28,011 / shade-in upper $35,013
+    // Source: ATO myTax 2026 instructions, checked 2026-06-19
+
+    it('income below 2025-26 lower threshold ($28,011) → $0 Medicare', () => {
       expect(payg(27000).periodMedicare).toBe(0)
+      expect(payg(28011).periodMedicare).toBe(0)
     })
 
-    it('income above shade-in ($34,028) → 2% Medicare', () => {
-      // $80k → Medicare = $80k*2%/26 = $61.54 → round = $62
+    it('income between old ($27,222) and new ($28,011) lower threshold → $0 Medicare in 2025-26', () => {
+      // Confirms 2025-26 threshold is $28,011 not $27,222
+      expect(payg(27500).periodMedicare).toBe(0)
+    })
+
+    it('income in 2025-26 shade-in zone ($28,011–$35,013) → reduced Medicare', () => {
+      // $30,000: shade-in = ($30,000 - $28,011) × 10% = $198.90/yr → round(198.90/26) = $8/fn
+      const r = payg(30000)
+      expect(r.periodMedicare).toBeGreaterThan(0)
+      expect(r.periodMedicare).toBeLessThan(Math.round(30000 * 0.02 / 26))
+    })
+
+    it('income above shade-in ($35,013) → full 2% Medicare', () => {
+      // $80k → Medicare = $80k×2%/26 = $61.54 → round = $62
       expect(payg(80000).periodMedicare).toBe(62)
     })
 
@@ -283,12 +299,16 @@ describe('PAYG — WHM (Schedule 15)', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. HELP / HECS repayment — Schedule 8 (updated 24 Sep 2025, marginal rates)
-//    New 2025-26: repayment on INCOME ABOVE $67,000 only (marginal, not flat)
-//    15% on $67k-$125k | 17% on $125k-$179,285 | 10% of total above $179,285
+// 7. HELP / HECS repayment — Schedule 8 (updated 24 Sep 2025)
+//    Confirmed structure (ATO rates page + Schedule 8, checked 2026-06-19):
+//      $0–$67,000:       nil
+//      $67,001–$125,000: 15c per $1 over $67,000             (MARGINAL)
+//      $125,001–$179,285: $8,700 + 17c per $1 over $125,000  (MARGINAL)
+//      $179,286+:         10% of TOTAL repayment income       (FLAT ON TOTAL — NOT marginal)
+//    ATO Example 3: $238,537 × 10% = $23,854 (not accumulated marginal).
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('HELP repayment (2025-26 marginal rates)', () => {
+describe('HELP repayment (2025-26 schedule 8)', () => {
   it('below $67,000 → $0 HELP repayment', () => {
     expect(payg(50000, { help: true }).periodHELP).toBe(0)
     expect(payg(67000, { help: true }).periodHELP).toBe(0)
@@ -309,9 +329,24 @@ describe('HELP repayment (2025-26 marginal rates)', () => {
     expect(payg(125000, { help: true }).periodHELP).toBe(335)
   })
 
+  it('$125,000 annual HELP = $8,700 (first/second band boundary exact)', () => {
+    expect(payg(125000, { help: true }).annualHELP).toBe(8700)
+  })
+
   it('$130,000 → $367/fn HELP (into second band)', () => {
     // 8700 + (130000-125000)*0.17 = $9,550/yr → round(9550/26) = $367
     expect(payg(130000, { help: true }).periodHELP).toBe(367)
+  })
+
+  it('$179,285 annual HELP = $17,928 (last dollar of second band)', () => {
+    // 8700 + (179285-125000)*0.17 = 8700 + 9228.45 = $17,928.45 → $17,928
+    expect(payg(179285, { help: true }).annualHELP).toBe(17928)
+  })
+
+  it('$179,295 annual HELP = $17,930 (flat 10% of total, not marginal — key regression)', () => {
+    // ATO flat: 179295 × 10% = $17,929.50 → rounds to $17,930
+    // Marginal formula would give $17,929 — wrong by $1. This test distinguishes them.
+    expect(payg(179295, { help: true }).annualHELP).toBe(17930)
   })
 
   it('$200,000 → $769/fn HELP (10% of total)', () => {
@@ -319,12 +354,17 @@ describe('HELP repayment (2025-26 marginal rates)', () => {
     expect(payg(200000, { help: true }).periodHELP).toBe(769)
   })
 
+  it('$238,537 annual HELP = $23,854 (ATO worked Example 3 exact)', () => {
+    // ATO: $238,537 × 10% = $23,854 (Priya example from rates page)
+    expect(payg(238537, { help: true }).annualHELP).toBe(23854)
+  })
+
   it('HELP is added on top of income tax (total = tax + HELP)', () => {
     const r = payg(80000, { help: true })
     expect(r.periodTotal).toBe(r.periodTax + r.periodMedicare + r.periodHELP)
   })
 
-  it('HELP is higher for $130k than $80k (marginal, not flat)', () => {
+  it('HELP is higher for $130k than $80k (progressive)', () => {
     const h80  = payg(80000,  { help: true }).periodHELP
     const h130 = payg(130000, { help: true }).periodHELP
     expect(h130).toBeGreaterThan(h80)

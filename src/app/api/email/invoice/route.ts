@@ -42,5 +42,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to send email' }, { status: 500 })
   }
 
+  // Mark invoice as pending after successful send (only transitions from draft)
+  if (invoiceNumber) {
+    await supabase
+      .from('invoices')
+      .update({ status: 'pending' })
+      .eq('user_id', user.id)
+      .eq('invoice_number', invoiceNumber)
+      .eq('status', 'draft')
+  }
+
   return NextResponse.json({ ok: true })
 }

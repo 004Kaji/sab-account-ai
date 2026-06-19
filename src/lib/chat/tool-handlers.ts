@@ -80,7 +80,7 @@ async function generateBasPdf(data: {
       y += 8
       row('PAYG Withholding from Employees (W2)', fmtN(data.paygWithheld))
       const totalPayable = data.netGst + data.paygWithheld
-      row('Total Amount Payable to ATO', fmtN(totalPayable), true, RED)
+      row(totalPayable < 0 ? 'Net Refund from ATO' : 'Total Amount Payable to ATO', fmtN(totalPayable), true, totalPayable < 0 ? DARK : RED)
     }
 
     // ── Invoice list ──────────────────────────────────────────────
@@ -121,13 +121,6 @@ async function generateBasPdf(data: {
     doc.end()
   })
 }
-
-// ── REPLACED: invoice PDF now uses getInvoicePDFBase64 from @/lib/pdf ──
-// (jsPDF gold standard — identical output to the UI invoice builder)
-
-// ── REPLACED: payslip PDF now uses getPayslipPDFBase64 from @/lib/pdf ──
-// (jsPDF gold standard — identical output to the UI payslip wizard)
-
 
 // ── ATO static knowledge ──────────────────────────────────────────────
 const ATO_RULES: Record<string, string> = {
@@ -762,16 +755,22 @@ export async function executeToolCall(
         const totalPayable  = netGst + paygWithheld
         const quarterNames  = ['', 'Q1 (Jul–Sep)', 'Q2 (Oct–Dec)', 'Q3 (Jan–Mar)', 'Q4 (Apr–Jun)']
 
+        const netOutcomeLabel = totalPayable > 0
+          ? `${fmt(totalPayable)} owing to ATO`
+          : totalPayable < 0
+          ? `${fmt(Math.abs(totalPayable))} net refund from ATO`
+          : 'net zero'
+
         return {
           period:          `${quarterNames[quarter]} ${fy}`,
           gst_collected:   fmt(gstCollected),
           gst_credits:     fmt(gstCredits),
-          net_gst:         fmt(Math.abs(netGst)),
+          net_gst:         netGst >= 0 ? fmt(netGst) : `(${fmt(Math.abs(netGst))}) refund`,
           payg_withheld:   fmt(paygWithheld),
-          total_payable:   fmt(totalPayable),
+          total_payable:   totalPayable >= 0 ? fmt(totalPayable) : `(${fmt(Math.abs(totalPayable))}) refund`,
           outcome:         netGst > 0
-            ? `GST payable ${fmt(netGst)}${paygWithheld > 0 ? ` + PAYG W2 ${fmt(paygWithheld)} = total ${fmt(totalPayable)} owing to ATO` : ' owing to ATO'}`
-            : netGst < 0 ? `GST refund due ${fmt(Math.abs(netGst))}${paygWithheld > 0 ? ` (PAYG W2 ${fmt(paygWithheld)} still owing — net ${fmt(totalPayable)})` : ''}` : paygWithheld > 0 ? `Net zero GST — PAYG W2 ${fmt(paygWithheld)} owing to ATO` : 'Net zero — nothing owing',
+            ? `GST payable ${fmt(netGst)}${paygWithheld > 0 ? ` + PAYG W2 ${fmt(paygWithheld)} = ${netOutcomeLabel}` : ' owing to ATO'}`
+            : netGst < 0 ? `GST refund due ${fmt(Math.abs(netGst))}${paygWithheld > 0 ? ` — PAYG W2 ${fmt(paygWithheld)} still owing — ${netOutcomeLabel}` : ' from ATO'}` : paygWithheld > 0 ? `Net zero GST — PAYG W2 ${fmt(paygWithheld)} owing to ATO` : 'Net zero — nothing owing',
           invoice_count:   invoices?.length ?? 0,
         }
       }

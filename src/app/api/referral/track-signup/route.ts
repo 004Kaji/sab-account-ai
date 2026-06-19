@@ -10,7 +10,13 @@ export async function POST(req: NextRequest) {
   const { data: { user }, error } = await supabase.auth.getUser(token)
   if (error || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { refCode } = await req.json() as { refCode: string }
+  let refCode: string
+  try {
+    const body = await req.json() as { refCode: string }
+    refCode = body.refCode
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
   if (!refCode) return NextResponse.json({ error: 'Missing refCode' }, { status: 400 })
 
   // Prevent double-tracking

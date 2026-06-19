@@ -260,6 +260,9 @@ export default function RecordsPage() {
   const [filter, setFilter]         = useState<FilterTab>('all')
   const [defaultType, setDefaultType] = useState<RecordType>('income')
   const [w4Withholding, setW4Withholding] = useState(0)
+  const [invoiceGst, setInvoiceGst]       = useState(0)
+  const [invoiceGstCount, setInvoiceGstCount] = useState(0)
+  const [paygWithheld, setPaygWithheld]   = useState(0)
   const [lastImport, setLastImport] = useState<LastImport | null>(null)
   const [undoing, setUndoing]       = useState(false)
 
@@ -271,17 +274,30 @@ export default function RecordsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setLoading(false); return }
 
-      const [{ data, error }, { data: w4Data }] = await Promise.all([
+      const [{ data, error }, { data: w4Data }, { data: invData }, { data: psData }] = await Promise.all([
         supabase.from('records').select('*').eq('user_id', user.id)
           .gte('date', fy.start).lte('date', fy.end).order('date', { ascending: false }),
         supabase.from('abn_payments').select('withholding_amount').eq('user_id', user.id)
           .eq('has_abn', false).gte('payment_date', fy.start).lte('payment_date', fy.end),
+        // GST collected from invoices (only sent/paid invoices with GST enabled)
+        supabase.from('invoices').select('total_gst').eq('user_id', user.id)
+          .in('status', ['pending', 'paid', 'overdue'])
+          .eq('has_gst', true)
+          .gte('issue_date', fy.start).lte('issue_date', fy.end),
+        // PAYG withheld from payslips (W2 on BAS)
+        supabase.from('payslips').select('income_tax, medicare_levy, help_repayment').eq('user_id', user.id)
+          .gte('payment_date', fy.start).lte('payment_date', fy.end),
       ])
 
       if (error) { toast('Failed to load records', 'error'); setLoading(false); return }
       setRecords((data ?? []) as Record[])
       const w4Total = (w4Data ?? []).reduce((s: number, r: { withholding_amount: number }) => s + Number(r.withholding_amount), 0)
       setW4Withholding(w4Total)
+      const invGstRows = invData ?? []
+      setInvoiceGst(invGstRows.reduce((s, r) => s + Number(r.total_gst ?? 0), 0))
+      setInvoiceGstCount(invGstRows.length)
+      const psRows = psData ?? []
+      setPaygWithheld(psRows.reduce((s, r) => s + Number(r.income_tax ?? 0) + Number(r.medicare_levy ?? 0) + Number(r.help_repayment ?? 0), 0))
       setLoading(false)
     }
     load()
@@ -338,9 +354,10 @@ export default function RecordsPage() {
   const totalExpenses = expenses.reduce((s, r) => s + Number(r.amount), 0)
   const netProfit     = totalIncome - totalExpenses
 
-  const gstCollected = income.reduce((s, r) => s + Number(r.gst_amount), 0)
+  // Include GST from the Invoices module so the BAS figure matches what was actually charged
+  const gstCollected = income.reduce((s, r) => s + Number(r.gst_amount), 0) + invoiceGst
   const gstCredits   = expenses.reduce((s, r) => s + Number(r.gst_amount), 0)
-  const netGst       = Math.max(0, gstCollected - gstCredits)
+  const netGst       = gstCollected - gstCredits
 
   const filtered = useMemo(() => {
     if (filter === 'income')  return income
@@ -414,7 +431,12 @@ export default function RecordsPage() {
           <KpiCard label="Total Income"   value={formatCurrency(totalIncome)}   sub={`${income.length} records`}   color="#15803d" />
           <KpiCard label="Total Expenses" value={formatCurrency(totalExpenses)} sub={`${expenses.length} records`} color="var(--ember)" />
           <KpiCard label="Net Profit"     value={formatCurrency(netProfit)}     sub="Income minus expenses"        color={netProfit >= 0 ? 'var(--char)' : 'var(--ember)'} />
-          <KpiCard label="GST to Remit"  value={formatCurrency(netGst)}        sub="Collected minus credits" />
+          <KpiCard
+            label={netGst < 0 ? 'GST Refund' : 'GST to Remit'}
+            value={formatCurrency(Math.abs(netGst))}
+            sub={netGst < 0 ? 'ATO owes you a refund' : 'Collected minus credits'}
+            color={netGst < 0 ? '#15803d' : undefined}
+          />
         </div>
 
         {/* Main grid */}
@@ -471,8 +493,8 @@ export default function RecordsPage() {
                 </div>
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
                       {(['Type', 'Date', 'Description', 'Category', 'Amount', 'GST', ''] as string[]).map(h => (
@@ -547,34 +569,55 @@ export default function RecordsPage() {
               <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginBottom: '1.25rem' }}>{fy.label} year-to-date</p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginBottom: '1rem' }}>
-                {[
-                  { label: 'GST Collected',     value: gstCollected, color: '#15803d' },
-                  { label: 'Input Tax Credits', value: gstCredits,   color: 'var(--ember)' },
-                ].map(({ label, value, color }) => (
-                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
-                    <span style={{ color: 'var(--text2)' }}>{label}</span>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color }}>{formatCurrency(value)}</span>
-                  </div>
-                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
+                  <span style={{ color: 'var(--text2)' }}>
+                    GST Collected
+                    {invoiceGstCount > 0 && (
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text3)', marginLeft: '0.375rem' }}>
+                        (incl. {invoiceGstCount} invoice{invoiceGstCount !== 1 ? 's' : ''})
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#15803d' }}>{formatCurrency(gstCollected)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
+                  <span style={{ color: 'var(--text2)' }}>Input Tax Credits</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--ember)' }}>{formatCurrency(gstCredits)}</span>
+                </div>
                 {w4Withholding > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
                     <span style={{ color: 'var(--text2)' }}>W4 Withholding (No-ABN)</span>
                     <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--ember)' }}>{formatCurrency(w4Withholding)}</span>
                   </div>
                 )}
+                {paygWithheld > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
+                    <span style={{ color: 'var(--text2)' }}>W2 PAYG Withheld</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--ember)' }}>{formatCurrency(paygWithheld)}</span>
+                  </div>
+                )}
               </div>
 
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.875rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)' }}>Net GST Owing</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '1.125rem', color: netGst > 0 ? 'var(--ember)' : '#15803d' }}>
-                    {formatCurrency(netGst)}
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)' }}>
+                    {netGst < 0 ? 'GST Refund Due' : 'Net GST Owing'}
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '1.125rem', color: netGst < 0 ? '#15803d' : netGst > 0 ? 'var(--ember)' : 'var(--char)' }}>
+                    {netGst < 0 ? `(${formatCurrency(Math.abs(netGst))})` : formatCurrency(netGst)}
                   </span>
                 </div>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.375rem' }}>Collected minus input tax credits</p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.375rem' }}>
+                  {netGst < 0 ? 'Your input tax credits exceed GST collected' : 'Collected minus input tax credits'}
+                </p>
                 {w4Withholding > 0 && (
                   <p style={{ fontSize: '0.75rem', color: 'var(--ember)', marginTop: '0.25rem' }}>
                     + {formatCurrency(w4Withholding)} W4 withholding to remit
+                  </p>
+                )}
+                {paygWithheld > 0 && (
+                  <p style={{ fontSize: '0.75rem', color: 'var(--ember)', marginTop: '0.25rem' }}>
+                    + {formatCurrency(paygWithheld)} W2 PAYG withheld to remit
                   </p>
                 )}
               </div>
@@ -602,21 +645,6 @@ export default function RecordsPage() {
               </div>
             </div>
 
-            {/* Quick add */}
-            <div style={{ background: 'var(--cream)', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.125rem' }}>
-              <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--char)', marginBottom: '0.75rem' }}>Quick Add</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <button onClick={() => openModal('income')} className="btn btn-ember" style={{ fontSize: '0.8125rem', padding: '0.4rem 0.875rem' }}>
-                  ↑ Add Income
-                </button>
-                <button onClick={() => openModal('expense')} className="btn btn-outline" style={{ fontSize: '0.8125rem', padding: '0.4rem 0.875rem' }}>
-                  ↓ Add Expense
-                </button>
-                <button onClick={() => setImportOpen(true)} className="btn btn-outline" style={{ fontSize: '0.8125rem', padding: '0.4rem 0.875rem' }}>
-                  ↑ Import bank CSV
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       </div>

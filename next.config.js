@@ -1,5 +1,9 @@
 const { withSentryConfig } = require('@sentry/nextjs')
 
+// Next.js dev server uses eval() for HMR — only allow it in development.
+// Production keeps 'unsafe-eval' out to maintain strict CSP security.
+const isDev = process.env.NODE_ENV === 'development'
+
 const securityHeaders = [
   // Force HTTPS for 1 year — browsers will refuse to load the site over HTTP
   { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
@@ -16,7 +20,7 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://js.stripe.com",
+      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval' https://va.vercel-scripts.com" : ''} https://js.stripe.com`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",

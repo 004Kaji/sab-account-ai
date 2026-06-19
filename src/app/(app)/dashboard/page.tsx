@@ -6,6 +6,7 @@ import { createBrowserClient } from '@/lib/supabase'
 import { useProfile } from '@/app/(app)/profile-context'
 import { formatCurrency, formatDateAU, todayISO } from '@/lib/utils'
 import { AutopilotUpgradeBanner } from '@/components/ui/AutopilotUpgradeBanner'
+import { getSuperRate } from '@/lib/ato'
 
 interface TopClient {
   client_name: string
@@ -260,10 +261,11 @@ function PaydaySuperCalcWidget() {
   const annual = mode === 'hourly'
     ? (parseFloat(salary) || 0) * (parseFloat(hours) || 38) * 52
     : parseFloat(salary) || 0
-  const annualSuper = annual * 0.12
+  const sgRate = getSuperRate()
+  const annualSuper = annual * sgRate
 
   const casualGross = (parseFloat(casualRate) || 0) * (parseFloat(casualHours) || 0)
-  const casualSuper = casualGross * 0.12
+  const casualSuper = casualGross * sgRate
 
   const fc = (n: number) => '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 
@@ -407,18 +409,20 @@ function PaydaySuperCalcWidget() {
 }
 
 // ── Australian tax estimate (FY2025-26 brackets + Medicare levy) ──────
+// Stage 3 tax cuts effective 1 Jul 2024: 16%/30%/37%/45%, thresholds $45k/$135k/$190k.
 function estimateTax(income: number): number {
   let tax = 0
-  if (income <= 18200)       tax = 0
-  else if (income <= 45000)  tax = (income - 18200) * 0.19
-  else if (income <= 120000) tax = 5092 + (income - 45000) * 0.325
-  else if (income <= 180000) tax = 29467 + (income - 120000) * 0.37
-  else                       tax = 51667 + (income - 180000) * 0.45
+  if (income <= 18200)        tax = 0
+  else if (income <= 45000)   tax = (income - 18200) * 0.16
+  else if (income <= 135000)  tax = 4288 + (income - 45000) * 0.30
+  else if (income <= 190000)  tax = 31288 + (income - 135000) * 0.37
+  else                        tax = 51638 + (income - 190000) * 0.45
 
-  // Low Income Tax Offset (LITO)
+  // LITO — two-phase: 5c/$ at $37,500–$45,000, then 1.5c/$ to $66,667
   let lito = 0
-  if (income <= 37500)       lito = 700
-  else if (income <= 66667)  lito = 700 - (income - 37500) * (700 / 29167)
+  if (income <= 37500)        lito = 700
+  else if (income <= 45000)   lito = 700 - (income - 37500) * 0.05
+  else if (income <= 66667)   lito = Math.max(0, 325 - (income - 45000) * 0.015)
 
   // Medicare Levy 2% (simplified — full levy above ~$26,000)
   const medicare = income > 26000 ? income * 0.02 : 0
@@ -440,11 +444,11 @@ function TaxSavingsWidget({ fyIncome, fyLabel }: { fyIncome: number; fyLabel: st
   const projectedAnnual = fyIncome > 0 ? Math.round((fyIncome / monthsElapsed) * 12) : 0
   const projectedTax    = estimateTax(projectedAnnual)
 
-  // Bracket label
+  // Bracket label — Stage 3 thresholds
   const bracket = fyIncome <= 18200 ? 'Tax-free threshold'
-    : fyIncome <= 45000 ? '19% bracket'
-    : fyIncome <= 120000 ? '32.5% bracket'
-    : fyIncome <= 180000 ? '37% bracket'
+    : fyIncome <= 45000 ? '16% bracket'
+    : fyIncome <= 135000 ? '30% bracket'
+    : fyIncome <= 190000 ? '37% bracket'
     : '45% bracket'
 
   const fc = (n: number) => '$' + Math.round(n).toLocaleString('en-AU')
@@ -547,7 +551,7 @@ function KpiCard({ label, value, sub, accent, valueColor }: { label: string; val
 }
 
 // ── Derive KPIs from invoice list ─────────────────────────────────────
-function calcKPIs(all: Invoice[], gstCredits: number, superOwing: number, mStart: string, mEnd: string): KPIs {
+function calcKPIs(all: Invoice[], gstCredits: number, superOwing: number, mStart: string, mEnd: string, incomeGst: number = 0): KPIs {
   const invoicedThisMonth = all
     .filter(inv => inv.issue_date >= mStart && inv.issue_date <= mEnd && inv.status !== 'draft')
     .reduce((s, inv) => s + Number(inv.total_inc_gst), 0)
@@ -556,9 +560,10 @@ function calcKPIs(all: Invoice[], gstCredits: number, superOwing: number, mStart
     .filter(inv => inv.status === 'pending' || inv.status === 'overdue')
     .reduce((s, inv) => s + Number(inv.total_inc_gst), 0)
 
-  const gstCollected = all
+  const invoiceGst = all
     .filter(inv => inv.status !== 'draft')
     .reduce((s, inv) => s + Number(inv.total_gst), 0)
+  const gstCollected = invoiceGst + incomeGst
 
   return {
     invoicedThisMonth,
@@ -578,18 +583,20 @@ export default function DashboardPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [fyPaidIncome, setFyPaidIncome] = useState(0)
 
-  // Keep gstCredits and superOwing stable so KPIs can be recalculated on status change
+  // Keep gstCredits, incomeGst and superOwing stable so KPIs can be recalculated on status change
   const gstCreditsRef  = useRef(0)
   const superOwingRef  = useRef(0)
+  const incomeGstRef   = useRef(0)
   const monthRangeRef  = useRef({ start: '', end: '' })
 
   useEffect(() => { document.title = 'Dashboard — SAB Account AI' }, [])
 
   useEffect(() => {
     async function load() {
+      try {
       const supabase = createBrowserClient()
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) { setLoading(false); return }
 
       const { fy_start, fy_end } = fyRange()
       const mr = monthRange()
@@ -598,7 +605,7 @@ export default function DashboardPage() {
       const today = todayISO()
 
       // Fetch all data in parallel
-      const [{ data: fyInvoices }, { data: expenseRecs }, { data: payslips }] = await Promise.all([
+      const [{ data: fyInvoices }, { data: expenseRecs }, { data: incomeRecs }, { data: payslips }] = await Promise.all([
         supabase
           .from('invoices')
           .select('id, invoice_number, client_name, issue_date, due_date, status, total_inc_gst, total_gst')
@@ -613,6 +620,13 @@ export default function DashboardPage() {
           .eq('type', 'expense')
           .gte('date', fy_start)
           .lte('date', fy_end),
+        supabase
+          .from('records')
+          .select('gst_amount')
+          .eq('user_id', user.id)
+          .eq('type', 'income')
+          .gte('date', fy_start)
+          .lte('date', fy_end),
         (profile.plan === 'pro' || profile.plan === 'autopilot')
           ? supabase.from('payslips').select('super_sg').eq('user_id', user.id).gte('pay_period_end', qStart).lte('pay_period_end', qEnd)
           : Promise.resolve({ data: [] }),
@@ -621,6 +635,7 @@ export default function DashboardPage() {
       let all: Invoice[] = (fyInvoices ?? []) as Invoice[]
 
       gstCreditsRef.current  = (expenseRecs ?? []).reduce((s, r) => s + Number(r.gst_amount), 0)
+      incomeGstRef.current   = (incomeRecs ?? []).reduce((s, r) => s + Number(r.gst_amount), 0)
       superOwingRef.current  = ((payslips ?? []) as Array<{ super_sg: number }>).reduce((s, p) => s + Number(p.super_sg), 0)
 
       // ── Auto-overdue: mark pending invoices past their due date (fire-and-forget) ──
@@ -654,9 +669,13 @@ export default function DashboardPage() {
         .reduce((s, inv) => s + (Number(inv.total_inc_gst) - Number(inv.total_gst)), 0)
       setFyPaidIncome(fyPaid)
 
-      setKpis(calcKPIs(all, gstCreditsRef.current, superOwingRef.current, mr.start, mr.end))
+      setKpis(calcKPIs(all, gstCreditsRef.current, superOwingRef.current, mr.start, mr.end, incomeGstRef.current))
       setInvoices(all.slice(0, 8))
-      setLoading(false)
+      } catch {
+        // DB error — still clear the spinner so the page isn't stuck
+      } finally {
+        setLoading(false)
+      }
     }
 
     load()
@@ -674,7 +693,7 @@ export default function DashboardPage() {
     if (!error) {
       setInvoices(prev => {
         const updated = prev.map(inv => inv.id === id ? { ...inv, status: newStatus } : inv)
-        setKpis(calcKPIs(updated, gstCreditsRef.current, superOwingRef.current, monthRangeRef.current.start, monthRangeRef.current.end))
+        setKpis(calcKPIs(updated, gstCreditsRef.current, superOwingRef.current, monthRangeRef.current.start, monthRangeRef.current.end, incomeGstRef.current))
         return updated
       })
     }

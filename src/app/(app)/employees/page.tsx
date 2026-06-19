@@ -258,87 +258,127 @@ export default function EmployeesPage() {
             </button>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
-                  {['Name', 'Email', 'TFN / ABN', 'Employment', 'Pay', 'Super Fund', 'Leave Balance', 'Actions'].map(h => (
-                    <th key={h} style={{ padding: '0.625rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text3)', letterSpacing: '0.03em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map((emp, i) => (
-                  <tr key={emp.id} style={{ borderBottom: i < employees.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                    <td style={{ padding: '0.875rem 1rem', fontWeight: 600, fontSize: '0.875rem', color: 'var(--char)' }}>
-                      <div>{emp.name}</div>
-                      {emp.phone && <div style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text3)' }}>{emp.phone}</div>}
-                    </td>
-                    <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)' }}>
-                      {emp.email ?? '—'}
-                    </td>
-                    <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-                      {emp.tfn
-                        ? <div><span style={{ fontSize: '0.6875rem', color: 'var(--text3)', fontFamily: 'inherit' }}>TFN </span>••• ••• {emp.tfn.slice(-3)}</div>
-                        : emp.abn
-                          ? <div><span style={{ fontSize: '0.6875rem', color: 'var(--text3)', fontFamily: 'inherit' }}>ABN </span>{emp.abn.replace(/(\d{2})(\d{3})(\d{3})(\d{3})/, '$1 $2 $3 $4')}</div>
-                          : '—'}
-                    </td>
-                    <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)' }}>
-                      <div style={{ textTransform: 'capitalize' }}>{emp.employment_type}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text3)', textTransform: 'capitalize' }}>
-                        {emp.pay_cycle} · {RESIDENCY_LABELS[emp.residency_status] ?? emp.residency_status}
-                      </div>
-                    </td>
-                    <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)' }}>
-                      {emp.pay_basis === 'salary' && emp.annual_salary
-                        ? `$${emp.annual_salary.toLocaleString()}/yr`
-                        : emp.pay_basis === 'hourly' && emp.hourly_rate
-                          ? `$${emp.hourly_rate}/hr`
-                          : '—'}
-                    </td>
-                    <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)' }}>
-                      {emp.super_fund_name ?? '—'}
-                    </td>
-                    <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
-                      {emp.employment_type === 'casual' ? (
-                        <span style={{ color: 'var(--text3)', fontSize: '0.75rem' }}>Casual — no leave</span>
-                      ) : (emp.annual_leave_hours != null || emp.personal_leave_hours != null) ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                          {emp.annual_leave_hours != null && (
-                            <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
-                              <span style={{ fontSize: '0.6875rem', color: 'var(--text3)', width: '56px' }}>Annual</span>
-                              <span style={{ fontWeight: 600, color: emp.annual_leave_hours < 8 ? 'var(--ember)' : 'var(--char)', fontFamily: 'var(--font-mono)' }}>
-                                {emp.annual_leave_hours.toFixed(1)} hrs
-                              </span>
-                            </div>
-                          )}
-                          {emp.personal_leave_hours != null && (
-                            <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
-                              <span style={{ fontSize: '0.6875rem', color: 'var(--text3)', width: '56px' }}>Personal</span>
-                              <span style={{ fontWeight: 600, color: emp.personal_leave_hours < 8 ? 'var(--ember)' : 'var(--char)', fontFamily: 'var(--font-mono)' }}>
-                                {emp.personal_leave_hours.toFixed(1)} hrs
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span style={{ color: 'var(--text3)', fontSize: '0.75rem' }}>Not yet tracked</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '0.875rem 1rem', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button onClick={() => openEdit(emp)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--text2)' }}>Edit</button>
-                        <button onClick={() => setDeleteId(emp.id)} style={{ background: 'none', border: '1px solid rgba(200,75,47,0.2)', borderRadius: '6px', cursor: 'pointer', padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--ember)' }}>Delete</button>
-                      </div>
-                    </td>
+          <>
+            {/* Desktop table */}
+            <div className="emp-desktop-table" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
+                    {['Name', 'Email', 'TFN / ABN', 'Employment', 'Pay', 'Super Fund', 'Leave Balance', 'Actions'].map(h => (
+                      <th key={h} style={{ padding: '0.625rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text3)', letterSpacing: '0.03em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {employees.map((emp, i) => (
+                    <tr key={emp.id} style={{ borderBottom: i < employees.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                      <td style={{ padding: '0.875rem 1rem', fontWeight: 600, fontSize: '0.875rem', color: 'var(--char)' }}>
+                        <div>{emp.name}</div>
+                        {emp.phone && <div style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text3)' }}>{emp.phone}</div>}
+                      </td>
+                      <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)' }}>
+                        {emp.email ?? '—'}
+                      </td>
+                      <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
+                        {emp.tfn
+                          ? <div><span style={{ fontSize: '0.6875rem', color: 'var(--text3)', fontFamily: 'inherit' }}>TFN </span>••• ••• {emp.tfn.slice(-3)}</div>
+                          : emp.abn
+                            ? <div><span style={{ fontSize: '0.6875rem', color: 'var(--text3)', fontFamily: 'inherit' }}>ABN </span>{emp.abn.replace(/(\d{2})(\d{3})(\d{3})(\d{3})/, '$1 $2 $3 $4')}</div>
+                            : '—'}
+                      </td>
+                      <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)' }}>
+                        <div style={{ textTransform: 'capitalize' }}>{emp.employment_type}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text3)', textTransform: 'capitalize' }}>
+                          {emp.pay_cycle} · {RESIDENCY_LABELS[emp.residency_status] ?? emp.residency_status}
+                        </div>
+                      </td>
+                      <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)' }}>
+                        {emp.pay_basis === 'salary' && emp.annual_salary
+                          ? `$${emp.annual_salary.toLocaleString()}/yr`
+                          : emp.pay_basis === 'hourly' && emp.hourly_rate
+                            ? `$${emp.hourly_rate}/hr`
+                            : '—'}
+                      </td>
+                      <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)' }}>
+                        {emp.super_fund_name ?? '—'}
+                      </td>
+                      <td style={{ padding: '0.875rem 1rem', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
+                        {emp.employment_type === 'casual' ? (
+                          <span style={{ color: 'var(--text3)', fontSize: '0.75rem' }}>Casual — no leave</span>
+                        ) : (emp.annual_leave_hours != null || emp.personal_leave_hours != null) ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                            {emp.annual_leave_hours != null && (
+                              <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+                                <span style={{ fontSize: '0.6875rem', color: 'var(--text3)', width: '56px' }}>Annual</span>
+                                <span style={{ fontWeight: 600, color: emp.annual_leave_hours < 8 ? 'var(--ember)' : 'var(--char)', fontFamily: 'var(--font-mono)' }}>
+                                  {emp.annual_leave_hours.toFixed(1)} hrs
+                                </span>
+                              </div>
+                            )}
+                            {emp.personal_leave_hours != null && (
+                              <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+                                <span style={{ fontSize: '0.6875rem', color: 'var(--text3)', width: '56px' }}>Personal</span>
+                                <span style={{ fontWeight: 600, color: emp.personal_leave_hours < 8 ? 'var(--ember)' : 'var(--char)', fontFamily: 'var(--font-mono)' }}>
+                                  {emp.personal_leave_hours.toFixed(1)} hrs
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--text3)', fontSize: '0.75rem' }}>Not yet tracked</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '0.875rem 1rem', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button onClick={() => openEdit(emp)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--text2)' }}>Edit</button>
+                          <button onClick={() => setDeleteId(emp.id)} style={{ background: 'none', border: '1px solid rgba(200,75,47,0.2)', borderRadius: '6px', cursor: 'pointer', padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--ember)' }}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile card list */}
+            <div className="emp-mobile-cards" style={{ display: 'none', flexDirection: 'column' }}>
+              {employees.map((emp, i) => (
+                <div key={emp.id} style={{ padding: '1rem', borderBottom: i < employees.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--char)', marginBottom: '0.2rem' }}>{emp.name}</p>
+                      <p style={{ fontSize: '0.8125rem', color: 'var(--text2)', marginBottom: '0.125rem', textTransform: 'capitalize' }}>
+                        {emp.employment_type} · {emp.pay_cycle}
+                      </p>
+                      <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', marginBottom: '0.125rem' }}>
+                        {emp.pay_basis === 'salary' && emp.annual_salary
+                          ? `$${emp.annual_salary.toLocaleString()}/yr`
+                          : emp.pay_basis === 'hourly' && emp.hourly_rate
+                            ? `$${emp.hourly_rate}/hr`
+                            : null}
+                        {emp.tfn && <span style={{ marginLeft: '0.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>TFN ••• ••• {emp.tfn.slice(-3)}</span>}
+                        {!emp.tfn && emp.abn && <span style={{ marginLeft: '0.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>ABN {emp.abn.replace(/(\d{2})(\d{3})(\d{3})(\d{3})/, '$1 $2 $3 $4')}</span>}
+                      </p>
+                      {emp.email && <p style={{ fontSize: '0.75rem', color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.email}</p>}
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                      <button onClick={() => openEdit(emp)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', padding: '0.375rem 0.75rem', fontSize: '0.8125rem', color: 'var(--text2)', fontWeight: 500 }}>Edit</button>
+                      <button onClick={() => setDeleteId(emp.id)} style={{ background: 'none', border: '1px solid rgba(200,75,47,0.2)', borderRadius: '6px', cursor: 'pointer', padding: '0.375rem 0.75rem', fontSize: '0.8125rem', color: 'var(--ember)', fontWeight: 500 }}>Delete</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <style>{`
+              @media (max-width: 640px) {
+                .emp-desktop-table { display: none !important; }
+                .emp-mobile-cards { display: flex !important; }
+              }
+            `}</style>
+          </>
         )}
       </div>
 

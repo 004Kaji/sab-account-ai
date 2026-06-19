@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
+import { checkPublicRateLimit } from '@/lib/ratelimit'
 
 function generateCode(firm: string): string {
   const prefix = firm.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 6).padEnd(4, 'X')
@@ -10,6 +11,9 @@ function generateCode(firm: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  const { allowed } = await checkPublicRateLimit(req)
+  if (!allowed) return NextResponse.json({ error: 'Too many requests. Please try again in an hour.' }, { status: 429 })
+
   try {
     const body = await req.json()
     const { name, firm, email, phone, referrals, notes } = body as {

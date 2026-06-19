@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 
 const ADMIN_EMAILS = ['sanjog.basnet02@gmail.com', 'basnet@sabaccountai.com']
@@ -24,7 +25,7 @@ SAB Account AI (sabaccountai.com):
 - Built by Sanjog Basnet — a sole trader himself (ABN: 49 541 449 108), bootstrapped
 - Pricing: Free / Starter $9/mo / Pro $19/mo — vs Xero $50-70/mo, MYOB $30-50/mo
 - Key features: AI invoice generation, ATO-compliant PAYG withholding, HELP/HECS repayment,
-  superannuation tracking (11.5% SGC), STP compliance, BAS tracking, ABN payment tracking,
+  superannuation tracking (12% SGC from July 2025), STP compliance, BAS tracking, ABN payment tracking,
   recurring invoices, overdue reminders, client management, employee management, PDF export
 - 14-day free trial, no credit card required
 - Referral system: accountants/partners can refer clients and earn rewards
@@ -137,7 +138,9 @@ Return ONLY valid JSON, no markdown:
     const jsonMatch = extractFirstJSON(text)
     if (!jsonMatch) throw new Error('No JSON in response')
     return NextResponse.json(JSON.parse(jsonMatch))
-  } catch {
+  } catch (err) {
+    console.error('[outreach] Failed to parse Claude response:', err)
+    Sentry.captureException(err, { tags: { route: 'admin/outreach' } })
     return NextResponse.json({ error: 'Generation failed' }, { status: 500 })
   }
 }

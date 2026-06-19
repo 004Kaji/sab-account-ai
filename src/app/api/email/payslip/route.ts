@@ -40,5 +40,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to send email' }, { status: 500 })
   }
 
+  // Stamp sent_at after successful send (only if not already sent)
+  if (payslipNumber) {
+    await supabase
+      .from('payslips')
+      .update({ sent_at: new Date().toISOString() })
+      .eq('user_id', user.id)
+      .eq('payslip_number', payslipNumber)
+      .is('sent_at', null)
+  }
+
   return NextResponse.json({ ok: true })
 }

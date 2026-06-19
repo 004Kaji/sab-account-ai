@@ -40,18 +40,38 @@ export async function GET(req: NextRequest) {
   }
 }
 
+type EmployeeBody = {
+  name?: string; email?: string; phone?: string; tfn?: string; abn?: string
+  employment_type?: string; pay_cycle?: string; pay_basis?: string
+  annual_salary?: number; hourly_rate?: number; ordinary_hours?: number
+  super_fund_name?: string; member_number?: string; residency_status?: string
+  notes?: string; annual_leave_hours?: number; personal_leave_hours?: number
+  claiming_threshold?: boolean; has_help?: boolean
+}
+
+function pickFields(body: Record<string, unknown>): EmployeeBody {
+  const ALLOWED: Array<keyof EmployeeBody> = [
+    'name', 'email', 'phone', 'tfn', 'abn', 'employment_type', 'pay_cycle', 'pay_basis',
+    'annual_salary', 'hourly_rate', 'ordinary_hours', 'super_fund_name', 'member_number',
+    'residency_status', 'notes', 'annual_leave_hours', 'personal_leave_hours',
+    'claiming_threshold', 'has_help',
+  ]
+  return Object.fromEntries(ALLOWED.filter(k => k in body).map(k => [k, body[k]])) as EmployeeBody
+}
+
 // POST /api/employees — create, TFN encrypted before storing
 export async function POST(req: NextRequest) {
   try {
     const user = await getUser(auth(req))
     if (!user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-    const body = await req.json()
+    const raw = await req.json() as Record<string, unknown>
     const supabase = createServiceClient()
+    const fields = pickFields(raw)
 
     const { error } = await supabase.from('employees').insert({
-      ...body,
-      tfn: encryptIfPresent(body.tfn),
+      ...fields,
+      tfn: encryptIfPresent(fields.tfn ?? null),
       user_id: user.id,
     })
 
@@ -68,15 +88,16 @@ export async function PUT(req: NextRequest) {
     const user = await getUser(auth(req))
     if (!user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-    const body = await req.json()
-    const { id, ...payload } = body
+    const raw = await req.json() as Record<string, unknown>
+    const { id } = raw
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+    const fields = pickFields(raw)
 
     const supabase = createServiceClient()
     const { error } = await supabase
       .from('employees')
-      .update({ ...payload, tfn: encryptIfPresent(payload.tfn) })
-      .eq('id', id)
+      .update({ ...fields, tfn: encryptIfPresent(fields.tfn ?? null) })
+      .eq('id', id as string)
       .eq('user_id', user.id)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
