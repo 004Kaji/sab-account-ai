@@ -47,3 +47,28 @@ Basnet-Memory*
 *.db
 *.sqlite
 .env*
+
+# Python — Basnet local agent tools
+venv/
+__pycache__/
+*.py
+*.pyc
+basnet_requirements.txt
+
+# n8n workflow backups
+basnet-*.json
+
+# Basnet local scripts and folders
+start-basnet.sh
+linkedin-auth.mjs
+local-agent/
+memory/
+scripts/
+
+# Basnet personal docs
+SANJOG_LEARNINGS.md
+SANJOG_MASTER.md
+AGENT_SETUP.md
+BASNET_N8N_SETUP.md
+BASNET_VOICE_SETUP.md
+MAINTENANCE.md

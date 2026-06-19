@@ -1,0 +1,30 @@
+# Python — local Basnet agent tools (never deploy to Vercel)
+venv/
+__pycache__/
+*.py
+*.pyc
+basnet_requirements.txt
+
+# n8n workflows — local orchestration only
+basnet-*.json
+
+# Local agent shell scripts
+start-basnet.sh
+linkedin-auth.mjs
+
+# Local agent folders
+local-agent/
+memory/
+scripts/
+
+# Personal / operator docs
+SANJOG_LEARNINGS.md
+SANJOG_MASTER.md
+AGENT_SETUP.md
+BASNET_N8N_SETUP.md
+BASNET_VOICE_SETUP.md
+MAINTENANCE.md
+
+# Test artifacts
+test.pdf
+test.*
