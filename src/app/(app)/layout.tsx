@@ -13,9 +13,7 @@ const PLAN_RANK: Record<string, number> = { free: 0, starter: 1, pro: 2, autopil
 const NAV_ITEMS = [
   { label: 'Dashboard',       href: '/dashboard',              minRank: 0 },
   { label: 'Invoices',        href: '/invoices',               minRank: 0 },
-  { label: 'New Invoice',     href: '/invoice',                minRank: 0 },
   { label: 'Payslips',        href: '/payslip-history',        minRank: 2 },
-  { label: 'New Payslip',     href: '/payslip',                minRank: 2 },
   { label: 'ABN Pay',         href: '/abn-payments',           minRank: 2 },
   { label: 'Records',         href: '/records',                minRank: 0 },
   { label: 'Tax & Super',     href: '/tax-super',              minRank: 2 },
@@ -332,22 +330,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   </Link>
                 )}
 
-                <div style={{
-                  width: '2rem',
-                  height: '2rem',
-                  borderRadius: '50%',
-                  background: 'rgba(255,255,255,0.15)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.6875rem',
-                  fontWeight: 700,
-                  color: '#ffffff',
-                  flexShrink: 0,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                }}>
+                <Link
+                  href="/settings"
+                  title="Settings"
+                  style={{
+                    width: '2rem',
+                    height: '2rem',
+                    borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.6875rem',
+                    fontWeight: 700,
+                    color: '#ffffff',
+                    flexShrink: 0,
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    textDecoration: 'none',
+                  }}
+                >
                   {userInitials}
-                </div>
+                </Link>
 
                 <button
                   onClick={handleSignOut}
