@@ -35,6 +35,7 @@ interface Payslip {
   pay_items: Array<{description: string; hours: number; rate: number}> | null
   allowances: Array<{description: string; amount: number}> | null
   leave_loading_amount: number | null
+  sent_at: string | null
   created_at: string
 }
 
@@ -90,18 +91,26 @@ export default function PayslipHistoryPage() {
       const allowances         = (ps.allowances ?? []) as Array<{description: string; amount: number}>
       const leaveLoadingAmount = Number(ps.leave_loading_amount ?? 0)
 
-      // Accumulate YTD from all payslips in the same financial year for this employee
+      // Accumulate YTD from all payslips in the same financial year for this employee,
+      // and fetch employee record for real salary/rate/claiming_threshold values
+      const userId   = (await supabase.auth.getUser()).data.user?.id ?? ''
       const payDate  = new Date(ps.payment_date)
       const fyStart  = payDate.getMonth() >= 6
         ? `${payDate.getFullYear()}-07-01`
         : `${payDate.getFullYear() - 1}-07-01`
-      const { data: ytdRows } = await supabase
-        .from('payslips')
-        .select('gross_pay, income_tax, medicare_levy, help_repayment, super_sg, super_sal_sac, payment_date')
-        .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
-        .eq('employee_name', ps.employee_name)
-        .gte('payment_date', fyStart)
-        .lte('payment_date', ps.payment_date)
+      const [{ data: ytdRows }, { data: emp }] = await Promise.all([
+        supabase.from('payslips')
+          .select('gross_pay, income_tax, medicare_levy, help_repayment, super_sg, super_sal_sac')
+          .eq('user_id', userId)
+          .eq('employee_name', ps.employee_name)
+          .gte('payment_date', fyStart)
+          .lte('payment_date', ps.payment_date),
+        supabase.from('employees')
+          .select('annual_salary, hourly_rate, ordinary_hours, claiming_threshold, has_help, residency_status')
+          .eq('user_id', userId)
+          .ilike('name', ps.employee_name)
+          .maybeSingle(),
+      ])
       const ytdGross = (ytdRows ?? []).reduce((s, r) => s + Number(r.gross_pay), 0)
       const ytdTax   = (ytdRows ?? []).reduce((s, r) => s + Number(r.income_tax) + Number(r.medicare_levy) + Number(r.help_repayment), 0)
       const ytdSuper = (ytdRows ?? []).reduce((s, r) => s + Number(r.super_sg) + Number(r.super_sal_sac), 0)
@@ -117,13 +126,13 @@ export default function PayslipHistoryPage() {
         employment_type:      ps.employment_type,
         pay_cycle:            ps.pay_cycle,
         pay_basis:            (ps.pay_basis === 'hourly' ? 'hourly' : 'salary'),
-        annual_salary:        0,
-        hourly_rate:          0,
-        ordinary_hours:       0,
+        annual_salary:        (emp?.annual_salary as number | null) ?? 0,
+        hourly_rate:          (emp?.hourly_rate   as number | null) ?? 0,
+        ordinary_hours:       (emp?.ordinary_hours as number | null) ?? 0,
         super_fund_name:      ps.super_fund_name ?? '',
         member_number:        ps.member_number   ?? '',
-        claiming_threshold:   false,
-        has_help:             Number(ps.help_repayment) > 0,
+        claiming_threshold:   (emp?.claiming_threshold as boolean | null) ?? true,
+        has_help:             (emp?.has_help as boolean | null) ?? Number(ps.help_repayment) > 0,
         medicare_exempt:      Number(ps.medicare_levy) === 0,
         logo_url:             logoUrl,
         payItems,
@@ -219,7 +228,7 @@ export default function PayslipHistoryPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
-                    {['Payslip', 'Employee', 'Pay Period', 'Payment Date', 'Gross Pay', 'Net Pay', ''].map(h => (
+                    {['Payslip', 'Employee', 'Pay Period', 'Payment Date', 'Gross Pay', 'Net Pay', 'Status', ''].map(h => (
                       <th key={h} style={{
                         padding: '0.625rem 1rem',
                         textAlign: h === 'Gross Pay' || h === 'Net Pay' ? 'right' : 'left',
@@ -254,6 +263,13 @@ export default function PayslipHistoryPage() {
                         </td>
                         <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontSize: '0.875rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--ember)', whiteSpace: 'nowrap' }}>
                           {formatCurrency(ps.net_pay)}
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', whiteSpace: 'nowrap' }}>
+                          {ps.sent_at ? (
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#15803d', background: '#dcfce7', padding: '0.125rem 0.5rem', borderRadius: '9999px' }}>Sent</span>
+                          ) : (
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text3)', background: 'var(--cream)', padding: '0.125rem 0.5rem', borderRadius: '9999px' }}>Draft</span>
+                          )}
                         </td>
                         <td style={{ padding: '0.75rem 0.75rem', whiteSpace: 'nowrap' }}>
                           <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', justifyContent: 'flex-end' }}>

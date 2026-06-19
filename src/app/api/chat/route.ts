@@ -5,6 +5,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { SAB_CHAT_TOOLS } from '@/lib/chat/tools'
 import { executeToolCall } from '@/lib/chat/tool-handlers'
 import { getAwardRates, pct } from '@/lib/award-rates'
+import { checkRateLimit } from '@/lib/ratelimit'
 
 export const maxDuration = 60
 
@@ -12,6 +13,7 @@ const SYSTEM_PROMPT = (ctx: {
   businessName: string
   abn: string
   gstRegistered: boolean
+  defaultGst: boolean
   industry: string
   satRateMult: number | null
   sunRateMult: number | null
@@ -28,7 +30,7 @@ const SYSTEM_PROMPT = (ctx: {
 You work like a trusted offsider who knows this business inside out. Talk like a real person, not a robot.
 
 TODAY: ${ctx.today}
-BUSINESS: ${ctx.businessName} | ABN: ${ctx.abn || 'not set'} | GST: ${ctx.gstRegistered ? 'registered' : 'not registered'} | FY2025-26
+BUSINESS: ${ctx.businessName} | ABN: ${ctx.abn || 'not set'} | GST: ${ctx.gstRegistered ? 'registered' : 'not registered'} | Default GST on invoices: ${ctx.defaultGst ? 'YES — always set include_gst=true unless user says otherwise' : 'NO — set include_gst=false unless user explicitly asks for GST'} | FY2025-26
 SUPER RATE: 12% | Payday Super mandatory from 1 July 2026
 
 ${ctx.clientsSection}
@@ -56,12 +58,14 @@ Be natural. Be brief. Sound human.
 
 PAYSLIPS:
 - Single payslip → create_payslip (use employee ID from EMPLOYEES above, match by name)
+- "create payslip/payslips" = ONE payslip unless user gives a number or lists multiple employees. Do not create more than one unless asked.
 - Everyone at once → process_payroll (say "running payroll for everyone" as you go)
 - Auto-compute gross pay — don't ask the user for it if the employee has a stored rate:
     Hourly: rate × hours shown in EMPLOYEES list
     Salary: annual ÷ 26 (fortnightly) / ÷ 52 (weekly) / ÷ 12 (monthly)
 - Default pay period: ends today, back-dated by pay cycle (14 days fortnightly, 7 days weekly, current month)
 - Only ask if: you genuinely can't figure out which employee, or they want a different date range
+- After send_payslip returns success, you are DONE. Do not create another payslip or take any further action unless the user explicitly sends a new request.
 
 PENALTY / OVERTIME HOURS (for hourly employees):
 When the user mentions evening, Saturday, Sunday, public holiday hours or different rates for certain hours:
@@ -92,10 +96,12 @@ ${(() => {
 
 INVOICES:
 - You need: who it's for + what work was done + amount. That's it.
-- Client already in CLIENTS list → use their stored email automatically
+- "create invoice" or "create invoices" always means ONE invoice unless the user gives a specific number or lists multiple clients.
+- Client already in CLIENTS list → note their email for the confirm_card action_payload, but DO NOT call send_invoice — show the confirm card first.
 - New client not in list → create_client first, then create_invoice
 - Build line items from their plain-English description of the work
 - Don't ask for anything that's already been said in the conversation
+- After send_invoice returns success, you are DONE. Do not create another invoice or take any further action unless the user explicitly sends a new request.
 
 LISTS & DATA:
 - "List all clients / employees / invoices / payslips" → answer directly from the data above. Never say you don't have access.
@@ -109,8 +115,9 @@ ATO QUESTIONS:
 ━━━ HARD RULES ━━━
 
 1. Never do PAYG/super maths yourself. Always use create_payslip or get_super_due. The tools use ATO NAT 1004 coefficients — your maths will be wrong.
-2. Never send anything without a confirm card first. Create → show card → user confirms → send.
+2. Never send anything without a confirm card first. Create → show card → user confirms → send. NEVER call send_invoice or send_payslip in the same turn as create_invoice or create_payslip — even if you already know the email from the CLIENTS or EMPLOYEES list.
 3. After user confirms a card, act immediately — don't ask "are you sure?" again.
+4. One action per request. "create invoice/invoices" = one invoice. "create payslip/payslips" = one payslip. After completing a create+send flow, STOP and wait for the next user message. Never chain additional invoice or payslip creation automatically.
 
 ━━━ CONFIRM CARD FORMAT ━━━
 
@@ -125,8 +132,9 @@ CRITICAL — action_payload must contain EVERYTHING needed to execute the action
 - send_invoice:      {"invoice_id":"<uuid>","client_email":"<email>"}
 - send_all_payslips: {"payslips":[{"payslip_id":"<uuid>","employee_email":"<email>","employee_name":"<name>"},...]}
 
-When the user clicks confirm, the UI will send you: "Confirmed. Call <action> now with this exact payload: <action_payload>"
-You must then immediately call that tool with exactly those parameters — no questions, no re-confirmation.`
+When the user clicks confirm, the UI sends: "Confirmed. Call <action> now with this exact payload: <action_payload>"
+You must then immediately call that tool with exactly those parameters — NO questions, NO re-confirmation, NO new create_payslip or create_invoice call.
+The payslip or invoice ALREADY EXISTS — it was created in the previous turn. The message history shows the confirm card with the existing ID. Just call the send tool directly.`
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '')
@@ -147,9 +155,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'SAB Chat requires the Autopilot plan.' }, { status: 403 })
   }
 
+  // Rate limit: autopilot users get 60 AI requests/hour (free plan unused here since chat requires autopilot)
+  const { allowed, remaining } = await checkRateLimit(user.id, 'autopilot')
+  if (!allowed) {
+    return NextResponse.json({ error: 'Rate limit reached. You can send 60 messages per hour. Please wait a moment before trying again.' }, {
+      status: 429,
+      headers: { 'X-RateLimit-Remaining': String(remaining) },
+    })
+  }
+
   const today = new Date().toISOString().slice(0, 10)
 
-  const { messages } = await req.json() as { messages: Anthropic.MessageParam[] }
+  let messages: Anthropic.MessageParam[]
+  try {
+    const body = await req.json() as { messages: Anthropic.MessageParam[] }
+    messages = body.messages
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
 
   const fmtAUD = (n: number) => `$${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
   const thisMonth = new Date().toISOString().slice(0, 7) + '-01'
@@ -163,7 +186,7 @@ export async function POST(req: NextRequest) {
     { data: recentPayslips },
     { data: monthInvoices },
   ] = await Promise.all([
-    supabase.from('business_profiles').select('business_name, abn, gst_registered, industry, sat_rate_mult, sun_rate_mult, ph_rate_mult, evening_rate_mult').eq('id', user.id).single(),
+    supabase.from('business_profiles').select('business_name, abn, gst_registered, default_gst, industry, sat_rate_mult, sun_rate_mult, ph_rate_mult, evening_rate_mult').eq('id', user.id).single(),
     supabase.from('clients').select('id, business_name, contact_name, email, phone').eq('user_id', user.id).order('business_name').limit(100),
     supabase.from('employees').select('id, name, email, employment_type, pay_cycle, pay_basis, hourly_rate, ordinary_hours, annual_salary').eq('user_id', user.id).order('name').limit(100),
     supabase.from('invoices').select('id, invoice_number, client_name, client_email, total_inc_gst, status, issue_date').eq('user_id', user.id).order('created_at', { ascending: false }).limit(30),
@@ -209,6 +232,7 @@ export async function POST(req: NextRequest) {
     businessName:          (biz?.business_name as string) || user.email?.split('@')[0] || 'Your Business',
     abn:                   (biz?.abn as string) || '',
     gstRegistered:         (biz?.gst_registered as boolean) || false,
+    defaultGst:            (biz?.default_gst as boolean) ?? true,
     industry:              (biz?.industry as string) || '',
     satRateMult:           biz?.sat_rate_mult     != null ? (biz.sat_rate_mult as number) : null,
     sunRateMult:           biz?.sun_rate_mult     != null ? (biz.sun_rate_mult as number) : null,
@@ -232,7 +256,12 @@ export async function POST(req: NextRequest) {
         let fullAssistantText = ''
 
         // Agentic loop — handles tool use
+        let iterations = 0
         while (true) {
+          if (++iterations > 10) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: 'Something went wrong — too many steps. Please try again.' })}\n\n`))
+            break
+          }
           const response = await anthropic.messages.create({
             model:      'claude-sonnet-4-6',
             max_tokens: 2048,

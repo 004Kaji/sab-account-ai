@@ -139,7 +139,7 @@ export default function ChatPage() {
   const [input, setInput]           = useState('')
   const [loading, setLoading]       = useState(false)
   const [toolActivity, setToolActivity] = useState<string | null>(null)
-  const [remaining, setRemaining]   = useState<number | null>(null)
+
   const bottomRef   = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -161,11 +161,16 @@ export default function ChatPage() {
         .order('created_at', { ascending: false })
         .limit(20)
       if (data && data.length > 0) {
-        const historical = [...data].reverse().map(m => ({
-          id:   m.id as string,
-          role: m.role as MessageRole,
-          text: m.content as string,
-        }))
+        const historical = [...data].reverse().map(m => {
+          const { clean, card } = parseConfirmCard(m.content as string)
+          return {
+            id:          m.id as string,
+            role:        m.role as MessageRole,
+            text:        clean,
+            confirmCard: card ?? undefined,
+            confirmed:   true,
+          }
+        })
         setMessages(historical)
       }
       setHistoryLoaded(true)
@@ -212,10 +217,14 @@ export default function ChatPage() {
     setLoading(true)
     setToolActivity(null)
 
-    // Build message history for API
+    // Build message history for API.
+    // When an assistant message had a confirm card, include the action + payload so
+    // Claude knows create_payslip/create_invoice was already called and doesn't redo it.
     const history = [...messages, userMsg].map(m => ({
       role:    m.role,
-      content: m.text,
+      content: m.confirmCard
+        ? (m.text ? m.text + '\n\n' : '') + `[Confirm card shown — ${m.confirmCard.action} ready with payload: ${JSON.stringify(m.confirmCard.action_payload)}]`
+        : m.text || '…',
     }))
 
     try {
@@ -257,24 +266,22 @@ export default function ChatPage() {
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           const raw = line.slice(6)
-          try {
-            const evt = JSON.parse(raw) as { type: string; text?: string; tool?: string; message?: string; remaining?: number }
-            if (evt.type === 'text' && evt.text) {
-              assistantText += evt.text
-              const { clean, card } = parseConfirmCard(assistantText)
-              setMessages(prev => prev.map(m =>
-                m.id === assistantId ? { ...m, text: clean, confirmCard: card ?? undefined } : m
-              ))
-            } else if (evt.type === 'tool_start') {
-              setToolActivity(evt.tool ?? null)
-            } else if (evt.type === 'tool_end') {
-              setToolActivity(null)
-            } else if (evt.type === 'done') {
-              setRemaining(evt.remaining ?? null)
-            } else if (evt.type === 'error') {
-              throw new Error(evt.message ?? 'Stream error')
-            }
-          } catch { /* skip malformed events */ }
+          let evt: { type: string; text?: string; tool?: string; message?: string } | null = null
+          try { evt = JSON.parse(raw) } catch { /* skip malformed JSON */ }
+          if (!evt) continue
+          if (evt.type === 'text' && evt.text) {
+            assistantText += evt.text
+            const { clean, card } = parseConfirmCard(assistantText)
+            setMessages(prev => prev.map(m =>
+              m.id === assistantId ? { ...m, text: clean, confirmCard: card ?? undefined } : m
+            ))
+          } else if (evt.type === 'tool_start') {
+            setToolActivity(evt.tool ?? null)
+          } else if (evt.type === 'tool_end') {
+            setToolActivity(null)
+          } else if (evt.type === 'error') {
+            throw new Error(evt.message ?? 'Stream error')
+          }
         }
       }
 
@@ -293,7 +300,6 @@ export default function ChatPage() {
     // Mark this card as confirmed immediately
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, confirmed: true } : m))
 
-    // Pass the action AND its full payload so Claude knows exactly what to call
     const confirmText = `Confirmed. Call ${card.action} now with this exact payload: ${JSON.stringify(card.action_payload)}`
     await send(confirmText)
   }, [send])
