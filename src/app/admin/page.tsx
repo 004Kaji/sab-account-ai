@@ -84,6 +84,7 @@ type ContentQueueData = {
   communityPosts: CommunityPost[]
   tiktokScripts:  TiktokScript[]
   kiteReplies:    KiteReply[]
+  emailDrafts:    EmailDraft[]
   outreachStats:  OutreachStats
   bridgeReport:   BridgeReport | null
 }
@@ -118,6 +119,20 @@ type KiteReply = {
   source_url: string
   original_post_snippet: string | null
   draft_reply: string
+  created_at: string
+}
+
+type EmailDraft = {
+  id: string
+  agent: string
+  campaign: string
+  to_email: string
+  to_name: string | null
+  subject: string
+  body_text: string
+  source_table: string
+  sequence_step: number | null
+  is_follow_up: boolean
   created_at: string
 }
 
@@ -161,7 +176,7 @@ const TONES = [
 const TABS = ['Overview', 'Users', 'Referrals', 'Content', 'Content Queue'] as const
 type Tab = typeof TABS[number]
 
-const QUEUE_SUBTABS = ['Blog Posts', 'Community', 'TikTok', 'Kite Replies', 'Outreach'] as const
+const QUEUE_SUBTABS = ['Email Drafts', 'Blog Posts', 'Community', 'TikTok', 'Kite Replies', 'Outreach'] as const
 type QueueSubtab = typeof QUEUE_SUBTABS[number]
 
 const PLAN_FILTERS = ['All', 'Free', 'Starter', 'Pro', 'Trialing', 'Past Due'] as const
@@ -967,6 +982,7 @@ function ContentQueueTab({
       const d = await res.json() as ContentQueueData
       setData(d)
       onBadgeCount(
+        (d.emailDrafts?.length ?? 0) +
         (d.blogPosts?.length ?? 0) +
         (d.communityPosts?.length ?? 0) +
         (d.tiktokScripts?.length ?? 0) +
@@ -985,10 +1001,13 @@ function ContentQueueTab({
     setActing(id)
     try {
       const h = await authHeader()
-      await fetch('/api/admin/content-queue', {
+      const isEmailDraftAction = action === 'send' || (action === 'dismiss' && table === 'email_drafts')
+      await fetch(isEmailDraftAction ? '/api/admin/email-drafts' : '/api/admin/content-queue', {
         method: 'POST',
         headers: { ...h, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, id, table }),
+        body: isEmailDraftAction
+          ? JSON.stringify({ action, id })
+          : JSON.stringify({ action, id, table }),
       })
       await load()
     } finally {
@@ -1000,6 +1019,7 @@ function ContentQueueTab({
   if (!data) return <p style={{ color: 'var(--text2)' }}>Failed to load queue.</p>
 
   const subCounts: Record<QueueSubtab, number> = {
+    'Email Drafts': data.emailDrafts?.length ?? 0,
     'Blog Posts':   data.blogPosts.length,
     'Community':    data.communityPosts.length,
     'TikTok':       data.tiktokScripts.length,
@@ -1043,11 +1063,12 @@ function ContentQueueTab({
         })}
       </div>
 
-      {subtab === 'Blog Posts'   && <BlogPostsQueue   posts={data.blogPosts}       acting={acting} onAction={doAction} />}
-      {subtab === 'Community'    && <CommunityQueue   posts={data.communityPosts}  acting={acting} onAction={doAction} />}
-      {subtab === 'TikTok'       && <TikTokQueue      scripts={data.tiktokScripts} acting={acting} onAction={doAction} />}
-      {subtab === 'Kite Replies' && <KiteQueue        replies={data.kiteReplies}   acting={acting} onAction={doAction} />}
-      {subtab === 'Outreach'     && <OutreachStatsView stats={data.outreachStats}  report={data.bridgeReport} />}
+      {subtab === 'Email Drafts' && <EmailDraftsQueue  drafts={data.emailDrafts ?? []} acting={acting} onAction={doAction} />}
+      {subtab === 'Blog Posts'   && <BlogPostsQueue   posts={data.blogPosts}          acting={acting} onAction={doAction} />}
+      {subtab === 'Community'    && <CommunityQueue   posts={data.communityPosts}      acting={acting} onAction={doAction} />}
+      {subtab === 'TikTok'       && <TikTokQueue      scripts={data.tiktokScripts}     acting={acting} onAction={doAction} />}
+      {subtab === 'Kite Replies' && <KiteQueue        replies={data.kiteReplies}       acting={acting} onAction={doAction} />}
+      {subtab === 'Outreach'     && <OutreachStatsView stats={data.outreachStats}      report={data.bridgeReport} />}
     </div>
   )
 }
@@ -1392,6 +1413,106 @@ function KiteQueue({
                         </pre>
                       </div>
                     </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── Email Drafts queue ─────────────────────────────────────────────────────
+
+const CAMPAIGN_LABELS: Record<string, string> = {
+  accountant_outreach: 'Accountant',
+  business_outreach:   'Business',
+  freelancer_outreach: 'Freelancer',
+}
+
+function EmailDraftsQueue({
+  drafts, acting, onAction,
+}: {
+  drafts: EmailDraft[]
+  acting: string | null
+  onAction: (action: string, id: string, table: string) => void
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  if (drafts.length === 0) return <EmptyQueue />
+
+  return (
+    <div style={Q_CARD}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--cream)' }}>
+            {['To', 'Subject', 'Campaign', 'Touch', 'Created', 'Actions'].map(h => (
+              <th key={h} style={Q_TH}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {drafts.map(d => (
+            <Fragment key={d.id}>
+              <tr
+                style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                onClick={() => setExpanded(expanded === d.id ? null : d.id)}
+              >
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--char)', maxWidth: 160, wordBreak: 'break-all' }}>
+                  <span style={{ marginRight: '0.4rem', color: 'var(--text3)', fontSize: '0.7rem' }}>
+                    {expanded === d.id ? '▼' : '▶'}
+                  </span>
+                  <span style={{ fontWeight: 500 }}>{d.to_name ?? d.to_email}</span>
+                  {d.to_name && (
+                    <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text3)', paddingLeft: '1rem' }}>
+                      {d.to_email}
+                    </span>
+                  )}
+                </td>
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--text2)', maxWidth: 220 }}>
+                  {d.subject.slice(0, 55)}{d.subject.length > 55 ? '…' : ''}
+                </td>
+                <td style={{ padding: '0.85rem 1rem' }}>
+                  <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                    <Badge label={d.agent} bg="rgba(74,112,85,0.1)" color="var(--sage)" />
+                    <Badge label={CAMPAIGN_LABELS[d.campaign] ?? d.campaign} />
+                  </div>
+                </td>
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                  {d.is_follow_up
+                    ? `Follow-up`
+                    : d.sequence_step !== null
+                    ? `Touch ${d.sequence_step + 1}`
+                    : 'Initial'}
+                </td>
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+                  {fmtDate(d.created_at)}
+                </td>
+                <td style={{ padding: '0.85rem 1rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem' }} onClick={e => e.stopPropagation()}>
+                    <QueueActionBtn label="Send" color="green" disabled={acting === d.id} onClick={() => onAction('send', d.id, 'email_drafts')} />
+                    <QueueActionBtn label="Dismiss" color="red" disabled={acting === d.id} onClick={() => onAction('dismiss', d.id, 'email_drafts')} />
+                  </div>
+                </td>
+              </tr>
+              {expanded === d.id && (
+                <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--cream)' }}>
+                  <td colSpan={6} style={{ padding: '1.25rem 1.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                      <CopyButton text={`Subject: ${d.subject}\n\n${d.body_text}`} label="Copy email" />
+                    </div>
+                    <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '0.6rem 1rem', marginBottom: '0.75rem' }}>
+                      <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 0.25rem' }}>Subject</p>
+                      <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--char)', margin: 0 }}>{d.subject}</p>
+                    </div>
+                    <pre style={{
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0,
+                      fontFamily: 'var(--font-dm-sans)', fontSize: '0.88rem',
+                      color: 'var(--char)', lineHeight: 1.7, maxHeight: 400, overflowY: 'auto',
+                    }}>
+                      {d.body_text}
+                    </pre>
                   </td>
                 </tr>
               )}

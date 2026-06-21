@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
   const supabase = createServiceClient()
 
-  const [blogR, communityR, tiktokR, kiteR, outreachR, bridgeR] = await Promise.all([
+  const [blogR, communityR, tiktokR, kiteR, outreachR, bridgeR, emailDraftsR] = await Promise.all([
     supabase
       .from('blog_posts')
       .select('id, title, created_at, content')
@@ -50,6 +50,11 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from('email_drafts')
+      .select('id, agent, campaign, to_email, to_name, subject, body_text, source_table, sequence_step, is_follow_up, created_at')
+      .eq('status', 'draft')
+      .order('created_at', { ascending: false }),
   ])
 
   const rows = (outreachR.data ?? []) as Array<Record<string, unknown>>
@@ -66,12 +71,13 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    blogPosts:      blogR.data      ?? [],
-    communityPosts: communityR.data ?? [],
-    tiktokScripts:  tiktokR.data    ?? [],
-    kiteReplies:    kiteR.data      ?? [],
+    blogPosts:      blogR.data           ?? [],
+    communityPosts: communityR.data      ?? [],
+    tiktokScripts:  tiktokR.data         ?? [],
+    kiteReplies:    kiteR.data           ?? [],
+    emailDrafts:    emailDraftsR.data    ?? [],
     outreachStats,
-    bridgeReport:   bridgeR.data    ?? null,
+    bridgeReport:   bridgeR.data         ?? null,
   })
 }
 
