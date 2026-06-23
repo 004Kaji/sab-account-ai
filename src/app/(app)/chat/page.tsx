@@ -24,6 +24,7 @@ interface ChatMessage {
   confirmCard?: ConfirmCard
   toolActivity?: string
   confirmed?: boolean
+  kind?: 'chat' | 'reminder'
 }
 
 const QUICK_CHIPS = [
@@ -174,19 +175,21 @@ export default function ChatPage() {
       if (!session) { setHistoryLoaded(true); return }
       const { data } = await supabase
         .from('chat_messages')
-        .select('id, role, content, created_at')
+        .select('id, role, content, created_at, tool_calls')
         .eq('user_id', session.user.id)
         .order('created_at', { ascending: false })
         .limit(20)
       if (data && data.length > 0) {
-        const historical = [...data].reverse().map(m => {
+        const historical: ChatMessage[] = [...data].reverse().map(m => {
           const { clean, card } = parseConfirmCard(m.content as string)
+          const tc = m.tool_calls as { kind?: string } | null
           return {
             id:          m.id as string,
             role:        m.role as MessageRole,
             text:        clean,
             confirmCard: card ?? undefined,
             confirmed:   true,
+            kind:        tc?.kind === 'reminder' ? 'reminder' : 'chat',
           }
         })
         setMessages(historical)
@@ -430,11 +433,20 @@ export default function ChatPage() {
           <div key={msg.id} style={{ display: 'flex', gap: '0.625rem', alignItems: 'flex-start', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
             {msg.role === 'assistant' && <SabAvatar />}
             <div style={{ maxWidth: '82%' }}>
+              {msg.kind === 'reminder' && (
+                <p style={{
+                  margin: '0 0 0.3rem', fontSize: '0.6875rem', fontWeight: 700,
+                  textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ember)',
+                }}>
+                  🔔 Reminder from SAB
+                </p>
+              )}
               <div style={{
                 padding: '0.625rem 0.875rem',
                 borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                background: msg.role === 'user' ? 'var(--ember)' : 'var(--cream)',
+                background: msg.kind === 'reminder' ? 'rgba(200,75,47,0.06)' : msg.role === 'user' ? 'var(--ember)' : 'var(--cream)',
                 border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
+                borderLeft: msg.kind === 'reminder' ? '3px solid var(--ember)' : undefined,
                 fontSize: '0.875rem',
                 color: msg.role === 'user' ? '#fff' : 'var(--text)',
                 lineHeight: 1.6,
