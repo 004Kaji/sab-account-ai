@@ -122,6 +122,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [showReferralModal, setShowReferralModal] = useState(false)
   const [referralLink, setReferralLink] = useState('')
   const [showIdleWarning, setShowIdleWarning] = useState(false)
+  const [hasReminder, setHasReminder] = useState(false)
 
   useEffect(() => {
     const supabase = createBrowserClient()
@@ -191,6 +192,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     init()
   }, [router])
+
+  // Unread proactive-reminder dot on the SAB Chat nav item.
+  useEffect(() => {
+    if (profile.plan !== 'autopilot' || !profile.id) return
+    const seenKey = `sab_chat_seen_${profile.id}`
+
+    // On the chat page, everything is seen — clear the dot.
+    if (pathname === '/chat') {
+      safeStorage.set(seenKey, new Date().toISOString())
+      setHasReminder(false)
+      return
+    }
+
+    const lastSeen = safeStorage.get(seenKey) ?? '1970-01-01T00:00:00Z'
+    const supabase = createBrowserClient()
+    void (async () => {
+      const { count } = await supabase
+        .from('chat_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', profile.id)
+        .eq('tool_calls->>kind', 'reminder')
+        .gt('created_at', lastSeen)
+      setHasReminder((count ?? 0) > 0)
+    })()
+  }, [profile.id, profile.plan, pathname])
 
   // Inactivity auto sign-out
   useEffect(() => {
@@ -300,6 +326,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.color = isLocked ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.55)' }}
                     >
                       {item.label}
+                      {item.href === '/chat' && hasReminder && !isActive && (
+                        <span title="New reminder from SAB" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--ember)', flexShrink: 0, boxShadow: '0 0 0 2px var(--char)' }} />
+                      )}
                       {isLocked && badge && (
                         <span style={{ fontSize: '0.625rem', background: badgeColor.bg, color: badgeColor.color, padding: '0.1rem 0.375rem', borderRadius: '4px', fontWeight: 600 }}>
                           {badge}
@@ -451,7 +480,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         fontWeight: isActive ? 500 : 400,
                       }}
                     >
-                      {item.label}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                        {item.label}
+                        {item.href === '/chat' && hasReminder && !isActive && (
+                          <span title="New reminder from SAB" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--ember)' }} />
+                        )}
+                      </span>
                       {isLocked && lockLabel && <span style={{ fontSize: '0.75rem', color: item.minRank === 3 ? '#B8AAFF' : '#E8856D' }}>{lockLabel}</span>}
                     </Link>
                   )
@@ -568,7 +602,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     color: isActive ? '#ffffff' : 'rgba(255,255,255,0.45)',
                   }}
                 >
-                  {NAV_ICONS[item.label]}
+                  <span style={{ position: 'relative', display: 'inline-flex' }}>
+                    {NAV_ICONS[item.label]}
+                    {item.label === 'SAB Chat' && hasReminder && !isActive && (
+                      <span title="New reminder from SAB" style={{ position: 'absolute', top: -2, right: -4, width: 8, height: 8, borderRadius: '50%', background: 'var(--ember)', boxShadow: '0 0 0 2px var(--char)' }} />
+                    )}
+                  </span>
                   {item.label}
                 </Link>
               )
