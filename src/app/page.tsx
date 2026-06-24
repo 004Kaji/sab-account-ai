@@ -263,7 +263,28 @@ export default function HomePage() {
           {/* thread */}
           <div style={{ background: 'var(--cream)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
 
-            {/* user message */}
+            {/* invoice exchange */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ maxWidth: '80%', background: 'var(--ember)', color: '#fff', padding: '0.625rem 0.875rem', borderRadius: '16px 16px 4px 16px', fontSize: '0.875rem', lineHeight: 1.5 }}>
+                Invoice John Smith — 3 hrs plumbing at $85/hr + $240 parts, inc GST
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+              <span style={{ width: '1.75rem', height: '1.75rem', borderRadius: '50%', background: 'var(--char)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ember)' }}>SAB</span>
+              <div style={{ maxWidth: '82%' }}>
+                <div style={{ background: '#fff', border: '1px solid var(--border)', padding: '0.625rem 0.875rem', borderRadius: '16px 16px 16px 4px', fontSize: '0.875rem', color: 'var(--text)', lineHeight: 1.55 }}>
+                  Done. Tax invoice <strong>#0042</strong> for John Smith:<br />
+                  Labour (3 hrs × $85) $255.00 · Parts $240.00 · GST $49.50<br />
+                  Total <strong>$544.50</strong>. Want me to send it?
+                </div>
+                <div style={{ marginTop: '0.5rem', display: 'inline-flex', background: 'var(--ember)', color: '#fff', borderRadius: '8px', padding: '0.4rem 0.875rem', fontSize: '0.8125rem', fontWeight: 600 }}>
+                  Send to John →
+                </div>
+              </div>
+            </div>
+
+            {/* user message — payslip */}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <div style={{ maxWidth: '80%', background: 'var(--ember)', color: '#fff', padding: '0.625rem 0.875rem', borderRadius: '16px 16px 4px 16px', fontSize: '0.875rem', lineHeight: 1.5 }}>
                 Create a payslip for Sarah — 38 hours this week
@@ -307,93 +328,6 @@ export default function HomePage() {
         <p style={{ textAlign: 'center', fontSize: '0.8125rem', color: 'var(--text3)', marginTop: '1rem' }}>
           Payslips, invoices, BAS &amp; super — done by message. On the Autopilot plan.
         </p>
-      </section>
-
-      {/* ── Product preview — live invoice mockup ──────────────── */}
-      <section style={{ padding: '4rem 1.5rem', maxWidth: '760px', margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <p style={{ fontSize: '0.8125rem', color: 'var(--ember)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>Classic invoicing, too</p>
-          <h2 className="font-display" style={{ fontSize: '1.75rem', color: 'var(--char)', letterSpacing: '-0.02em' }}>Invoice ready in 30 seconds</h2>
-          <p style={{ color: 'var(--text2)', fontSize: '0.9375rem', marginTop: '0.5rem' }}>Type what you did. The AI does the rest.</p>
-        </div>
-
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.08)' }}>
-          {/* AI input bar */}
-          <div style={{ background: 'var(--char)', padding: '1rem 1.25rem', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-            <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.875rem', whiteSpace: 'nowrap' }}>✦ AI</span>
-            <div className="product-input" style={{ flex: 1, background: 'rgba(255,255,255,0.08)', borderRadius: '6px', padding: '0.625rem 1rem', color: 'rgba(255,255,255,0.75)', fontSize: '0.875rem', fontStyle: 'italic' }}>
-              &quot;Plumbing repair at 12 Main St — 3 hours labour at $85/hr + $240 parts, client John Smith, includes GST&quot;
-            </div>
-            <div style={{ background: 'var(--ember)', color: '#fff', borderRadius: '6px', padding: '0.5rem 0.875rem', fontSize: '0.8125rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
-              Generate ✦
-            </div>
-          </div>
-
-          {/* Invoice output */}
-          <div style={{ padding: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div>
-                <p style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--char)', letterSpacing: '0.04em' }}>TAX INVOICE</p>
-                <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', marginTop: '0.2rem' }}>Invoice #0042 · ABN 12 345 678 901</p>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <p style={{ fontSize: '0.8125rem', color: 'var(--text3)' }}>Date: 12 Jun 2026</p>
-                <p style={{ fontSize: '0.8125rem', color: 'var(--text3)' }}>Due: 26 Jun 2026</p>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-              <div>
-                <p style={{ fontSize: '0.6875rem', color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.375rem' }}>From</p>
-                <p style={{ fontSize: '0.875rem', color: 'var(--char)', fontWeight: 600 }}>Your Business Pty Ltd</p>
-                <p style={{ fontSize: '0.8125rem', color: 'var(--text2)' }}>GST registered</p>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <p style={{ fontSize: '0.6875rem', color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.375rem' }}>To</p>
-                <p style={{ fontSize: '0.875rem', color: 'var(--char)', fontWeight: 600 }}>John Smith</p>
-                <p style={{ fontSize: '0.8125rem', color: 'var(--text2)' }}>12 Main Street, Darwin NT</p>
-              </div>
-            </div>
-
-            <div style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '0.75rem 0', marginBottom: '1rem' }}>
-              {[
-                { desc: 'Plumbing repair — Labour (3 hrs × $85/hr)', amount: '$255.00' },
-                { desc: 'Parts and materials', amount: '$240.00' },
-              ].map(item => (
-                <div key={item.desc} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.375rem 0', fontSize: '0.875rem', color: 'var(--text)' }}>
-                  <span>{item.desc}</span>
-                  <span style={{ fontWeight: 600, marginLeft: '1rem' }}>{item.amount}</span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
-              <div style={{ minWidth: '200px' }}>
-                {[
-                  { label: 'Subtotal', value: '$495.00', bold: false },
-                  { label: 'GST (10%)', value: '$49.50', bold: false },
-                  { label: 'Total AUD', value: '$544.50', bold: true },
-                ].map(row => (
-                  <div key={row.label} style={{
-                    display: 'flex', justifyContent: 'space-between',
-                    fontSize: row.bold ? '1rem' : '0.8125rem',
-                    fontWeight: row.bold ? 700 : 400,
-                    color: row.bold ? 'var(--char)' : 'var(--text2)',
-                    padding: '0.3rem 0',
-                    borderTop: row.bold ? '1px solid var(--border)' : 'none',
-                    marginTop: row.bold ? '0.25rem' : 0,
-                  }}>
-                    <span>{row.label}</span><span>{row.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--ember-p)', borderRadius: '6px', padding: '0.625rem 1rem', fontSize: '0.75rem', color: 'var(--ember)', textAlign: 'center', fontWeight: 500 }}>
-              ✓ ATO-compliant tax invoice · GST registered · NAT 1004 verified
-            </div>
-          </div>
-        </div>
       </section>
 
       {/* ── Manual or AI — your choice ─────────────────────────── */}
