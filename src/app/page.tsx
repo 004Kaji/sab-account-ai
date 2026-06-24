@@ -244,10 +244,75 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* ── Product preview — SAB Chat demo ────────────────────── */}
+      <section style={{ padding: '4rem 1.5rem 1rem', maxWidth: '640px', margin: '0 auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--ember)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>See it in action</p>
+          <h2 className="font-display" style={{ fontSize: '1.75rem', color: 'var(--char)', letterSpacing: '-0.02em' }}>Just tell SAB what you need</h2>
+          <p style={{ color: 'var(--text2)', fontSize: '0.9375rem', marginTop: '0.5rem' }}>Your AI bookkeeper — payslips, invoices, ATO answers, and reminders before deadlines.</p>
+        </div>
+
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.08)' }}>
+          {/* chat header */}
+          <div style={{ background: 'var(--char)', padding: '0.875rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ width: '1.75rem', height: '1.75rem', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ember)' }}>SAB</span>
+            <span style={{ color: '#fff', fontWeight: 600, fontSize: '0.9375rem' }}>SAB Chat</span>
+            <span style={{ marginLeft: 'auto', fontSize: '0.625rem', fontWeight: 700, letterSpacing: '0.05em', color: '#B8AAFF', background: 'rgba(100,80,200,0.3)', padding: '0.15rem 0.5rem', borderRadius: '999px' }}>AUTOPILOT</span>
+          </div>
+
+          {/* thread */}
+          <div style={{ background: 'var(--cream)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+
+            {/* user message */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ maxWidth: '80%', background: 'var(--ember)', color: '#fff', padding: '0.625rem 0.875rem', borderRadius: '16px 16px 4px 16px', fontSize: '0.875rem', lineHeight: 1.5 }}>
+                Create a payslip for Sarah — 38 hours this week
+              </div>
+            </div>
+
+            {/* SAB reply with payslip result */}
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+              <span style={{ width: '1.75rem', height: '1.75rem', borderRadius: '50%', background: 'var(--char)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ember)' }}>SAB</span>
+              <div style={{ maxWidth: '82%' }}>
+                <div style={{ background: '#fff', border: '1px solid var(--border)', padding: '0.625rem 0.875rem', borderRadius: '16px 16px 16px 4px', fontSize: '0.875rem', color: 'var(--text)', lineHeight: 1.55 }}>
+                  Done. Sarah&apos;s pay this week:<br />
+                  Gross <strong>$1,330.00</strong> · PAYG tax $268.00 · Super $159.60<br />
+                  Net <strong>$1,062.00</strong>. Want me to email it to her?
+                </div>
+                <div style={{ marginTop: '0.5rem', display: 'inline-flex', background: 'var(--ember)', color: '#fff', borderRadius: '8px', padding: '0.4rem 0.875rem', fontSize: '0.8125rem', fontWeight: 600 }}>
+                  Send to Sarah →
+                </div>
+              </div>
+            </div>
+
+            {/* proactive reminder */}
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+              <span style={{ width: '1.75rem', height: '1.75rem', borderRadius: '50%', background: 'var(--char)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ember)' }}>SAB</span>
+              <div style={{ maxWidth: '82%' }}>
+                <p style={{ margin: '0 0 0.3rem', fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ember)' }}>🔔 Reminder from SAB</p>
+                <div style={{ background: 'rgba(200,75,47,0.06)', border: '1px solid var(--border)', borderLeft: '3px solid var(--ember)', padding: '0.625rem 0.875rem', borderRadius: '16px 16px 16px 4px', fontSize: '0.875rem', color: 'var(--text)', lineHeight: 1.55 }}>
+                  Heads up — <strong>$1,840</strong> in super is due across your team by <strong>30 Jun</strong> under the new Payday Super rules. Pay it from your own bank — I&apos;ll keep track, the transfer&apos;s yours to make.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* input bar */}
+          <div style={{ borderTop: '1px solid var(--border)', padding: '0.75rem 1rem', display: 'flex', gap: '0.5rem', alignItems: 'center', background: '#fff' }}>
+            <div style={{ flex: 1, color: 'var(--text3)', fontSize: '0.875rem' }}>Ask SAB anything…</div>
+            <div style={{ background: 'var(--ember)', color: '#fff', borderRadius: '8px', padding: '0.4rem 1rem', fontSize: '0.8125rem', fontWeight: 600 }}>Send</div>
+          </div>
+        </div>
+
+        <p style={{ textAlign: 'center', fontSize: '0.8125rem', color: 'var(--text3)', marginTop: '1rem' }}>
+          Payslips, invoices, BAS &amp; super — done by message. On the Autopilot plan.
+        </p>
+      </section>
+
       {/* ── Product preview — live invoice mockup ──────────────── */}
       <section style={{ padding: '4rem 1.5rem', maxWidth: '760px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <p style={{ fontSize: '0.8125rem', color: 'var(--ember)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>See it in action</p>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--ember)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>Classic invoicing, too</p>
           <h2 className="font-display" style={{ fontSize: '1.75rem', color: 'var(--char)', letterSpacing: '-0.02em' }}>Invoice ready in 30 seconds</h2>
           <p style={{ color: 'var(--text2)', fontSize: '0.9375rem', marginTop: '0.5rem' }}>Type what you did. The AI does the rest.</p>
         </div>
