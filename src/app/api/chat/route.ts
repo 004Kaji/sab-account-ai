@@ -94,6 +94,13 @@ ${(() => {
     ${awards.note ? `NOTE: ${awards.note}` : ''}`
 })()}
 
+SUPER (Payday Super):
+- IMPORTANT: SAB does NOT pay super and does NOT move money. We calculate, prepare and TRACK super. The user pays it themselves via their own bank or the fund's portal. Never say SAB "pays" or "sends" super.
+- "pay super for last week" / "sort my super for <date>" → prepare_super_payment (use the payrun's payday). Then show a super confirm card so the user can record it once they've paid. Mention they can download the full instruction sheet + CSV on the Tax & Super page.
+- "am I super compliant?" / "is my super up to date?" → get_super_compliance, then summarise plainly (streak, anything overdue).
+- "I paid AustralianSuper $412 yesterday" → match_super_payment (pull out fund, amount, date — resolve "yesterday" against TODAY). Confirm the match, then show a super confirm card with action mark_super_paid. Never record without the confirm card.
+- Deadlines are 7 business days after payday (public holidays handled by the tools). Never compute super deadlines yourself.
+
 INVOICES:
 - You need: who it's for + what work was done + amount. That's it.
 - "create invoice" or "create invoices" always means ONE invoice unless the user gives a specific number or lists multiple clients.
@@ -131,6 +138,7 @@ CRITICAL — action_payload must contain EVERYTHING needed to execute the action
 - send_payslip:      {"payslip_id":"<uuid>","employee_email":"<email>"}
 - send_invoice:      {"invoice_id":"<uuid>","client_email":"<email>"}
 - send_all_payslips: {"payslips":[{"payslip_id":"<uuid>","employee_email":"<email>","employee_name":"<name>"},...]}
+- mark_super_paid:   {"payday":"<YYYY-MM-DD>"} — optionally add "paid_date","method","reference". For type "super" cards, confirm_label should be "Mark super as paid →". This RECORDS a payment the user made themselves; it never moves money.
 
 When the user clicks the confirm button, the UI handles the send action directly — you will NOT receive a follow-up confirm message. Your job ends after outputting the confirm_card. Do NOT call send_payslip or send_invoice yourself after outputting a confirm_card.`
 
@@ -142,28 +150,7 @@ export async function POST(req: NextRequest) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
   if (authErr || !user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-  // Plan gate — autopilot only
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('plan')
-    .eq('id', user.id)
-    .single()
-
-  if (profile?.plan !== 'autopilot') {
-    return NextResponse.json({ error: 'SAB Chat requires the Autopilot plan.' }, { status: 403 })
-  }
-
-  // Rate limit: autopilot users get 60 AI requests/hour (free plan unused here since chat requires autopilot)
-  const { allowed, remaining } = await checkRateLimit(user.id, 'autopilot')
-  if (!allowed) {
-    return NextResponse.json({ error: 'Rate limit reached. You can send 60 messages per hour. Please wait a moment before trying again.' }, {
-      status: 429,
-      headers: { 'X-RateLimit-Remaining': String(remaining) },
-    })
-  }
-
-  const today = new Date().toISOString().slice(0, 10)
-
+  // Parse body first — so a bad request never burns a credit
   let messages: Anthropic.MessageParam[]
   try {
     const body = await req.json() as { messages: Anthropic.MessageParam[] }
@@ -171,6 +158,42 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
+
+  // Plan gate — 5 credits/month for free/starter/pro, unlimited for autopilot
+  const { data: profileData } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+
+  const plan = profileData?.plan ?? 'free'
+
+  if (plan === 'autopilot') {
+    // Autopilot: rate limit only (60/hour)
+    const { allowed, remaining } = await checkRateLimit(user.id, 'autopilot')
+    if (!allowed) {
+      return NextResponse.json({ error: 'Rate limit reached. You can send 60 messages per hour. Please wait a moment before trying again.' }, {
+        status: 429,
+        headers: { 'X-RateLimit-Remaining': String(remaining) },
+      })
+    }
+  } else {
+    // Free/Starter/Pro: check and consume one credit atomically
+    const { data: creditRows, error: rpcErr } = await supabase.rpc('check_and_use_chat_credit', { p_user_id: user.id })
+    if (rpcErr) {
+      Sentry.captureException(rpcErr, { tags: { feature: 'chat_credit_check' } })
+      return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+    }
+    const credit = creditRows?.[0]
+    if (!credit?.allowed) {
+      return NextResponse.json({
+        error: "You've used all 5 free messages this month. Upgrade to Autopilot for unlimited SAB Chat.",
+        credits_exhausted: true,
+      }, { status: 403 })
+    }
+  }
+
+  const today = new Date().toISOString().slice(0, 10)
 
   const fmtAUD = (n: number) => `$${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
   const thisMonth = new Date().toISOString().slice(0, 7) + '-01'
@@ -185,10 +208,10 @@ export async function POST(req: NextRequest) {
     { data: monthInvoices },
   ] = await Promise.all([
     supabase.from('business_profiles').select('business_name, abn, gst_registered, default_gst, industry, sat_rate_mult, sun_rate_mult, ph_rate_mult, evening_rate_mult').eq('id', user.id).single(),
-    supabase.from('clients').select('id, business_name, contact_name, email, phone').eq('user_id', user.id).order('business_name').limit(100),
-    supabase.from('employees').select('id, name, email, employment_type, pay_cycle, pay_basis, hourly_rate, ordinary_hours, annual_salary').eq('user_id', user.id).order('name').limit(100),
-    supabase.from('invoices').select('id, invoice_number, client_name, client_email, total_inc_gst, status, issue_date').eq('user_id', user.id).order('created_at', { ascending: false }).limit(30),
-    supabase.from('payslips').select('id, payslip_number, employee_name, net_pay, pay_period_start, pay_period_end').eq('user_id', user.id).order('created_at', { ascending: false }).limit(30),
+    supabase.from('clients').select('id, business_name, contact_name, email, phone').eq('user_id', user.id).order('business_name').limit(50),
+    supabase.from('employees').select('id, name, email, employment_type, pay_cycle, pay_basis, hourly_rate, ordinary_hours, annual_salary').eq('user_id', user.id).order('name').limit(50),
+    supabase.from('invoices').select('id, invoice_number, client_name, client_email, total_inc_gst, status, issue_date').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
+    supabase.from('payslips').select('id, payslip_number, employee_name, net_pay, pay_period_start, pay_period_end').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
     supabase.from('invoices').select('total_inc_gst').eq('user_id', user.id).gte('issue_date', thisMonth).lte('issue_date', today),
   ])
 
@@ -317,13 +340,16 @@ export async function POST(req: NextRequest) {
           : Array.isArray(userMsg?.content) ? (userMsg.content as Array<{ type: string; text?: string }>).filter(b => b.type === 'text').map(b => b.text).join('') : ''
 
         const msgNow = new Date()
-        await Promise.all([
+        const [insertResult] = await Promise.all([
           supabase.from('chat_messages').insert([
             { user_id: user.id, role: 'user',      content: userText,           created_at: msgNow.toISOString() },
             { user_id: user.id, role: 'assistant', content: fullAssistantText,  created_at: new Date(msgNow.getTime() + 1).toISOString() },
           ]),
           supabase.rpc('increment_chat_usage', { p_user_id: user.id, p_date: today }),
         ])
+        if (insertResult.error) {
+          Sentry.captureException(insertResult.error, { tags: { feature: 'chat_message_persist' } })
+        }
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
         controller.close()

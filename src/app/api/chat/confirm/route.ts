@@ -3,8 +3,10 @@ import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 import { executeToolCall } from '@/lib/chat/tool-handlers'
 
-// Allowlist — only send-type actions can be confirmed directly
-const ALLOWED_ACTIONS = new Set(['send_payslip', 'send_invoice', 'send_all_payslips'])
+// Allowlist — user-confirmed actions that may execute directly. Send-type
+// actions plus mark_super_paid (records a super payment the user has already
+// made themselves — SAB never moves money, it only records + audits).
+const ALLOWED_ACTIONS = new Set(['send_payslip', 'send_invoice', 'send_all_payslips', 'mark_super_paid'])
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '')
@@ -13,6 +15,12 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
   if (authErr || !user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+
+  // Credits are consumed atomically in /api/chat before the confirm prompt is
+  // ever returned — no credit check needed here. Adding one would (a) create a
+  // race where two simultaneous confirms both read the same counter and both
+  // execute, and (b) falsely block a user who spent their last credit on the
+  // message that generated this confirm.
 
   let action: string
   let action_payload: Record<string, unknown>
