@@ -1,0 +1,47 @@
+# Heavy build artifacts — never needed in context
+node_modules/
+.next/
+dist/
+build/
+out/
+.vercel/
+.turbo/
+
+# Lock files — Claude never needs to read these
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# TypeScript build cache
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Screenshots & images in root
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+audit-*.png
+
+# Logs & env
+*.log
+.env
+.env.local
+.env.*
+npm-debug.log*
+
+# Supabase local
+supabase/.temp/
+supabase/seed.sql
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Sentry
+.sentryclirc
+
+# Generated types (re-generated on demand)
+src/lib/types/database.ts

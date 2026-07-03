@@ -42,16 +42,19 @@ export async function POST(req: NextRequest) {
   if (!plan) return NextResponse.json({ error: 'No plan in session' }, { status: 400 })
 
   // Use Stripe's actual trial end date from the subscription object
-  const sub = session.subscription as { trial_end?: number | null } | null
+  const sub = session.subscription as { trial_end?: number | null; status?: string } | null
+  const stripeStatus = sub?.status ?? 'trialing'
   const trialEnd = sub?.trial_end
     ? new Date(sub.trial_end * 1000).toISOString()
-    : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+    : stripeStatus === 'trialing'
+    ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+    : null
 
   await supabase.from('profiles').update({
     plan,
     stripe_customer_id:      session.customer as string,
     stripe_subscription_id:  typeof session.subscription === 'string' ? session.subscription : (session.subscription as { id: string } | null)?.id ?? null,
-    subscription_status:     'trialing',
+    subscription_status:     stripeStatus,
     trial_ends_at:           trialEnd,
   }).eq('id', user.id)
 

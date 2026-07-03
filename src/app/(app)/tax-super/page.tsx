@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import { posthog } from '@/components/PostHogProvider'
 import { useProfile } from '@/app/(app)/profile-context'
@@ -754,6 +754,9 @@ export default function TaxSuperPage() {
             )
           })()}
 
+          {/* ── How to pay your super (guide) ────────────────────────────── */}
+          <HowToPaySuperCard />
+
           {/* ── Payday Super Payment Tracker ─────────────────────────────── */}
           {payruns.length > 0 && (
             <div style={{ background: '#fff', borderRadius: 'var(--r)', border: '1px solid var(--border)', overflow: 'hidden' }}>
@@ -823,19 +826,17 @@ export default function TaxSuperPage() {
                             <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                               <button
                                 onClick={() => handleDownloadInstructions(run.payment_date, 'pdf')}
-                                className="btn btn-ghost"
-                                style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem' }}
-                                title="Download the pay-your-super instruction sheet"
+                                style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0.4rem 0.75rem', borderRadius: '8px', border: '1px solid var(--char)', background: '#fff', color: 'var(--char)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                                title="Download the pay-your-super instruction sheet (PDF)"
                               >
-                                Instructions
+                                📄 Instructions
                               </button>
                               <button
                                 onClick={() => handleDownloadInstructions(run.payment_date, 'csv')}
-                                className="btn btn-ghost"
-                                style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem' }}
-                                title="Download a CSV for your fund's employer portal"
+                                style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.4rem 0.85rem', borderRadius: '8px', border: 'none', background: 'var(--ember)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                                title="Download the CSV to upload to your super clearing house / fund portal"
                               >
-                                CSV
+                                ⬇ CSV
                               </button>
                               {!isDone && (
                                 <button
@@ -883,6 +884,62 @@ export default function TaxSuperPage() {
 }
 
 // ── Coming from SBSCH? — one-file CSV onboarding ──────────────────────────────
+
+// ── "How do I pay my super?" — plain-English guide ────────────────────────────
+function HowToPaySuperCard() {
+  const [open, setOpen] = useState(false)
+
+  const step = (n: number, title: string, body: ReactNode) => (
+    <div style={{ display: 'flex', gap: '0.875rem', marginBottom: '1rem' }}>
+      <div style={{ flexShrink: 0, width: '1.75rem', height: '1.75rem', borderRadius: '50%', background: 'var(--char)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8125rem', fontWeight: 700 }}>{n}</div>
+      <div>
+        <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 700, color: 'var(--char)' }}>{title}</p>
+        <div style={{ margin: '0.2rem 0 0', fontSize: '0.8125rem', color: 'var(--text2)', lineHeight: 1.55 }}>{body}</div>
+      </div>
+    </div>
+  )
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 'var(--r)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', textAlign: 'left', padding: '1rem 1.5rem', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+      >
+        <div>
+          <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--char)' }}>💡 How do I pay my super?</span>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', margin: '0.2rem 0 0' }}>A 3-step guide — SAB prepares it, you pay it, SAB tracks it.</p>
+        </div>
+        <span style={{ fontSize: '1.1rem', color: 'var(--text3)' }}>{open ? '−' : '+'}</span>
+      </button>
+
+      {open && (
+        <div style={{ padding: '0.25rem 1.5rem 1.25rem' }}>
+          {step(1, 'Get your payment file from SAB', (
+            <>On each payrun below, tap <strong>Instructions</strong> (a printable PDF) or <strong>CSV</strong>. It lists what to pay <em>each fund</em>, the amount, the due date, and a payment reference. SAB has already grouped it by fund so you make one payment per fund.</>
+          ))}
+          {step(2, 'Pay through a super clearing house', (
+            <>
+              A clearing house takes <strong>one payment</strong> from you and sends the money to every employee&apos;s fund for you (via SuperStream). Pick whichever suits you:
+              <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.1rem' }}>
+                <li style={{ marginBottom: '0.35rem' }}><strong>Free &amp; easiest:</strong> your default fund&apos;s clearing house — most big funds run one free for employers (e.g. AustralianSuper&apos;s <em>QuickSuper</em>). Log into their employer portal → upload the file / enter the amounts → pay.</li>
+                <li style={{ marginBottom: '0.35rem' }}><strong>Any mix of funds:</strong> a commercial clearing house (Beam, SuperChoice, ClickSuper).</li>
+                <li><strong>Only 1–2 funds:</strong> pay each fund&apos;s employer portal directly by bank transfer / BPAY. For an SMSF, pay its bank account using the ESA shown on the sheet.</li>
+              </ul>
+              <p style={{ margin: '0.5rem 0 0', color: 'var(--text3)' }}>Pay by the <strong>deadline</strong> shown (7 business days after payday) so you stay compliant.</p>
+            </>
+          ))}
+          {step(3, 'Mark it paid here', (
+            <>Come back and click <strong>Mark as Paid</strong> on the payrun (or tell SAB Chat <em>&ldquo;I paid AustralianSuper $492 today&rdquo;</em>). SAB records the date, turns the status green, and keeps an audit trail — your proof of an on-time payment under PCG 2026/1.</>
+          ))}
+
+          <div style={{ marginTop: '0.5rem', padding: '0.625rem 0.875rem', background: 'var(--cream)', borderRadius: '8px', fontSize: '0.75rem', color: 'var(--text2)', lineHeight: 1.55 }}>
+            The ATO&apos;s free Small Business Super Clearing House closed on 1 July 2026 — a clearing house (above) is now how small businesses pay. SAB calculates, prepares and tracks your super; it doesn&apos;t move money or pay on your behalf.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface SbschPreviewRow {
   name: string; super_fund_name?: string; usi?: string; member_number?: string

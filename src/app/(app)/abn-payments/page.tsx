@@ -11,7 +11,6 @@ import AbnVerifyBadge from '@/components/ui/AbnVerifyBadge'
 
 // ── Constants ─────────────────────────────────────────────────────────────
 const WITHHOLDING_RATE = 0.47
-const SG_RATE = getSuperRate()
 
 type Tab = 'abn' | 'noabn'
 
@@ -105,9 +104,11 @@ function calcABN(form: ABNForm) {
     form.is_labour === true &&
     form.is_personal_work === true &&
     form.is_individual === true
+  // Compute rate from actual payment date so backdated payments use the correct SG rate
+  const sgRate = getSuperRate(form.payment_date ? new Date(form.payment_date + 'T12:00:00') : undefined)
   const superAmt = superApplicable
-    ? Math.round(grossEx * SG_RATE * 100) / 100 : 0
-  return { gross, grossEx, gst, superApplicable, superAmt }
+    ? Math.round(grossEx * sgRate * 100) / 100 : 0
+  return { gross, grossEx, gst, superApplicable, superAmt, sgRate }
 }
 
 function calcNoABN(form: NoABNForm) {
@@ -149,7 +150,7 @@ function YesNo({ value, onChange }: { value: boolean | null; onChange: (v: boole
 
 // ── Document Preview ──────────────────────────────────────────────────────
 function ABNPreview({ form, biz }: { form: ABNForm; biz: BusinessProfile }) {
-  const { gross, grossEx, gst, superApplicable, superAmt } = calcABN(form)
+  const { gross, grossEx, gst, superApplicable, superAmt, sgRate } = calcABN(form)
   const docNum = `RS-${form.payment_date.replace(/-/g, '') || todayISO().replace(/-/g, '')}`
 
   return (
@@ -198,7 +199,7 @@ function ABNPreview({ form, biz }: { form: ABNForm; biz: BusinessProfile }) {
         )}
         {superApplicable && (
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text2)' }}>
-            <span>Super SG ({(SG_RATE * 100).toFixed(0)}%)</span>
+            <span>Super SG ({(sgRate * 100).toFixed(0)}%)</span>
             <span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(superAmt)}</span>
           </div>
         )}
@@ -313,7 +314,7 @@ function NoABNPreview({ form, biz }: { form: NoABNForm; biz: BusinessProfile }) 
 
 // ── Super Obligation Checker ──────────────────────────────────────────────
 function SuperChecker({ form, onChange }: { form: ABNForm; onChange: (k: keyof ABNForm, v: boolean | null) => void }) {
-  const { superApplicable } = calcABN(form)
+  const { superApplicable, sgRate } = calcABN(form)
   const allAnswered = form.is_labour !== null && form.is_personal_work !== null && form.is_individual !== null
 
   return (
@@ -355,7 +356,7 @@ function SuperChecker({ form, onChange }: { form: ABNForm; onChange: (k: keyof A
           {superApplicable ? (
             <>
               <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ember)' }}>
-                Super obligation applies — {(SG_RATE * 100).toFixed(0)}% SG rate
+                Super obligation applies — {(sgRate * 100).toFixed(0)}% SG rate
               </p>
               <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.25rem' }}>
                 Employer super guarantee applies. Pay to contractor&apos;s nominated super fund.
@@ -442,7 +443,7 @@ function ABNBuilder({
   saving: boolean
   biz: BusinessProfile
 }) {
-  const { gross, grossEx, gst, superApplicable, superAmt } = calcABN(form)
+  const { gross, grossEx, gst, superApplicable, superAmt, sgRate } = calcABN(form)
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', alignItems: 'start' }} className="abn-builder-grid">
@@ -549,7 +550,7 @@ function ABNBuilder({
               )}
               {superApplicable && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', color: 'var(--text2)' }}>
-                  <span>Super SG ({(SG_RATE * 100).toFixed(0)}%)</span>
+                  <span>Super SG ({(sgRate * 100).toFixed(0)}%)</span>
                   <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--ember)' }}>{formatCurrency(superAmt)}</span>
                 </div>
               )}

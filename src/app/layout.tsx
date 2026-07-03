@@ -3,6 +3,7 @@ import { Fraunces, DM_Sans, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import IOSInstallBanner from '@/components/ui/IOSInstallBanner'
 import CookieConsent from '@/components/ui/CookieConsent'
+import PostHogProvider from '@/components/PostHogProvider'
 import './globals.css'
 
 // Fraunces: serif display font for headings and logo
@@ -100,7 +101,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body
         className={`${fraunces.variable} ${dmSans.variable} ${jetbrainsMono.variable} antialiased`}
       >
-        {children}
+        <PostHogProvider>
+          {children}
+        </PostHogProvider>
         <IOSInstallBanner />
         <CookieConsent />
         <Analytics />

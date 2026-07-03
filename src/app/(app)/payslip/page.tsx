@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
+import { posthog } from '@/components/PostHogProvider'
 import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
 import PlanGate from '@/components/ui/PlanGate'
@@ -531,6 +532,7 @@ export default function PayslipPage() {
 
       if (error) throw error
       setSavedSlip({ id: data.id, number: form.payslip_number })
+      if (posthog.__loaded) posthog.capture('payslip_created')
       if (form.employee_email) setEmailTo(form.employee_email)
 
       if (form.annual_leave_hours  != null && form.annual_leave_taken  > form.annual_leave_hours)
@@ -619,7 +621,12 @@ export default function PayslipPage() {
         body:    JSON.stringify({ to: emailTo.trim(), employeeName: form.employee_name, employerName: biz?.business_name ?? '', payslipNumber: form.payslip_number, netPay: formatCurrency(displayNumbers.netPay), payPeriod, pdfBase64 }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Failed to send')
+      if (!res.ok) {
+        const msg = json.error === 'plan_limit'
+          ? 'This feature requires a Pro or Autopilot plan. Please upgrade to continue.'
+          : (json.error ?? 'Failed to send')
+        throw new Error(msg)
+      }
       setEmailSent(true)
       toast('Payslip sent successfully!', 'success')
     } catch (err) {
@@ -730,7 +737,7 @@ export default function PayslipPage() {
                 placeholder="Search saved employees…"
                 items={employees.map(e => ({ id: e.id, label: e.name, sublabel: `${e.employment_type} · ${e.pay_cycle}` }))}
                 value={form.employee_name}
-                onSelect={item => {
+                onSelect={async item => {
                   const e = employees.find(x => x.id === item.id)
                   if (!e) return
                   setSelectedEmployeeId(e.id)
@@ -779,6 +786,17 @@ export default function PayslipPage() {
                     personal_leave_taken: 0,
                     employee_tfn:         e.tfn ?? '',
                   }))
+                  // Refresh employees in background to pick up any TFN changes made since page loaded
+                  const { data: { session } } = await createBrowserClient().auth.getSession()
+                  if (session) {
+                    const res = await fetch('/api/employees', { headers: { Authorization: `Bearer ${session.access_token}` } })
+                    if (res.ok) {
+                      const fresh = (await res.json() as EmployeeRecord[])
+                      setEmployees(fresh)
+                      const freshEmp = fresh.find(x => x.id === item.id)
+                      if (freshEmp) setForm(prev => ({ ...prev, employee_tfn: freshEmp.tfn ?? '' }))
+                    }
+                  }
                 }}
                 onChange={v => { setSelectedEmployeeId(null); setLeaveBalanceBase({ annual: null, personal: null }); setShowInlineRateEditor(false); setOrdinaryHoursOverridden(false); setField('employee_name', v) }}
                 onClear={() => { setSelectedEmployeeId(null); setLeaveBalanceBase({ annual: null, personal: null }); setShowInlineRateEditor(false); setOrdinaryHoursOverridden(false); setField('employee_name', '') }}

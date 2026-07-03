@@ -19,7 +19,7 @@ const NAV_ITEMS = [
   { label: 'Tax & Super',     href: '/tax-super',              minRank: 2 },
   { label: 'Clients',         href: '/clients',                minRank: 0 },
   { label: 'Employees',       href: '/employees',              minRank: 2 },
-  { label: 'SAB Chat',        href: '/chat',                   minRank: 3 },
+  { label: 'SAB Chat',        href: '/chat',                   minRank: 0 },
   { label: 'Settings',        href: '/settings',               minRank: 0 },
 ]
 

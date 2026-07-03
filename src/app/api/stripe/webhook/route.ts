@@ -9,9 +9,11 @@ import { createServiceClient } from '@/lib/supabase'
 import { PRICE_IDS } from '@/lib/stripe'
 import { applyReferralReward } from '@/lib/referral'
 import { sendFriendConvertedEmail } from '@/lib/referral-emails'
-import { enqueueEmail } from '@/lib/queue'
+import { enqueueEmail, getQStashClient } from '@/lib/queue'
 import { toISO } from '@/lib/date-utils'
 import { invalidateProfile } from '@/lib/profile-cache'
+import { captureServerEvent } from '@/lib/posthog'
+import { mapStripeEventToPostHog } from '@/lib/posthog-webhook-utils'
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_WEBHOOK_SECRET) {
@@ -65,6 +67,19 @@ export async function POST(request: NextRequest) {
   // ── HANDLE EVENTS ────────────────────────────────
   try {
     switch (event.type) {
+
+      case 'customer.subscription.created': {
+        const sub = event.data.object as Stripe.Subscription
+        const userId = sub.metadata?.userId
+        const ph = mapStripeEventToPostHog('customer.subscription.created', userId, {
+          status: sub.status,
+          plan: sub.metadata?.plan,
+        })
+        if (ph) {
+          try { await captureServerEvent(ph.distinctId, ph.event, ph.properties) } catch { /* analytics best-effort */ }
+        }
+        break
+      }
 
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
@@ -171,6 +186,51 @@ export async function POST(request: NextRequest) {
           // SELECT that computes the tier always runs after the write on the same connection.
           const { additionalMonths, lifetimePro, convertedReferrals: newConverted } = await applyReferralReward(referrerId)
 
+          // Apply Stripe credit so Stripe actually honours the free months on next invoice
+          if (additionalMonths > 0 || lifetimePro) {
+            try {
+              const { data: referrerProfile } = await supabase
+                .from('profiles')
+                .select('stripe_customer_id, stripe_subscription_id')
+                .eq('id', referrerId)
+                .single()
+
+              const customerId      = referrerProfile?.stripe_customer_id as string | null
+              const subscriptionId  = referrerProfile?.stripe_subscription_id as string | null
+
+              if (customerId && subscriptionId) {
+                if (lifetimePro) {
+                  // Apply 100% forever coupon — keeps subscription active at $0 so they never
+                  // lose access. cancel_at_period_end would trigger subscription.deleted and
+                  // downgrade them to free.
+                  let couponId = 'LIFETIME_PRO_REWARD'
+                  try { await stripe.coupons.retrieve(couponId) } catch {
+                    await stripe.coupons.create({ id: couponId, percent_off: 100, duration: 'forever', name: 'Lifetime Pro Referral Reward' })
+                  }
+                  await stripe.subscriptions.update(subscriptionId, { coupon: couponId })
+                  console.log(`👑 Lifetime Pro: applied 100% forever coupon for ${referrerId}`)
+                } else {
+                  // Credit based on what the referred friend pays, not the referrer's plan
+                  const friendSubId = typeof session.subscription === 'string' ? session.subscription : (session.subscription as { id: string } | null)?.id
+                  const friendSub   = friendSubId ? await stripe.subscriptions.retrieve(friendSubId) : null
+                  const unitAmount  = friendSub?.items.data[0]?.price?.unit_amount ?? 0
+                  const currency    = friendSub?.currency ?? 'aud'
+                  if (unitAmount > 0) {
+                    await stripe.customers.createBalanceTransaction(customerId, {
+                      amount:      -(unitAmount * additionalMonths),
+                      currency,
+                      description: `Referral reward – ${additionalMonths} free month${additionalMonths > 1 ? 's' : ''}`,
+                    })
+                    console.log(`💳 Applied Stripe credit: ${unitAmount * additionalMonths} ${currency} for ${referrerId}`)
+                  }
+                }
+              }
+            } catch (creditErr) {
+              console.error('Failed to apply Stripe referral credit:', creditErr)
+              Sentry.captureException(creditErr, { tags: { feature: 'referral', step: 'stripe_credit' } })
+            }
+          }
+
           // Send reward email
           try {
             const { data: { user: referrerUser } } = await supabase.auth.admin.getUserById(referrerId)
@@ -246,6 +306,20 @@ export async function POST(request: NextRequest) {
         const userId = sub.metadata?.userId
         if (!userId) break
 
+        // Don't downgrade Lifetime Pro users — their subscription may be deleted
+        // for unrelated reasons but the reward is permanent.
+        const { data: rc } = await supabase
+          .from('referral_codes')
+          .select('lifetime_pro')
+          .eq('user_id', userId)
+          .maybeSingle()
+
+        if (rc?.lifetime_pro) {
+          console.log(`👑 Skipping downgrade — ${userId} has Lifetime Pro`)
+          await invalidateProfile(userId)
+          break
+        }
+
         await supabase.from('profiles').update({
           plan: 'free',
           subscription_status: 'cancelled',
@@ -254,24 +328,101 @@ export async function POST(request: NextRequest) {
           trial_ends_at: null,
         }).eq('id', userId)
         await invalidateProfile(userId)
+        const phDel = mapStripeEventToPostHog('customer.subscription.deleted', userId)
+        if (phDel) {
+          try { await captureServerEvent(phDel.distinctId, phDel.event) } catch { /* analytics best-effort */ }
+        }
         break
       }
 
       case 'invoice.payment_failed': {
         const inv = event.data.object as Stripe.Invoice
-        const customerId = inv.customer as string
+        const customerId  = inv.customer as string
+        const invoiceId   = inv.id
 
         const { data: profileRow } = await supabase
           .from('profiles')
-          .select('id')
+          .select('id, email, stripe_customer_id')
           .eq('stripe_customer_id', customerId)
           .single()
 
-        if (profileRow?.id) {
-          await supabase.from('profiles').update({
-            subscription_status: 'past_due',
-          }).eq('stripe_customer_id', customerId)
-          await invalidateProfile(profileRow.id as string)
+        if (!profileRow?.id) break
+
+        await supabase.from('profiles').update({
+          subscription_status: 'past_due',
+        }).eq('stripe_customer_id', customerId)
+        await invalidateProfile(profileRow.id as string)
+
+        const phFail = mapStripeEventToPostHog('invoice.payment_failed', profileRow.id as string)
+        if (phFail) {
+          try { await captureServerEvent(phFail.distinctId, phFail.event) } catch { /* analytics best-effort */ }
+        }
+
+        // Schedule dunning email sequence via QStash
+        const userId    = profileRow.id as string
+        const userEmail = profileRow.email as string
+        const base      = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
+
+        if (userEmail && process.env.QSTASH_TOKEN) {
+          const userName = userEmail.split('@')[0]
+          const qstash   = getQStashClient()
+
+          for (const delayDays of [3, 7, 14] as const) {
+            const delaySeconds  = delayDays * 24 * 60 * 60
+            const scheduledFor  = new Date(Date.now() + delaySeconds * 1000).toISOString()
+
+            try {
+              const result = await qstash.publishJSON({
+                url:   `${base}/api/email/dunning`,
+                body:  { step: delayDays, userEmail, userName, stripeCustomerId: customerId },
+                delay: delaySeconds,
+                retries: 2,
+              })
+
+              await supabase.from('dunning_jobs').insert({
+                user_id:            userId,
+                stripe_invoice_id:  invoiceId,
+                qstash_message_id:  result.messageId,
+                scheduled_for:      scheduledFor,
+              })
+            } catch (err) {
+              Sentry.captureException(err, { tags: { feature: 'dunning', step: `day_${delayDays}` } })
+              console.error(`[dunning] Failed to schedule day-${delayDays} email:`, err)
+            }
+          }
+        }
+        break
+      }
+
+      case 'invoice.payment_succeeded': {
+        const inv       = event.data.object as Stripe.Invoice
+        const invoiceId = inv.id
+
+        // Cancel any pending dunning jobs for this invoice
+        const { data: pendingJobs } = await supabase
+          .from('dunning_jobs')
+          .select('id, qstash_message_id')
+          .eq('stripe_invoice_id', invoiceId)
+          .is('cancelled_at', null)
+
+        if (pendingJobs?.length && process.env.QSTASH_TOKEN) {
+          const qstash = getQStashClient()
+          const now    = new Date().toISOString()
+
+          await Promise.allSettled(
+            pendingJobs.map(async (job) => {
+              try {
+                await qstash.messages.cancel(job.qstash_message_id as string)
+                await supabase.from('dunning_jobs')
+                  .update({ cancelled_at: now })
+                  .eq('id', job.id)
+              } catch (err) {
+                Sentry.captureException(err, { tags: { feature: 'dunning', step: 'cancel' } })
+                console.error('[dunning] Failed to cancel job:', job.qstash_message_id, err)
+              }
+            }),
+          )
+          console.log(`✅ Cancelled ${pendingJobs.length} dunning job(s) for invoice ${invoiceId}`)
         }
         break
       }

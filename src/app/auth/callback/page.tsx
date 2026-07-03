@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
+import { posthog } from '@/components/PostHogProvider'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
@@ -40,6 +41,11 @@ export default function AuthCallbackPage() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
+        const isNewUser = Date.now() - new Date(session.user.created_at).getTime() < 2 * 60 * 1000
+        if (isNewUser && posthog.__loaded) {
+          posthog.identify(session.user.id)
+          posthog.capture('user_signed_up')
+        }
         doRedirect()
       } else if (event === 'SIGNED_OUT') {
         setError('Sign in failed. Please try again.')

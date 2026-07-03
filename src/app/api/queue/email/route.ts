@@ -5,8 +5,9 @@ import { Receiver } from '@upstash/qstash'
 import * as Sentry from '@sentry/nextjs'
 
 const EMAIL_ROUTES: Record<string, string> = {
-  payment_received:  '/api/email/payment-received',
-  payment_confirmed: '/api/email/payment-confirmed',
+  payment_received:   '/api/email/payment-received',
+  payment_confirmed:  '/api/email/payment-confirmed',
+  invoice_reminder:   '/api/email/invoice-reminder',
 }
 
 export async function POST(req: NextRequest) {

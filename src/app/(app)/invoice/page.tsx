@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import * as Sentry from '@sentry/nextjs'
 import { createBrowserClient } from '@/lib/supabase'
+import { posthog } from '@/components/PostHogProvider'
 import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
 import AutocompleteDropdown from '@/components/ui/AutocompleteDropdown'
@@ -418,6 +419,7 @@ export default function InvoicePage() {
       if (error) throw error
       setSavedInvoice({ id: data.id, number: form.invoice_number })
       if (form.client_email) setEmailTo(form.client_email)
+      if (posthog.__loaded) posthog.capture('invoice_created', { document_type: docType, status })
     } catch (err) {
       Sentry.captureException(err, { tags: { feature: 'invoice_save' } })
       toast(err instanceof Error ? err.message : 'Save failed', 'error')
@@ -546,6 +548,7 @@ export default function InvoicePage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Failed to send')
       setEmailSent(true)
+      if (posthog.__loaded) posthog.capture('invoice_sent')
       toast('Invoice sent successfully!', 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Failed to send email', 'error')
