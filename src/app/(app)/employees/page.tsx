@@ -48,6 +48,8 @@ interface EmployeeForm {
   notes: string
   claiming_threshold: boolean
   has_help: boolean
+  annual_leave_hours: string
+  personal_leave_hours: string
 }
 
 function emptyForm(): EmployeeForm {
@@ -58,6 +60,7 @@ function emptyForm(): EmployeeForm {
     ordinary_hours: '76', super_fund_name: '', member_number: '',
     residency_status: 'citizen_pr', notes: '',
     claiming_threshold: true, has_help: false,
+    annual_leave_hours: '', personal_leave_hours: '',
   }
 }
 
@@ -133,6 +136,8 @@ export default function EmployeesPage() {
       notes: emp.notes ?? '',
       claiming_threshold: emp.claiming_threshold ?? true,
       has_help: emp.has_help ?? false,
+      annual_leave_hours:   emp.annual_leave_hours   != null ? String(emp.annual_leave_hours)   : '',
+      personal_leave_hours: emp.personal_leave_hours != null ? String(emp.personal_leave_hours) : '',
     })
     setModalOpen(true)
   }
@@ -167,6 +172,8 @@ export default function EmployeesPage() {
         notes: form.notes.trim() || null,
         claiming_threshold: form.claiming_threshold,
         has_help: form.has_help,
+        annual_leave_hours:   form.annual_leave_hours   ? parseFloat(form.annual_leave_hours)   : null,
+        personal_leave_hours: form.personal_leave_hours ? parseFloat(form.personal_leave_hours) : null,
       }
 
       const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }
@@ -536,6 +543,19 @@ export default function EmployeesPage() {
             <label className="sab-label">Notes <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
             <textarea className="sab-input" rows={2} placeholder="Any notes about this employee..." value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
           </div>
+
+          {form.employment_type !== 'casual' && (
+            <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div>
+                <label className="sab-label">Annual Leave Balance <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(hrs, optional)</span></label>
+                <input type="number" min={0} step={0.5} className="sab-input" placeholder="e.g. 80" value={form.annual_leave_hours} onChange={e => setForm(f => ({ ...f, annual_leave_hours: e.target.value }))} onWheel={e => (e.target as HTMLInputElement).blur()} />
+              </div>
+              <div>
+                <label className="sab-label">Personal Leave Balance <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(hrs, optional)</span></label>
+                <input type="number" min={0} step={0.5} className="sab-input" placeholder="e.g. 40" value={form.personal_leave_hours} onChange={e => setForm(f => ({ ...f, personal_leave_hours: e.target.value }))} onWheel={e => (e.target as HTMLInputElement).blur()} />
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: '0.625rem', paddingTop: '0.5rem' }}>
             <button onClick={handleSave} disabled={saving} className="btn btn-ember" style={{ flex: 1 }}>

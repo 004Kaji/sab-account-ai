@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "/Users/sanjogbasnet/Desktop/basnet-mac/src/local/voice",
+      "/Users/sanjogbasnet/Desktop/basnet/src/app/api/agents/telegram",
+      "/Users/sanjogbasnet/Desktop/circlesave"
+    ],
+    "allow": [
+      "Bash(cp /Users/sanjogbasnet/Desktop/pasalsathi/src/components/calculator.tsx /Users/sanjogbasnet/Desktop/pasalsathi/src/components/shared/calculator.tsx)",
+      "Bash(cp /Users/sanjogbasnet/Desktop/pasalsathi/src/components/nepali-calendar.tsx /Users/sanjogbasnet/Desktop/pasalsathi/src/components/shared/nepali-calendar.tsx)",
+      "Bash(sed -i '' \"s|from '@/lib/bs-date'|from '@/lib/utils/date'|g\" /Users/sanjogbasnet/Desktop/pasalsathi/src/components/shared/nepali-calendar.tsx)"
+    ]
+  }
+}

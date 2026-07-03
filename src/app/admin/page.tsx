@@ -10,7 +10,7 @@ import { createBrowserClient } from '@/lib/supabase'
 type Stats = {
   mrr: number
   totalUsers: number
-  planCounts: { free: number; starter: number; pro: number }
+  planCounts: { free: number; starter: number; pro: number; autopilot: number }
   trialing: number
   pastDue: number
   active: number
@@ -297,11 +297,12 @@ function OverviewTab({ stats, loading }: { stats: Stats | null; loading: boolean
     <div>
       {/* Revenue row */}
       <SectionLabel>Revenue</SectionLabel>
-      <div style={gridStyle(4)}>
+      <div style={gridStyle(5)}>
         <StatCard label="MRR" value={fmtMRR(stats.mrr)} sub="/month" accent />
         <StatCard label="Active Paid" value={stats.active} sub="subscriptions" />
         <StatCard label="Starter" value={stats.planCounts.starter} sub={`× $9 = ${fmtMRR(stats.planCounts.starter * 9)}`} />
         <StatCard label="Pro" value={stats.planCounts.pro} sub={`× $19 = ${fmtMRR(stats.planCounts.pro * 19)}`} />
+        <StatCard label="Autopilot" value={stats.planCounts.autopilot} sub={`× $49 = ${fmtMRR(stats.planCounts.autopilot * 49)}`} />
       </div>
 
       {/* Users row */}

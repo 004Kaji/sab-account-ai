@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
-
-const ADMIN_EMAILS = ['sanjog.basnet02@gmail.com', 'basnet@sabaccountai.com']
+import { checkAdminRateLimit } from '@/lib/ratelimit'
+import { ADMIN_EMAILS } from '@/lib/admin'
 
 function extractFirstJSON(text: string): string | null {
   const start = text.indexOf('{')
@@ -69,6 +69,9 @@ export async function POST(req: NextRequest) {
   if (authErr || !user || !ADMIN_EMAILS.includes(user.email ?? '')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+
+  const rl = await checkAdminRateLimit(user.id)
+  if (!rl.allowed) return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429 })
 
   const { target, context, trigger } = await req.json()
   if (!target) return NextResponse.json({ error: 'Target required' }, { status: 400 })

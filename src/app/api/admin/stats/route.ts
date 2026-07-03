@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       .limit(10),
   ])
 
-  const planCounts = { free: 0, starter: 0, pro: 0 }
+  const planCounts = { free: 0, starter: 0, pro: 0, autopilot: 0 }
   let trialing = 0, pastDue = 0, active = 0, cancelled = 0
 
   for (const p of profiles ?? []) {
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
     if (p.subscription_status === 'cancelled') cancelled++
   }
 
-  const mrr = (planCounts.starter * 9) + (planCounts.pro * 19)
+  const mrr = (planCounts.starter * 9) + (planCounts.pro * 19) + (planCounts.autopilot * 49)
 
   // Enrich top referrers with email
   const refUserIds = (topReferrers ?? []).map(r => r.user_id)

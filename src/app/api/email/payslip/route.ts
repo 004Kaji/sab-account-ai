@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
 import { sendPayslipEmail } from '@/lib/send-email'
+import { checkEmailRateLimit } from '@/lib/ratelimit'
+import { getProfile } from '@/lib/profile-cache'
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '')
@@ -10,6 +12,15 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
   if (authErr || !user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+
+  const profile = await getProfile(user.id)
+  const plan = (profile?.plan ?? 'free').toLowerCase()
+  if (plan !== 'pro' && plan !== 'autopilot') {
+    return NextResponse.json({ error: 'plan_limit' }, { status: 403 })
+  }
+
+  const rl = await checkEmailRateLimit(user.id)
+  if (!rl.allowed) return NextResponse.json({ error: 'Too many email requests. Try again later.' }, { status: 429 })
 
   const { data: bizProfile } = await supabase.from('business_profiles').select('logo_url').eq('id', user.id).single()
   const logoUrl = bizProfile?.logo_url && (bizProfile.logo_url as string).startsWith('https://') ? (bizProfile.logo_url as string) : ''

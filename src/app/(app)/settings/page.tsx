@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
+import { posthog } from '@/components/PostHogProvider'
 import { useProfile } from '@/app/(app)/profile-context'
 import { useToast } from '@/components/ui/Toast'
 import { formatDateAU, validateABN, formatABN } from '@/lib/utils'
@@ -10,7 +11,7 @@ import { INDUSTRY_LIST, getAwardRates, pct } from '@/lib/award-rates'
 import AbnVerifyBadge from '@/components/ui/AbnVerifyBadge'
 
 // ── Types ─────────────────────────────────────────────────────────────
-type TabKey = 'business' | 'subscription' | 'invoices' | 'notifications' | 'ato' | 'referrals' | 'feedback'
+type TabKey = 'business' | 'subscription' | 'invoices' | 'notifications' | 'ato' | 'referrals' | 'feedback' | 'accountant'
 
 interface BizSettings {
   business_name:        string
@@ -61,6 +62,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'ato',           label: 'ATO'           },
   { key: 'referrals',     label: 'Referrals 🎁'  },
   { key: 'feedback',      label: 'Feedback'       },
+  { key: 'accountant',    label: 'Accountant'     },
 ]
 
 // INDUSTRY_LIST is imported from @/lib/award-rates (maps to Modern Awards)
@@ -1016,12 +1018,16 @@ function ReferralsTab() {
               height: '100%',
               borderRadius: '999px',
               background: 'var(--ember)',
-              width: `${Math.min(100, (converted / (converted < 1 ? 1 : converted < 3 ? 3 : 10)) * 100)}%`,
+              width: converted < 1
+                ? '0%'
+                : converted < 3
+                ? `${Math.min(100, ((converted - 1) / 2) * 100)}%`
+                : `${Math.min(100, ((converted - 3) / 7) * 100)}%`,
               transition: 'width 500ms ease',
             }} />
           </div>
           <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.375rem' }}>
-            {converted} / {converted < 1 ? 1 : converted < 3 ? 3 : 10} paid friends
+            {converted < 1 ? `0 / 1` : converted < 3 ? `${converted - 1} / 2` : `${converted - 3} / 7`} paid friends toward next tier
           </p>
         </div>
       )}
@@ -1294,6 +1300,224 @@ function FeedbackTab() {
   )
 }
 
+// ── Accountant tab ────────────────────────────────────────────────────
+type AccountantLink = {
+  id: string
+  token: string
+  label: string | null
+  expires_at: string
+  revoked_at: string | null
+  created_at: string
+}
+
+function accountantLinkStatus(link: AccountantLink): 'active' | 'expired' | 'revoked' {
+  if (link.revoked_at) return 'revoked'
+  if (new Date(link.expires_at) <= new Date()) return 'expired'
+  return 'active'
+}
+
+function AccountantTab() {
+  const { toast }                   = useToast()
+  const [links, setLinks]           = useState<AccountantLink[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [showModal, setShowModal]   = useState(false)
+  const [modalLabel, setModalLabel] = useState('')
+  const [creating, setCreating]     = useState(false)
+  const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [copyingId,  setCopyingId]  = useState<string | null>(null)
+
+  async function getToken() {
+    const supabase = createBrowserClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    return session?.access_token ?? ''
+  }
+
+  async function load() {
+    const token = await getToken()
+    const res = await fetch('/api/accountant-links', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res.ok) {
+      const { links: data } = await res.json()
+      setLinks(data ?? [])
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleCreate() {
+    setCreating(true)
+    const token = await getToken()
+    const res = await fetch('/api/accountant-links', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body:    JSON.stringify({ label: modalLabel.trim() || null }),
+    })
+    setCreating(false)
+    if (!res.ok) { toast('Failed to create link', 'error'); return }
+    const { url, link } = await res.json()
+    setLinks(prev => [link, ...prev])
+    setShowModal(false)
+    setModalLabel('')
+    try { await navigator.clipboard.writeText(url); toast('Link copied to clipboard', 'success') }
+    catch { toast(`Link created: ${url}`, 'info') }
+  }
+
+  async function handleCopy(token: string, id: string) {
+    setCopyingId(id)
+    const base = window.location.origin
+    const url  = `${base}/accountant/${token}`
+    try { await navigator.clipboard.writeText(url); toast('Link copied to clipboard', 'success') }
+    catch { toast(url, 'info') }
+    setCopyingId(null)
+  }
+
+  async function handleRevoke(id: string) {
+    if (!confirm('Revoke this link? The accountant will no longer be able to access the shared view.')) return
+    setRevokingId(id)
+    const token = await getToken()
+    const res = await fetch(`/api/accountant-links/${id}`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+    })
+    setRevokingId(null)
+    if (!res.ok) { toast('Failed to revoke link', 'error'); return }
+    setLinks(prev => prev.map(l => l.id === id ? { ...l, revoked_at: new Date().toISOString() } : l))
+    toast('Link revoked', 'info')
+  }
+
+  const STATUS_CHIP: Record<string, { bg: string; color: string }> = {
+    active:  { bg: 'rgba(34,197,94,0.1)',  color: '#15803d' },
+    expired: { bg: 'rgba(234,179,8,0.12)', color: '#92400e' },
+    revoked: { bg: 'rgba(200,75,47,0.1)',  color: 'var(--ember)' },
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <div>
+          <p style={{ fontWeight: 600, color: 'var(--char)', fontSize: '0.9375rem', marginBottom: '0.25rem' }}>
+            Share with accountant
+          </p>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', lineHeight: 1.5 }}>
+            Generate a read-only link for your accountant. No login required — the link expires in 90 days.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowModal(true)}
+          className="btn btn-ember"
+          style={{ fontSize: '0.875rem', whiteSpace: 'nowrap' }}
+        >
+          + Generate link
+        </button>
+      </div>
+
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
+          <div className="spinner" style={{ width: '1.25rem', height: '1.25rem', borderWidth: '2px', borderColor: 'var(--cream3)', borderTopColor: 'var(--ember)' }} />
+        </div>
+      ) : links.length === 0 ? (
+        <p style={{ color: 'var(--text3)', fontSize: '0.875rem' }}>No links yet. Generate one above to share with your accountant.</p>
+      ) : (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r)', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
+                {['Label', 'Created', 'Expires', 'Status', ''].map(h => (
+                  <th key={h} style={{ padding: '0.625rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text3)', letterSpacing: '0.03em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {links.map((link, i) => {
+                const status = accountantLinkStatus(link)
+                const chip   = STATUS_CHIP[status]
+                return (
+                  <tr key={link.id} style={{ borderBottom: i < links.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', color: 'var(--char)' }}>
+                      {link.label || <span style={{ color: 'var(--text3)' }}>—</span>}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                      {formatDateAU(link.created_at.split('T')[0])}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.8125rem', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                      {formatDateAU(link.expires_at.split('T')[0])}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem' }}>
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0.2rem 0.5rem', borderRadius: '999px', background: chip.bg, color: chip.color }}>
+                        {status}
+                      </span>
+                    </td>
+                    <td style={{ padding: '0.75rem 0.75rem', textAlign: 'right' }}>
+                      {status === 'active' && (
+                        <div style={{ display: 'flex', gap: '0.375rem', justifyContent: 'flex-end' }}>
+                          <button
+                            onClick={() => handleCopy(link.token, link.id)}
+                            disabled={copyingId === link.id}
+                            style={{ padding: '0.25rem 0.625rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 500, border: '1px solid var(--border)', background: '#fff', color: 'var(--char)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            {copyingId === link.id ? '✓ Copied' : '⎘ Copy link'}
+                          </button>
+                          <button
+                            onClick={() => handleRevoke(link.id)}
+                            disabled={revokingId === link.id}
+                            style={{ padding: '0.25rem 0.625rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 500, border: '1px solid rgba(200,75,47,0.3)', background: 'rgba(200,75,47,0.06)', color: 'var(--ember)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            {revokingId === link.id ? '…' : 'Revoke'}
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Generate link modal */}
+      {showModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+          <div style={{ background: '#fff', borderRadius: 'var(--r)', padding: '1.5rem', maxWidth: '420px', width: '90%', boxShadow: '0 8px 32px rgba(0,0,0,0.16)' }}>
+            <h3 style={{ margin: '0 0 0.5rem', color: 'var(--char)', fontSize: '1.0625rem', fontWeight: 700 }}>Generate accountant link</h3>
+            <p style={{ margin: '0 0 1.25rem', color: 'var(--text2)', fontSize: '0.875rem', lineHeight: 1.5 }}>
+              Optional label to identify this link (e.g. "My accountant - June 2026"). Expires in 90 days.
+            </p>
+            <input
+              className="sab-input"
+              placeholder="My accountant - June 2026"
+              value={modalLabel}
+              onChange={e => setModalLabel(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !creating && handleCreate()}
+              autoFocus
+              style={{ marginBottom: '1rem' }}
+            />
+            <div style={{ display: 'flex', gap: '0.625rem', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { setShowModal(false); setModalLabel('') }}
+                style={{ padding: '0.5rem 1rem', borderRadius: '6px', fontSize: '0.875rem', fontWeight: 500, border: '1px solid var(--border)', background: '#fff', color: 'var(--char)', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={creating}
+                className="btn btn-ember"
+                style={{ fontSize: '0.875rem' }}
+              >
+                {creating ? 'Creating…' : 'Create & copy link'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────
 function SettingsPageInner() {
   const profile      = useProfile()
@@ -1405,6 +1629,7 @@ function SettingsPageInner() {
   }
 
   async function handleUpgrade(plan: 'starter' | 'pro' | 'autopilot') {
+    if (posthog.__loaded) posthog.capture('upgrade_clicked', { plan })
     setStripeLoading(true)
     try {
       const url = await stripeRequest('/api/stripe/checkout', { plan })
@@ -1416,6 +1641,7 @@ function SettingsPageInner() {
   }
 
   async function handlePortal(targetPlan?: string) {
+    if (targetPlan && posthog.__loaded) posthog.capture('upgrade_clicked', { plan: targetPlan, via: 'portal' })
     setStripeLoading(true)
     try {
       const url = await stripeRequest('/api/stripe/portal', targetPlan ? { targetPlan } : {})
@@ -1512,6 +1738,9 @@ function SettingsPageInner() {
         )}
         {tab === 'feedback' && (
           <FeedbackTab />
+        )}
+        {tab === 'accountant' && (
+          <AccountantTab />
         )}
       </div>
     </div>
