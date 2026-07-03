@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useProfile } from '@/app/(app)/profile-context'
 import { createBrowserClient } from '@/lib/supabase'
+import { posthog } from '@/components/PostHogProvider'
 
 // ── Types ─────────────────────────────────────────────────────────────
 interface ConfirmCard {
@@ -111,7 +112,7 @@ function ConfirmCardUI({ card, onConfirm, confirmed }: { card: ConfirmCard; onCo
       {confirmed && (
         <div style={{ padding: '0 1rem 0.875rem' }}>
           <p style={{ margin: 0, fontSize: '0.8125rem', color: '#15803d', fontWeight: 500 }}>
-            ✓ Sent
+            {card.type === 'super' ? '✓ Recorded' : '✓ Sent'}
           </p>
         </div>
       )}
@@ -153,11 +154,13 @@ export default function ChatPage() {
   useEffect(() => { document.title = 'SAB Chat — SAB Account AI' }, [])
 
   const profile = useProfile()
+  const isAutopilot = profile.plan === 'autopilot'
   const [messages, setMessages]     = useState<ChatMessage[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [input, setInput]           = useState('')
   const [loading, setLoading]       = useState(false)
   const [toolActivity, setToolActivity] = useState<string | null>(null)
+  const [creditsRemaining, setCreditsRemaining] = useState<number | null>(null)
 
   const bottomRef   = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -166,13 +169,25 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  // ── Load chat history from Supabase on mount ──────────────────────
+  // ── Load chat history + credits on mount ─────────────────────────
   useEffect(() => {
-    if (profile.plan !== 'autopilot') return
     const load = async () => {
       const supabase = createBrowserClient()
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { setHistoryLoaded(true); return }
+
+      // Fetch credits for non-autopilot users; clear for autopilot to avoid flash
+      if (!isAutopilot) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('chat_credits_remaining')
+          .eq('id', session.user.id)
+          .single()
+        setCreditsRemaining(prof?.chat_credits_remaining ?? 5)
+      } else {
+        setCreditsRemaining(null)
+      }
+
       const { data } = await supabase
         .from('chat_messages')
         .select('id, role, content, created_at, tool_calls')
@@ -209,25 +224,6 @@ export default function ChatPage() {
     setMessages([])
   }, [])
 
-  // ── Gate: non-autopilot users see upgrade prompt ─────────────────
-  if (profile.plan !== 'autopilot') {
-    return (
-      <div style={{ maxWidth: '560px', margin: '4rem auto', padding: '0 1.5rem', textAlign: 'center' }}>
-        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>💬</div>
-        <h1 className="font-display" style={{ fontSize: '1.5rem', color: 'var(--char)', marginBottom: '0.5rem' }}>SAB Chat</h1>
-        <p style={{ color: 'var(--text2)', marginBottom: '0.5rem', lineHeight: 1.6 }}>
-          One message. Everything done. SAB Chat lets you create payslips, invoices, and get ATO compliance answers — just by typing.
-        </p>
-        <p style={{ color: 'var(--text3)', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
-          Available on the Autopilot plan ($49/month).
-        </p>
-        <Link href="/settings?tab=subscription" className="btn btn-ember" style={{ display: 'inline-flex' }}>
-          Upgrade to Autopilot →
-        </Link>
-      </div>
-    )
-  }
-
   // ── Send a message ─────────────────────────────────────────────────
   const send = useCallback(async (text: string) => {
     if (!text.trim() || loading) return
@@ -235,6 +231,7 @@ export default function ChatPage() {
 
     const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', text: text.trim() }
     setMessages(prev => [...prev, userMsg])
+    if (posthog.__loaded) posthog.capture('chat_message_sent')
     setLoading(true)
     setToolActivity(null)
 
@@ -261,8 +258,24 @@ export default function ChatPage() {
       })
 
       if (!res.ok) {
-        const err = await res.json() as { error?: string }
+        const err = await res.json() as { error?: string; credits_exhausted?: boolean }
+        if (err.credits_exhausted) {
+          setCreditsRemaining(0)
+          setMessages(prev => [...prev, {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            text: "You've used all 5 free messages this month. Upgrade to Autopilot for unlimited SAB Chat — payslips, invoices, BAS answers, and proactive reminders. [Upgrade →](/settings?tab=subscription)",
+          }])
+          setLoading(false)
+          setToolActivity(null)
+          return
+        }
         throw new Error(err.error ?? 'Request failed')
+      }
+
+      // Decrement local credit counter for non-autopilot users
+      if (!isAutopilot) {
+        setCreditsRemaining(prev => prev !== null ? Math.max(0, prev - 1) : null)
       }
 
       // Stream SSE events
@@ -312,7 +325,7 @@ export default function ChatPage() {
       setToolActivity(null)
       textareaRef.current?.focus()
     }
-  }, [messages, loading])
+  }, [messages, loading, isAutopilot])
 
   // ── Handle confirm card action ─────────────────────────────────────
   // Calls /api/chat/confirm directly — bypasses Claude entirely so it
@@ -346,6 +359,8 @@ export default function ChatPage() {
         resultText = `${String(data.invoice_number)} sent to ${String(data.sent_to)}. ✓`
       } else if (data.sent_count != null) {
         resultText = `${String(data.sent_count)} payslips sent. ✓`
+      } else if (data.ok && data.super_marked_paid) {
+        resultText = String(data.message ?? 'Super recorded. ✓')
       } else {
         resultText = 'Done!'
       }
@@ -402,6 +417,18 @@ export default function ChatPage() {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          {!isAutopilot && creditsRemaining !== null && (
+            <span style={{
+              fontSize: '0.75rem',
+              color: creditsRemaining === 0 ? 'var(--ember)' : creditsRemaining <= 2 ? '#B8832A' : 'var(--text3)',
+              fontWeight: creditsRemaining <= 2 ? 600 : 400,
+            }}>
+              {creditsRemaining === 0
+                ? <><Link href="/settings?tab=subscription" style={{ color: 'var(--ember)', fontWeight: 600 }}>Upgrade to Autopilot</Link> for more messages</>
+                : `${creditsRemaining} message${creditsRemaining === 1 ? '' : 's'} left this month`
+              }
+            </span>
+          )}
           {messages.length > 0 && (
             <button
               onClick={clearHistory}
@@ -489,26 +516,31 @@ export default function ChatPage() {
       {/* ── Quick chips (shown only on first load) ── */}
       {isFirstLoad && (
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', paddingBottom: '0.75rem' }}>
-          {QUICK_CHIPS.map(chip => (
-            <button
-              key={chip}
-              onClick={() => send(chip)}
-              style={{
-                padding: '0.375rem 0.75rem',
-                borderRadius: '999px',
-                border: '1px solid var(--border)',
-                background: '#fff',
-                fontSize: '0.8125rem',
-                color: 'var(--char)',
-                cursor: 'pointer',
-                transition: 'border-color 150ms, background 150ms',
-              }}
-              onMouseEnter={e => { (e.currentTarget).style.borderColor = 'var(--ember)'; (e.currentTarget).style.color = 'var(--ember)' }}
-              onMouseLeave={e => { (e.currentTarget).style.borderColor = 'var(--border)'; (e.currentTarget).style.color = 'var(--char)' }}
-            >
-              {chip}
-            </button>
-          ))}
+          {QUICK_CHIPS.map(chip => {
+            const chipsDisabled = !isAutopilot && creditsRemaining === 0
+            return (
+              <button
+                key={chip}
+                onClick={() => send(chip)}
+                disabled={chipsDisabled}
+                style={{
+                  padding: '0.375rem 0.75rem',
+                  borderRadius: '999px',
+                  border: '1px solid var(--border)',
+                  background: '#fff',
+                  fontSize: '0.8125rem',
+                  color: chipsDisabled ? 'var(--text3)' : 'var(--char)',
+                  cursor: chipsDisabled ? 'not-allowed' : 'pointer',
+                  opacity: chipsDisabled ? 0.5 : 1,
+                  transition: 'border-color 150ms, background 150ms',
+                }}
+                onMouseEnter={e => { if (!chipsDisabled) { (e.currentTarget).style.borderColor = 'var(--ember)'; (e.currentTarget).style.color = 'var(--ember)' } }}
+                onMouseLeave={e => { if (!chipsDisabled) { (e.currentTarget).style.borderColor = 'var(--border)'; (e.currentTarget).style.color = 'var(--char)' } }}
+              >
+                {chip}
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -525,7 +557,7 @@ export default function ChatPage() {
           }}
           onKeyDown={handleKeyDown}
           placeholder="Ask SAB anything… (Enter to send, Shift+Enter for new line)"
-          disabled={loading}
+          disabled={loading || (!isAutopilot && creditsRemaining === 0)}
           style={{
             flex: 1,
             resize: 'none',

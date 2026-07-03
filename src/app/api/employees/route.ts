@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { encryptIfPresent, decryptIfPresent } from '@/lib/encrypt'
+import { getProfile } from '@/lib/profile-cache'
 
 function auth(req: NextRequest) {
   return req.headers.get('Authorization')?.replace('Bearer ', '') ?? null
@@ -47,6 +48,9 @@ type EmployeeBody = {
   super_fund_name?: string; member_number?: string; residency_status?: string
   notes?: string; annual_leave_hours?: number; personal_leave_hours?: number
   claiming_threshold?: boolean; has_help?: boolean
+  // Super-fund profile (Payday Super)
+  usi?: string; fund_abn?: string; is_smsf?: boolean; smsf_esa?: string
+  smsf_bank_name?: string; smsf_bank_bsb?: string; smsf_bank_acct?: string
 }
 
 function pickFields(body: Record<string, unknown>): EmployeeBody {
@@ -55,6 +59,7 @@ function pickFields(body: Record<string, unknown>): EmployeeBody {
     'annual_salary', 'hourly_rate', 'ordinary_hours', 'super_fund_name', 'member_number',
     'residency_status', 'notes', 'annual_leave_hours', 'personal_leave_hours',
     'claiming_threshold', 'has_help',
+    'usi', 'fund_abn', 'is_smsf', 'smsf_esa', 'smsf_bank_name', 'smsf_bank_bsb', 'smsf_bank_acct',
   ]
   return Object.fromEntries(ALLOWED.filter(k => k in body).map(k => [k, body[k]])) as EmployeeBody
 }
@@ -64,6 +69,12 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getUser(auth(req))
     if (!user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+
+    const profile = await getProfile(user.id)
+    const plan = (profile?.plan ?? 'free').toLowerCase()
+    if (plan !== 'pro' && plan !== 'autopilot') {
+      return NextResponse.json({ error: 'plan_limit' }, { status: 403 })
+    }
 
     const raw = await req.json() as Record<string, unknown>
     const supabase = createServiceClient()

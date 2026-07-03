@@ -124,6 +124,41 @@ export const SAB_CHAT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'prepare_super_payment',
+    description: 'Prepare the "pay your super now" instruction sheet for a specific payrun (payday). Use when the user says "pay super for last week\'s payrun", "sort my super", or asks how to pay super for a pay date. SAB does NOT move money — this prepares per-fund payment instructions the user pays themselves, then shows a confirm card to record it once paid. Returns per-fund totals, the Payday Super deadline and a suggested reference.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        payday: { type: 'string', description: 'The payrun payment date (payday) in YYYY-MM-DD format' },
+      },
+      required: ['payday'],
+    },
+  },
+  {
+    name: 'get_super_compliance',
+    description: 'Summarise Payday Super compliance across all payruns. Use when the user asks "am I super compliant?", "is my super up to date?", or about overdue/upcoming super. Returns per-payrun status (UPCOMING/DUE_SOON/OVERDUE/PAID), the on-time streak, overdue count and the PCG 2026/1 low-risk note. Read-only — records nothing.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'match_super_payment',
+    description: 'Match a super payment the user says they already made to the right payrun. Use for messages like "I paid AustralianSuper $412 yesterday" or "just paid Hostplus $60". Extract fund_name, amount and paid_date from what they said. Read-only — it finds the payrun; you then show a confirm card with action mark_super_paid. Records nothing itself.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        fund_name: { type: 'string', description: 'Super fund name mentioned, e.g. "AustralianSuper" (optional)' },
+        amount:    { type: 'number', description: 'Amount paid in AUD (optional)' },
+        paid_date: { type: 'string', description: 'Date paid in YYYY-MM-DD. Resolve relative dates like "yesterday" against TODAY. Defaults to today if omitted.' },
+        method:    { type: 'string', description: 'How they paid, e.g. "bank transfer", "fund portal", "BPAY" (optional)' },
+        reference: { type: 'string', description: 'Their payment reference if mentioned (optional)' },
+      },
+      required: [],
+    },
+  },
+  {
     name: 'get_business_summary',
     description: 'Get a financial summary for the business over a date range: total income, GST collected, total expenses, GST credits, net profit, and invoice count. Use when the user asks about their business performance, income, revenue, or profit.',
     input_schema: {

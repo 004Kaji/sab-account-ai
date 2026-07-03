@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 import Anthropic from '@anthropic-ai/sdk'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
@@ -111,7 +112,7 @@ async function emailReminder(resend: Resend, to: string, subject: string, messag
 }
 
 export async function GET(req: NextRequest) {
-  if (req.headers.get('Authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

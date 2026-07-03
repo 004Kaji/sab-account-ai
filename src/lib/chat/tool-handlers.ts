@@ -3,9 +3,18 @@ import { Resend } from 'resend'
 import * as Sentry from '@sentry/nextjs'
 import { calculatePayslip, isMedicareExemptByResidency } from '@/lib/ato'
 import { formatABN } from '@/lib/utils'
+import {
+  paydaySuperDeadline,
+  deriveSuperStatus,
+  wasPaidOnTime,
+  suggestedPaymentReference,
+  PCG_2026_1_LINE,
+} from '@/lib/super-compliance'
+import { buildSuperInstructionSheet } from '@/lib/super-instructions'
 import PDFDocument from 'pdfkit'
 import { getPayslipPDFBase64, getInvoicePDFBase64 } from '@/lib/pdf'
 import { sendPayslipEmail, sendInvoiceEmail } from '@/lib/send-email'
+import { decryptIfPresent } from '@/lib/encrypt'
 
 // ── Generate BAS PDF as a Buffer ──────────────────────────────────────
 async function generateBasPdf(data: {
@@ -178,8 +187,10 @@ Super must be paid on the same day or very close to every payday (not quarterly)
 ATO will match payday super payments against payroll data reported through Single Touch Payroll (STP).
 Penalties apply immediately from July 28, 2026 (first full payday after 1 July).
 Super Guarantee Charge (SGC) is non-deductible and includes interest (10% p.a.) plus admin levy ($20 per employee per quarter).
-Employers must use a clearing house or pay directly to the employee's chosen fund — no more holding super for 3 months.
-Small Business Super Clearing House (SBSHC) is free for businesses with fewer than 19 employees or turnover under $10M.`,
+Super must reach the employee's fund within 7 business days of each payday — no more holding super for 3 months.
+The ATO's free Small Business Super Clearing House (SBSCH) CLOSED permanently on 1 July 2026. Employers now pay via their own bank, payroll software or their super fund's employer portal.
+PCG 2026/1 (2026-27 transition year): employers who genuinely attempt on-time payment and promptly fix errors are treated as low-risk.
+SAB Account AI calculates, prepares and TRACKS super — it does not move money. It generates per-fund payment instructions and a CSV you upload to your fund's portal, then records what you paid.`,
 }
 
 // ── Helper: generate sequential invoice number ─────────────────────
@@ -668,7 +679,7 @@ export async function executeToolCall(
           employer_abn:      ps.employer_abn ? formatABN(ps.employer_abn as string) : '',
           employer_address:  (biz?.address      as string | null) ?? undefined,
           employee_name:     ps.employee_name   as string,
-          employee_tfn:      (emp?.tfn          as string | null) ?? undefined,
+          employee_tfn:      decryptIfPresent(emp?.tfn as string | null) ?? undefined,
           employment_type:   (ps.employment_type as string) || 'casual',
           pay_cycle:         (ps.pay_cycle      as string)  || 'fortnightly',
           pay_basis:         ((emp?.pay_basis   as string | null) === 'hourly' ? 'hourly' : 'salary'),
@@ -770,7 +781,7 @@ export async function executeToolCall(
           total_payable:   totalPayable >= 0 ? fmt(totalPayable) : `(${fmt(Math.abs(totalPayable))}) refund`,
           outcome:         netGst > 0
             ? `GST payable ${fmt(netGst)}${paygWithheld > 0 ? ` + PAYG W2 ${fmt(paygWithheld)} = ${netOutcomeLabel}` : ' owing to ATO'}`
-            : netGst < 0 ? `GST refund due ${fmt(Math.abs(netGst))}${paygWithheld > 0 ? ` — PAYG W2 ${fmt(paygWithheld)} still owing — ${netOutcomeLabel}` : ' from ATO'}` : paygWithheld > 0 ? `Net zero GST — PAYG W2 ${fmt(paygWithheld)} owing to ATO` : 'Net zero — nothing owing',
+            : netGst < 0 ? `GST refund due ${fmt(Math.abs(netGst))}${paygWithheld > 0 ? ` offset by PAYG W2 ${fmt(paygWithheld)} — ${netOutcomeLabel}` : ' from ATO'}` : paygWithheld > 0 ? `Net zero GST — PAYG W2 ${fmt(paygWithheld)} owing to ATO` : 'Net zero — nothing owing',
           invoice_count:   invoices?.length ?? 0,
         }
       }
@@ -810,7 +821,259 @@ export async function executeToolCall(
           total_super: fmt(totalSuper),
           sg_rate:     '12%',
           breakdown,
-          payday_super_note: 'From 1 July 2026, super must be paid on every payday. Ensure your clearing house receives payment by each pay date.',
+          payday_super_note: 'From 1 July 2026, super must reach each fund within 7 business days of payday. Ask me to "prepare super" for a payday to get per-fund instructions + a CSV — SAB prepares and tracks; you pay via your bank or fund portal.',
+        }
+      }
+
+      // ── prepare_super_payment (read-only) ───────────────────────
+      // Builds the "pay your super now" instruction sheet for a payrun.
+      // SAB prepares and tracks — it never moves money. The confirm card's
+      // action records the payment AFTER the user pays it themselves.
+      case 'prepare_super_payment': {
+        const payday = input.payday as string
+
+        const [{ data: payslips }, { data: biz }, { data: employees }] = await Promise.all([
+          supabase.from('payslips')
+            .select('employee_name, super_sg, super_sal_sac, super_fund_name, member_number')
+            .eq('user_id', userId).eq('payment_date', payday).gt('super_sg', 0),
+          supabase.from('business_profiles').select('business_name, abn').eq('id', userId).single(),
+          supabase.from('employees').select('name, usi, fund_abn, is_smsf, smsf_esa'),
+        ])
+
+        if (!payslips?.length) return { error: `No payslips with super found for payday ${payday}.` }
+
+        // Merge in fund identifiers from the employee record (by name).
+        const empByName = new Map((employees ?? []).map(e => [(e.name as string), e]))
+        const sheet = buildSuperInstructionSheet({
+          businessName: (biz?.business_name as string) || 'Your Business',
+          businessAbn:  (biz?.abn as string | null) ?? undefined,
+          payday,
+          items: payslips.map(p => {
+            const emp = empByName.get(p.employee_name as string)
+            return {
+              employeeName: p.employee_name as string,
+              fundName:     (p.super_fund_name as string | null) || '',
+              usi:          (emp?.usi as string | null) || '',
+              memberNumber: (p.member_number as string | null) || '',
+              fundAbn:      (emp?.fund_abn as string | null) || undefined,
+              isSmsf:       (emp?.is_smsf as boolean | null) || false,
+              smsfEsa:      (emp?.smsf_esa as string | null) || undefined,
+              amount:       Number(p.super_sg) + Number(p.super_sal_sac),
+            }
+          }),
+        })
+
+        return {
+          ok:            true,
+          payday,
+          deadline:      sheet.deadline,
+          reference:     sheet.paymentReference,
+          total:         fmt(sheet.totalAmount),
+          employees:     sheet.totalEmployees,
+          funds:         sheet.funds.map(f => ({ fund: f.fundName, usi: f.usi || (f.isSmsf ? 'SMSF' : 'not on file'), total: fmt(f.total), employees: f.employees.length })),
+          disclaimer:    'SAB prepares and tracks super — it does not pay it. Pay each fund the amount above from your own bank or the fund portal, then confirm to record it.',
+          next_step:     'Output a confirm_card of type "super". Put the per-fund totals, the deadline and the reference in rows. Set action to "mark_super_paid" and action_payload to {"payday":"' + payday + '"}. Tell the user the super is prepared and they can download the full instruction sheet + CSV on the Tax & Super page. Do NOT record anything yet — wait for the user to confirm they have paid.',
+        }
+      }
+
+      // ── get_super_compliance (read-only) ────────────────────────
+      // Summarises Payday Super status across all payruns for the PCG 2026/1
+      // health view: per-payrun status, on-time streak and any overdue items.
+      case 'get_super_compliance': {
+        const today = new Date().toISOString().slice(0, 10)
+
+        // All payruns (grouped by payday) that produced super.
+        const { data: payslips } = await supabase
+          .from('payslips')
+          .select('payment_date, super_sg, super_sal_sac')
+          .eq('user_id', userId).gt('super_sg', 0)
+
+        if (!payslips?.length) return { ok: true, payruns: 0, note: 'No payruns with super yet.' }
+
+        const { data: payments } = await supabase
+          .from('super_payments')
+          .select('payment_date, paid_date, status')
+          .eq('user_id', userId)
+
+        const paidByPayday = new Map<string, string>()
+        for (const p of payments ?? []) {
+          const pd = (p.paid_date as string | null)
+          const status = p.status as string
+          if (pd || status === 'manually_paid' || status === 'paid' || status === 'settled') {
+            paidByPayday.set(p.payment_date as string, pd || (p.payment_date as string))
+          }
+        }
+
+        // Group super totals by payday.
+        const totals = new Map<string, number>()
+        for (const ps of payslips) {
+          const d = ps.payment_date as string
+          totals.set(d, (totals.get(d) ?? 0) + Number(ps.super_sg) + Number(ps.super_sal_sac))
+        }
+
+        const payruns = Array.from(totals.entries())
+          .map(([payday, total]) => {
+            const deadline = paydaySuperDeadline(payday)
+            const paidDate = paidByPayday.get(payday) ?? null
+            const status   = deriveSuperStatus({ deadlineISO: deadline, paidDateISO: paidDate, todayISO: today })
+            return { payday, deadline, total, paidDate, status, onTime: paidDate ? wasPaidOnTime(deadline, paidDate) : null }
+          })
+          .sort((a, b) => b.payday.localeCompare(a.payday))
+
+        const overdue  = payruns.filter(p => p.status === 'OVERDUE')
+        const dueSoon  = payruns.filter(p => p.status === 'DUE_SOON')
+        const paid     = payruns.filter(p => p.status === 'PAID')
+        // On-time streak: consecutive most-recent PAID payruns that were on time.
+        let streak = 0
+        for (const p of paid.sort((a, b) => b.payday.localeCompare(a.payday))) {
+          if (p.onTime) streak++
+          else break
+        }
+
+        return {
+          ok:            true,
+          payruns:       payruns.length,
+          overdue_count: overdue.length,
+          due_soon_count: dueSoon.length,
+          on_time_streak: streak,
+          all_clear:     overdue.length === 0,
+          detail:        payruns.slice(0, 8).map(p => ({ payday: p.payday, deadline: p.deadline, total: fmt(p.total), status: p.status })),
+          pcg_note:      PCG_2026_1_LINE,
+        }
+      }
+
+      // ── match_super_payment (read-only) ─────────────────────────
+      // "I paid AustralianSuper $412 yesterday" → find the payrun it belongs to.
+      case 'match_super_payment': {
+        const fundName  = (input.fund_name as string | null) ?? null
+        const amount    = input.amount != null ? Number(input.amount) : null
+        const paidDate  = (input.paid_date as string | null) ?? new Date().toISOString().slice(0, 10)
+        const method    = (input.method as string | null) ?? null
+        const reference = (input.reference as string | null) ?? null
+
+        // Unpaid payruns (no recorded paid_date), most recent first.
+        const { data: payslips } = await supabase
+          .from('payslips')
+          .select('payment_date, super_sg, super_sal_sac, super_fund_name')
+          .eq('user_id', userId).gt('super_sg', 0)
+          .order('payment_date', { ascending: false })
+
+        if (!payslips?.length) return { error: 'No payruns with super found to match against.' }
+
+        const { data: payments } = await supabase
+          .from('super_payments')
+          .select('payment_date, paid_date, status')
+          .eq('user_id', userId)
+        const paidPaydays = new Set((payments ?? [])
+          .filter(p => p.paid_date || ['manually_paid', 'paid', 'settled'].includes(p.status as string))
+          .map(p => p.payment_date as string))
+
+        // Build per-payday, per-fund totals.
+        type Row = { payday: string; fund: string; total: number }
+        const rows: Row[] = []
+        const acc = new Map<string, Row>()
+        for (const ps of payslips) {
+          const payday = ps.payment_date as string
+          if (paidPaydays.has(payday)) continue
+          const fund = (ps.super_fund_name as string | null) || 'Unspecified'
+          const key = `${payday}|${fund}`
+          let r = acc.get(key)
+          if (!r) { r = { payday, fund, total: 0 }; acc.set(key, r); rows.push(r) }
+          r.total += Number(ps.super_sg) + Number(ps.super_sal_sac)
+        }
+        if (!rows.length) return { error: 'All payruns already have super recorded as paid. Nothing to match.' }
+
+        // Score candidates: fund-name match + amount closeness, then recency.
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+        const scored = rows.map(r => {
+          let score = 0
+          if (fundName && norm(r.fund).includes(norm(fundName))) score += 100
+          if (amount != null && Math.abs(r.total - amount) < 0.5) score += 100
+          else if (amount != null) score -= Math.min(50, Math.abs(r.total - amount))
+          return { ...r, score }
+        }).sort((a, b) => b.score - a.score || b.payday.localeCompare(a.payday))
+
+        const best = scored[0]
+        const deadline = paydaySuperDeadline(best.payday)
+
+        return {
+          ok:         true,
+          matched:    true,
+          payday:     best.payday,
+          fund:       best.fund,
+          amount:     fmt(best.total),
+          deadline,
+          paid_date:  paidDate,
+          on_time:    wasPaidOnTime(deadline, paidDate),
+          next_step:  `Confirm the match with the user, then output a confirm_card of type "super" with action "mark_super_paid" and action_payload {"payday":"${best.payday}","paid_date":"${paidDate}"${method ? `,"method":"${method}"` : ''}${reference ? `,"reference":"${reference}"` : ''}}. Do NOT record until the user confirms.`,
+        }
+      }
+
+      // ── mark_super_paid (confirm action — records payment + audit) ─
+      case 'mark_super_paid': {
+        const payday    = input.payday as string
+        const paidDate  = (input.paid_date as string | null) ?? new Date().toISOString().slice(0, 10)
+        const method    = (input.method as string | null) ?? 'manual'
+        const reference = (input.reference as string | null) ?? null
+
+        const [{ data: payslips }, { data: biz }] = await Promise.all([
+          supabase.from('payslips')
+            .select('id, employee_name, super_sg, super_sal_sac, super_fund_name, member_number')
+            .eq('user_id', userId).eq('payment_date', payday).gt('super_sg', 0),
+          supabase.from('business_profiles').select('business_name').eq('id', userId).single(),
+        ])
+        if (!payslips?.length) return { error: `No payslips with super found for payday ${payday}.` }
+
+        const total    = payslips.reduce((s, p) => s + Number(p.super_sg) + Number(p.super_sal_sac), 0)
+        const deadline = paydaySuperDeadline(payday)
+        const onTime   = wasPaidOnTime(deadline, paidDate)
+        const payRef   = reference || suggestedPaymentReference((biz?.business_name as string) || 'SUPER', payday)
+
+        const records = payslips.map(p => ({
+          user_id:         userId,
+          payslip_id:      p.id as string,
+          employee_name:   p.employee_name as string,
+          super_fund_name: (p.super_fund_name as string | null) ?? null,
+          member_number:   (p.member_number as string | null) ?? null,
+          amount:          Number(p.super_sg) + Number(p.super_sal_sac),
+          payment_date:    payday,
+          deadline,
+          status:          'manually_paid',
+          paid_date:       paidDate,
+          paid_method:     method,
+          paid_reference:  reference,
+          payment_ref:     payRef,
+          settled_at:      new Date().toISOString(),
+        }))
+
+        // Re-insert cleanly for this payrun.
+        await supabase.from('super_payments').delete().eq('user_id', userId).eq('payment_date', payday)
+        const { error: insErr } = await supabase.from('super_payments').insert(records)
+        if (insErr) return { error: insErr.message }
+
+        // Immutable audit entry.
+        await supabase.from('super_audit_log').insert({
+          user_id:      userId,
+          payday,
+          event:        'marked_paid',
+          deadline,
+          total_amount: total,
+          on_time:      onTime,
+          detail:       { method, reference: payRef, paid_date: paidDate, employees: payslips.length },
+        })
+
+        return {
+          ok:             true,
+          super_marked_paid: true,
+          payday,
+          paid_date:      paidDate,
+          total:          fmt(total),
+          deadline,
+          on_time:        onTime,
+          reference:      payRef,
+          message:        onTime
+            ? `Recorded — ${fmt(total)} super for the ${payday} payrun marked paid on time (deadline ${deadline}). ✓`
+            : `Recorded — ${fmt(total)} super for the ${payday} payrun marked paid on ${paidDate} (deadline was ${deadline}).`,
         }
       }
 
@@ -1055,7 +1318,7 @@ export async function executeToolCall(
             employer_abn:      ps.employer_abn ? formatABN(ps.employer_abn as string) : '',
             employer_address:  (biz?.address      as string | null) ?? undefined,
             employee_name:     ps.employee_name   as string,
-            employee_tfn:      (emp?.tfn          as string | null) ?? undefined,
+            employee_tfn:      decryptIfPresent(emp?.tfn as string | null) ?? undefined,
             employment_type:   (ps.employment_type as string) || 'casual',
             pay_cycle:         (ps.pay_cycle      as string)  || 'fortnightly',
             pay_basis:         ((emp?.pay_basis   as string | null) === 'hourly' ? 'hourly' : 'salary'),

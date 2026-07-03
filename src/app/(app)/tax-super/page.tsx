@@ -2,11 +2,16 @@
 
 import { useEffect, useState } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
+import { posthog } from '@/components/PostHogProvider'
 import { useProfile } from '@/app/(app)/profile-context'
 import { formatCurrency } from '@/lib/utils'
 import Link from 'next/link'
 import { buildQuarters, currentQuarterIndex } from '@/lib/tax-quarters'
 import type { Quarter } from '@/lib/tax-quarters'
+import { paydaySuperDeadline, deriveSuperStatus, wasPaidOnTime, PCG_2026_1_LINE, NOT_ADVICE_DISCLAIMER } from '@/lib/super-compliance'
+import { buildSuperInstructionSheet, superInstructionCSV } from '@/lib/super-instructions'
+import { downloadSuperInstructionPDF } from '@/lib/pdf'
+import { SuperDisclaimer } from '@/components/SuperDisclaimer'
 
 type BasSummary = { gstCollected: number; gstCredits: number; netGST: number; paygWithheld: number; totalSuper: number }
 
@@ -234,6 +239,27 @@ interface Summary {
   totalSuper:    number
 }
 
+interface SuperPayment {
+  id: string
+  payslip_id: string
+  employee_name: string
+  super_fund_name: string | null
+  amount: number
+  payment_date: string
+  deadline: string
+  status: string
+  beam_reference: string | null
+  paid_date: string | null
+}
+
+interface Payrun {
+  payment_date: string
+  total: number
+  employees: string[]
+  deadline: string
+  payments: SuperPayment[]
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function TaxSuperPage() {
@@ -247,8 +273,13 @@ export default function TaxSuperPage() {
   const [sending,   setSending]   = useState(false)
   const [sendMsg,   setSendMsg]   = useState<{ ok: boolean; text: string } | null>(null)
   const [businessAbn, setBusinessAbn] = useState('')
+  const [payruns, setPayruns]         = useState<Payrun[]>([])
+  const [beamConfigured, setBeamConfigured] = useState(false)
+  const [payingDate, setPayingDate]   = useState<string | null>(null)
+  const [payMsg, setPayMsg]           = useState<{ date: string; ok: boolean; text: string } | null>(null)
 
   useEffect(() => { document.title = 'Tax & Super — SAB Account AI' }, [])
+  useEffect(() => { if (posthog.__loaded) posthog.capture('bas_viewed') }, [])
 
   // Fetch ABN once on mount
   useEffect(() => {
@@ -320,6 +351,148 @@ export default function TaxSuperPage() {
     load()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qIdx])
+
+  // Load recent payruns + their super payment status.
+  // Payday Super is NOT quarterly — a payrun's super deadline routinely falls in
+  // a different BAS quarter than the payday (e.g. a late-June payrun is due in
+  // early July). So the tracker uses a rolling recent window, independent of the
+  // GST quarter selector above, otherwise current obligations vanish at every
+  // quarter boundary.
+  useEffect(() => {
+    async function loadPayruns() {
+      const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+
+      const to = new Date().toISOString().split('T')[0]
+      const fromDate = new Date(); fromDate.setDate(fromDate.getDate() - 120)
+      const from = fromDate.toISOString().split('T')[0]
+
+      // Load payslips grouped by payment_date
+      const { data: payslips } = await supabase
+        .from('payslips')
+        .select('id, employee_name, super_sg, super_sal_sac, payment_date')
+        .eq('user_id', user.id)
+        .gte('payment_date', from)
+        .lte('payment_date', to)
+        .gt('super_sg', 0)
+        .order('payment_date', { ascending: false })
+
+      if (!payslips?.length) { setPayruns([]); return }
+
+      // Group by payment_date
+      const dateMap = new Map<string, { total: number; employees: string[] }>()
+      for (const p of payslips) {
+        const date = p.payment_date as string
+        if (!dateMap.has(date)) dateMap.set(date, { total: 0, employees: [] })
+        const row = dateMap.get(date)!
+        row.total += Number(p.super_sg) + Number(p.super_sal_sac)
+        if (!row.employees.includes(p.employee_name as string)) row.employees.push(p.employee_name as string)
+      }
+
+      // Fetch existing payment records for the same window
+      const res = await fetch(
+        `/api/super/pay?from=${from}&to=${to}`,
+        { headers: { Authorization: `Bearer ${session.access_token}` } }
+      )
+      const { payments = [], beam_configured = false } = res.ok ? await res.json() : {}
+      setBeamConfigured(beam_configured)
+
+      const paymentsByDate = new Map<string, SuperPayment[]>()
+      for (const p of payments as SuperPayment[]) {
+        if (!paymentsByDate.has(p.payment_date)) paymentsByDate.set(p.payment_date, [])
+        paymentsByDate.get(p.payment_date)!.push(p)
+      }
+
+      const runs: Payrun[] = [...dateMap.entries()].map(([date, info]) => ({
+        payment_date: date,
+        total:        info.total,
+        employees:    info.employees,
+        deadline:     paydaySuperDeadline(date),
+        payments:     paymentsByDate.get(date) ?? [],
+      }))
+
+      setPayruns(runs)
+    }
+    loadPayruns()
+  // Rolling window — independent of the GST quarter. Refresh after a mark-paid.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payMsg])
+
+  // Build the per-fund super instruction sheet for a payday and download it
+  // as a PDF or a CSV the employer can upload to their fund's portal. SAB
+  // prepares and tracks — it never moves money.
+  async function handleDownloadInstructions(payday: string, format: 'pdf' | 'csv') {
+    const supabase = createBrowserClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const [{ data: payslips }, { data: biz }, { data: employees }] = await Promise.all([
+      supabase.from('payslips').select('employee_name, super_sg, super_sal_sac, super_fund_name, member_number').eq('user_id', user.id).eq('payment_date', payday).gt('super_sg', 0),
+      supabase.from('business_profiles').select('business_name, abn').eq('id', user.id).single(),
+      supabase.from('employees').select('name, usi, fund_abn, is_smsf, smsf_esa').eq('user_id', user.id),
+    ])
+    if (!payslips?.length) return
+    const empByName = new Map((employees ?? []).map(e => [e.name as string, e]))
+    const sheet = buildSuperInstructionSheet({
+      businessName: (biz?.business_name as string) || 'Your Business',
+      businessAbn:  (biz?.abn as string | null) ?? undefined,
+      payday,
+      items: payslips.map(p => {
+        const emp = empByName.get(p.employee_name as string)
+        return {
+          employeeName: p.employee_name as string,
+          fundName:     (p.super_fund_name as string | null) || '',
+          usi:          (emp?.usi as string | null) || '',
+          memberNumber: (p.member_number as string | null) || '',
+          isSmsf:       (emp?.is_smsf as boolean | null) || false,
+          smsfEsa:      (emp?.smsf_esa as string | null) || undefined,
+          amount:       Number(p.super_sg) + Number(p.super_sal_sac),
+        }
+      }),
+    })
+    if (format === 'pdf') {
+      await downloadSuperInstructionPDF(sheet)
+    } else {
+      const blob = new Blob([superInstructionCSV(sheet)], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Super-${payday.replace(/-/g, '')}.csv`
+      document.body.appendChild(a); a.click()
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 1000)
+    }
+  }
+
+  async function handleSuperAction(paymentDate: string, action: 'pay' | 'mark_paid') {
+    const supabase = createBrowserClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    setPayingDate(paymentDate)
+    setPayMsg(null)
+    try {
+      const res = await fetch('/api/super/pay', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body:    JSON.stringify({ payment_date: paymentDate, action }),
+      })
+      const data = await res.json()
+      setPayMsg({
+        date: paymentDate,
+        ok:   res.ok && data.ok,
+        text: res.ok && data.ok
+          ? action === 'mark_paid'
+            ? 'Marked as paid'
+            : data.beam_configured
+              ? `Submitted to Beam — ref: ${data.beam_reference}`
+              : 'Saved. Beam integration coming soon — mark as paid manually for now.'
+          : data.error ?? 'Something went wrong',
+      })
+    } finally {
+      setPayingDate(null)
+    }
+  }
 
   const q = quarters[qIdx]
 
@@ -539,20 +712,276 @@ export default function TaxSuperPage() {
                   ))}
                   <div style={{ borderTop: '1px solid var(--border)', margin: '0.75rem 0' }} />
                   <Row label="Total super to pay" value={summary.totalSuper} bold color="var(--ember)" />
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: '0.5rem' }}>
-                    Pay via SuperStream to each employee&apos;s nominated fund by the due date.
-                  </p>
+                  <div style={{ marginTop: '0.5rem' }}><SuperDisclaimer compact /></div>
                 </>
               )}
             </div>
           </div>
 
+          {/* ── Compliance Health panel ──────────────────────────────────── */}
+          {payruns.length > 0 && (() => {
+            const runsWithStatus = payruns.map(run => {
+              const paidRec = run.payments.find(p => p.paid_date || ['settled', 'manually_paid', 'submitted', 'processing'].includes(p.status))
+              const paidDate = paidRec?.paid_date ?? (paidRec ? run.payment_date : null)
+              return { ...run, status: deriveSuperStatus({ deadlineISO: run.deadline, paidDateISO: paidDate }), paidDate }
+            })
+            const overdue = runsWithStatus.filter(r => r.status === 'OVERDUE')
+            const dueSoon = runsWithStatus.filter(r => r.status === 'DUE_SOON')
+            const paid    = runsWithStatus.filter(r => r.status === 'PAID')
+            let streak = 0
+            for (const r of paid.slice().sort((a, b) => b.payment_date.localeCompare(a.payment_date))) {
+              if (r.paidDate && wasPaidOnTime(r.deadline, r.paidDate)) streak++
+              else break
+            }
+            const allClear = overdue.length === 0
+            return (
+              <div style={{ background: allClear ? '#f0fdf4' : '#fef2f2', borderRadius: 'var(--r)', border: `1px solid ${allClear ? '#bbf7d0' : '#fecaca'}`, padding: '1.25rem 1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--char)', margin: 0 }}>Compliance Health</h2>
+                  <span style={{ fontSize: '1.5rem' }}>{allClear ? '🟢' : '🔴'}</span>
+                </div>
+                <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                  <div><div style={{ fontSize: '1.5rem', fontWeight: 700, color: allClear ? '#15803d' : '#dc2626' }}>{overdue.length}</div><div style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>Overdue</div></div>
+                  <div><div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#d97706' }}>{dueSoon.length}</div><div style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>Due soon</div></div>
+                  <div><div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--char)' }}>{streak}</div><div style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>On-time streak</div></div>
+                </div>
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text2)', margin: 0, lineHeight: 1.5 }}>
+                  {allClear
+                    ? `All super up to date. ${PCG_2026_1_LINE}`
+                    : `${overdue.length} payrun${overdue.length === 1 ? '' : 's'} overdue — pay now and record it to stay low-risk. ${PCG_2026_1_LINE}`}
+                </p>
+              </div>
+            )
+          })()}
+
+          {/* ── Payday Super Payment Tracker ─────────────────────────────── */}
+          {payruns.length > 0 && (
+            <div style={{ background: '#fff', borderRadius: 'var(--r)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+              <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--char)', margin: 0 }}>Payday Super — Payment Tracker</h2>
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', margin: '0.2rem 0 0' }}>
+                    Pay within 7 business days of each payday · SAB prepares &amp; tracks — you pay via your bank or fund portal
+                  </p>
+                </div>
+                <span style={{ fontSize: '1.5rem' }}>⚡</span>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
+                      <th style={{ textAlign: 'left', padding: '0.625rem 1.5rem', color: 'var(--text3)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pay Date</th>
+                      <th style={{ textAlign: 'left', padding: '0.625rem 1rem', color: 'var(--text3)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Employees</th>
+                      <th style={{ textAlign: 'right', padding: '0.625rem 1rem', color: 'var(--text3)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Super</th>
+                      <th style={{ textAlign: 'left', padding: '0.625rem 1rem', color: 'var(--text3)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Deadline</th>
+                      <th style={{ textAlign: 'left', padding: '0.625rem 1rem', color: 'var(--text3)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Status</th>
+                      <th style={{ padding: '0.625rem 1.5rem' }} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payruns.map(run => {
+                      const paidRec = run.payments.find(p => p.paid_date || ['settled', 'manually_paid', 'submitted', 'processing'].includes(p.status))
+                      const paidDate = paidRec?.paid_date ?? (paidRec ? run.payment_date : null)
+                      const status  = deriveSuperStatus({ deadlineISO: run.deadline, paidDateISO: paidDate })
+                      const overdue = status === 'OVERDUE'
+                      const isActing = payingDate === run.payment_date
+
+                      const statusBadge = (() => {
+                        if (status === 'PAID') {
+                          const onTime = paidDate ? wasPaidOnTime(run.deadline, paidDate) : true
+                          return onTime
+                            ? { label: 'Paid on time', color: '#15803d', bg: '#dcfce7' }
+                            : { label: 'Paid late', color: '#b45309', bg: '#fef3c7' }
+                        }
+                        if (status === 'OVERDUE')  return { label: 'Overdue', color: '#dc2626', bg: '#fee2e2' }
+                        if (status === 'DUE_SOON') return { label: 'Due Soon', color: '#d97706', bg: '#fef3c7' }
+                        return { label: 'Upcoming', color: 'var(--text3)', bg: 'var(--cream)' }
+                      })()
+
+                      const isDone = status === 'PAID'
+
+                      return (
+                        <tr key={run.payment_date} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '0.75rem 1.5rem', color: 'var(--char)', fontWeight: 500 }}>
+                            {new Date(`${run.payment_date}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', color: 'var(--text2)' }}>
+                            {run.employees.join(', ')}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', color: 'var(--char)', fontWeight: 600, textAlign: 'right' }}>
+                            {formatCurrency(run.total)}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', color: overdue ? '#dc2626' : 'var(--text2)', fontWeight: overdue ? 600 : 400 }}>
+                            {new Date(`${run.deadline}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem' }}>
+                            <span style={{ background: statusBadge.bg, color: statusBadge.color, padding: '0.2rem 0.625rem', borderRadius: 99, fontSize: '0.75rem', fontWeight: 600 }}>
+                              {statusBadge.label}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.75rem 1.5rem', textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                              <button
+                                onClick={() => handleDownloadInstructions(run.payment_date, 'pdf')}
+                                className="btn btn-ghost"
+                                style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem' }}
+                                title="Download the pay-your-super instruction sheet"
+                              >
+                                Instructions
+                              </button>
+                              <button
+                                onClick={() => handleDownloadInstructions(run.payment_date, 'csv')}
+                                className="btn btn-ghost"
+                                style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem' }}
+                                title="Download a CSV for your fund's employer portal"
+                              >
+                                CSV
+                              </button>
+                              {!isDone && (
+                                <button
+                                  onClick={() => handleSuperAction(run.payment_date, 'mark_paid')}
+                                  disabled={isActing}
+                                  className="btn btn-char"
+                                  style={{ fontSize: '0.75rem', padding: '0.35rem 0.875rem' }}
+                                >
+                                  {isActing ? '…' : 'Mark as Paid'}
+                                </button>
+                              )}
+                            </div>
+                            {paidDate && (
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text3)' }}>paid {new Date(`${paidDate}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {payMsg && (
+                <div style={{ padding: '0.75rem 1.5rem', borderTop: '1px solid var(--border)', fontSize: '0.8125rem', color: payMsg.ok ? '#15803d' : 'var(--ember)', fontWeight: 500 }}>
+                  {payMsg.ok ? '✓ ' : '⚠ '}{payMsg.text}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Coming from SBSCH? ────────────────────────────────────────── */}
+          <SbschImportCard />
+
           {/* ── Disclaimer ───────────────────────────────────────────────── */}
           <p style={{ fontSize: '0.75rem', color: 'var(--text3)', lineHeight: 1.6, textAlign: 'center' }}>
             These figures are calculated from your invoices, expense records and payslips in SAB Account AI.
-            Always verify against your records before lodging with the ATO. For personalised tax advice, consult a registered tax agent.
+            SAB calculates, prepares and tracks super payments — it does not pay super or move money on your behalf.
+            Always verify against your records before lodging with the ATO. {NOT_ADVICE_DISCLAIMER}
           </p>
 
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Coming from SBSCH? — one-file CSV onboarding ──────────────────────────────
+
+interface SbschPreviewRow {
+  name: string; super_fund_name?: string; usi?: string; member_number?: string
+  is_smsf: boolean; smsf_esa?: string; match: 'update' | 'create'; warnings: string[]
+}
+
+function SbschImportCard() {
+  const [open, setOpen]       = useState(false)
+  const [busy, setBusy]       = useState(false)
+  const [csv, setCsv]         = useState('')
+  const [preview, setPreview] = useState<{ rows: SbschPreviewRow[]; to_update: number; to_create: number } | null>(null)
+  const [msg, setMsg]         = useState<{ ok: boolean; text: string } | null>(null)
+
+  async function post(commit: boolean, csvText: string) {
+    const supabase = createBrowserClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return null
+    const res = await fetch('/api/super/sbsch-import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ csv: csvText, commit }),
+    })
+    return { res, data: await res.json() as Record<string, unknown> }
+  }
+
+  async function handleFile(file: File) {
+    setBusy(true); setMsg(null); setPreview(null)
+    try {
+      const text = await file.text()
+      setCsv(text)
+      const out = await post(false, text)
+      if (!out) return
+      if (!out.res.ok) { setMsg({ ok: false, text: String(out.data.error ?? 'Could not read that file.') }); return }
+      setPreview({ rows: out.data.rows as SbschPreviewRow[], to_update: out.data.to_update as number, to_create: out.data.to_create as number })
+    } finally { setBusy(false) }
+  }
+
+  async function handleCommit() {
+    setBusy(true); setMsg(null)
+    try {
+      const out = await post(true, csv)
+      if (!out) return
+      if (!out.res.ok) { setMsg({ ok: false, text: String(out.data.error ?? 'Import failed.') }); return }
+      setMsg({ ok: true, text: `Imported — ${out.data.created} added, ${out.data.updated} updated.${(out.data.failed as number) ? ` ${out.data.failed} failed.` : ''}` })
+      setPreview(null); setCsv('')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 'var(--r)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', textAlign: 'left', padding: '1rem 1.5rem', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+      >
+        <div>
+          <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--char)' }}>Coming from the SBSCH?</span>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text3)', margin: '0.2rem 0 0' }}>The ATO clearing house closed 1 July 2026 — import your employee &amp; fund details from a CSV.</p>
+        </div>
+        <span style={{ fontSize: '1.1rem', color: 'var(--text3)' }}>{open ? '−' : '+'}</span>
+      </button>
+      {open && (
+        <div style={{ padding: '0 1.5rem 1.25rem' }}>
+          <label className="btn btn-char" style={{ display: 'inline-block', fontSize: '0.8125rem', padding: '0.4rem 1rem', cursor: 'pointer' }}>
+            {busy ? 'Reading…' : 'Choose SBSCH CSV'}
+            <input type="file" accept=".csv,text/csv" style={{ display: 'none' }} disabled={busy}
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+          </label>
+
+          {preview && (
+            <div style={{ marginTop: '1rem' }}>
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text2)', margin: '0 0 0.5rem' }}>
+                {preview.rows.length} employees found · {preview.to_create} new, {preview.to_update} matched
+              </p>
+              <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
+                  <tbody>
+                    {preview.rows.map((r, i) => (
+                      <tr key={i} style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                        <td style={{ padding: '0.4rem 0.75rem', color: 'var(--char)', fontWeight: 500 }}>{r.name}</td>
+                        <td style={{ padding: '0.4rem 0.75rem', color: 'var(--text2)' }}>{r.is_smsf ? `SMSF ${r.smsf_esa ?? ''}` : (r.super_fund_name ?? '—')}</td>
+                        <td style={{ padding: '0.4rem 0.75rem', color: r.warnings.length ? 'var(--ember)' : 'var(--text3)', fontSize: '0.75rem' }}>
+                          {r.warnings.length ? `⚠ ${r.warnings[0]}` : (r.match === 'create' ? 'new' : 'update')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button onClick={handleCommit} disabled={busy} className="btn btn-ember" style={{ marginTop: '0.75rem', fontSize: '0.8125rem', padding: '0.45rem 1.1rem' }}>
+                {busy ? 'Importing…' : `Import ${preview.rows.length} employees`}
+              </button>
+            </div>
+          )}
+
+          {msg && (
+            <p style={{ marginTop: '0.75rem', fontSize: '0.8125rem', color: msg.ok ? '#15803d' : 'var(--ember)', fontWeight: 500 }}>
+              {msg.ok ? '✓ ' : '⚠ '}{msg.text}
+            </p>
+          )}
         </div>
       )}
     </div>

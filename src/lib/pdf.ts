@@ -1,5 +1,6 @@
 import { formatCurrency, formatDateAU, formatABN } from '@/lib/utils'
 import { getPaygScaleLabel, type PayslipNumbers } from '@/lib/ato'
+import type { SuperInstructionSheet } from '@/lib/super-instructions'
 
 // Works in both browser (HTMLImageElement) and Node/Vercel serverless (fetch + Buffer).
 async function addLogoToPdf(
@@ -885,4 +886,115 @@ export async function downloadNoABNWithholdingPDF(data: NoABNWithholdingPDFData)
   const doc = await buildNoABNWithholdingDoc(data)
   const dateStr = data.payment_date.replace(/-/g, '')
   triggerPdfDownload(doc, `W4-${dateStr}-${data.worker_name.replace(/\s+/g, '-')}.pdf`)
+}
+
+// ── Super Payment Instruction Sheet ─────────────────────────────────────
+// A "pay your super now" sheet the employer acts on themselves. SAB prepares
+// and tracks — it never moves money. Copy is deliberately "prepared"/"due",
+// never "paid by SAB".
+async function buildSuperInstructionDoc(sheet: SuperInstructionSheet) {
+  const { jsPDF } = await import('jspdf')
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+
+  const pageW  = 210
+  const margin = 18
+  const cW     = pageW - margin * 2
+  const colAmt = pageW - margin
+  let y = margin
+
+  // ── Header ───────────────────────────────────────────────────────────
+  doc.setFillColor(200, 75, 47)
+  doc.rect(pageW - margin - 40, y - 6, 40, 8, 'F')
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255)
+  doc.text('SUPER — TO PAY', pageW - margin - 20, y - 0.5, { align: 'center' })
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(28, 25, 23)
+  doc.text(sheet.businessName || 'Your Business', margin, y + 1)
+  y += 6
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(100, 95, 90)
+  if (sheet.businessAbn) { doc.text(`ABN ${formatABN(sheet.businessAbn)}`, margin, y); y += 4.5 }
+  doc.text('Superannuation Guarantee — Payment Instruction', margin, y); y += 6
+
+  doc.setDrawColor(215, 210, 205); doc.line(margin, y, pageW - margin, y); y += 6
+
+  // ── Summary bar: payday · deadline · total ───────────────────────────
+  const barH = 16
+  doc.setFillColor(250, 248, 245); doc.setDrawColor(215, 210, 205)
+  doc.rect(margin, y, cW, barH, 'FD')
+  const labelY = y + 5.5, valueY = y + 11.5
+  const items = [
+    { label: 'Payday',          value: formatDateAU(sheet.payday),   x: margin + 3,        ember: false },
+    { label: 'Pay super by',    value: formatDateAU(sheet.deadline), x: margin + cW * 0.30, ember: true  },
+    { label: 'Reference',       value: sheet.paymentReference,       x: margin + cW * 0.58, ember: false },
+    { label: 'Total super',     value: formatCurrency(sheet.totalAmount), x: margin + cW * 0.83, ember: true },
+  ]
+  items.forEach(({ label, value, x, ember }) => {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(120, 115, 110)
+    doc.text(label, x, labelY)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(ember ? 9.5 : 8.5)
+    doc.setTextColor(ember ? 200 : 28, ember ? 75 : 25, ember ? 47 : 23)
+    doc.text(value, x, valueY)
+  })
+  y += barH + 6
+
+  doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(146, 64, 14)
+  doc.text('Under Payday Super, super must reach each fund within 7 business days of payday. Pay each fund the total below from your own bank or the fund\'s employer portal.', margin, y, { maxWidth: cW })
+  y += 9
+
+  // ── Per-fund sections ────────────────────────────────────────────────
+  for (const fund of sheet.funds) {
+    if (y > 250) { doc.addPage(); y = margin }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(28, 25, 23)
+    doc.text(fund.fundName, margin, y)
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(200, 75, 47)
+    doc.text(formatCurrency(fund.total), colAmt, y, { align: 'right' })
+    y += 4.5
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(120, 115, 110)
+    const fundMeta = fund.isSmsf
+      ? `SMSF${fund.smsfEsa ? ` · ESA ${fund.smsfEsa}` : ''}`
+      : fund.usi ? `USI ${fund.usi}` : 'USI not on file'
+    doc.text(fundMeta, margin, y); y += 5
+    doc.setDrawColor(225, 220, 215); doc.line(margin, y - 1.5, pageW - margin, y - 1.5)
+
+    for (const emp of fund.employees) {
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(60, 55, 50)
+      doc.text(emp.name, margin + 2, y)
+      if (emp.memberNumber) {
+        doc.setFontSize(7.5); doc.setTextColor(140, 135, 130)
+        doc.text(`Member ${emp.memberNumber}`, margin + 70, y)
+      }
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(28, 25, 23)
+      doc.text(formatCurrency(emp.amount), colAmt, y, { align: 'right' })
+      y += 5
+    }
+    y += 4
+  }
+
+  // ── Grand total ──────────────────────────────────────────────────────
+  if (y > 260) { doc.addPage(); y = margin }
+  doc.setDrawColor(200, 195, 190); doc.line(margin, y, pageW - margin, y); y += 6
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(28, 25, 23)
+  doc.text(`Total super due (${sheet.totalEmployees} employee${sheet.totalEmployees === 1 ? '' : 's'})`, margin, y)
+  doc.setTextColor(200, 75, 47)
+  doc.text(formatCurrency(sheet.totalAmount), colAmt, y, { align: 'right' })
+  y += 10
+
+  // ── Footer / disclaimer ──────────────────────────────────────────────
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(130, 125, 120)
+  doc.text('SAB Account AI calculates, prepares and tracks super payments. It does not pay super on your behalf and does not move money.', margin, 282, { maxWidth: cW })
+  doc.setTextColor(160, 155, 150)
+  doc.text('SAB Account AI provides calculation and record-keeping tools, not financial or tax advice.', pageW / 2, 292, { align: 'center' })
+
+  return doc
+}
+
+export async function downloadSuperInstructionPDF(sheet: SuperInstructionSheet) {
+  const doc = await buildSuperInstructionDoc(sheet)
+  triggerPdfDownload(doc, `Super-${sheet.payday.replace(/-/g, '')}-${sheet.businessName.replace(/\s+/g, '-')}.pdf`)
+}
+
+export async function getSuperInstructionPDFBase64(sheet: SuperInstructionSheet): Promise<string> {
+  const doc = await buildSuperInstructionDoc(sheet)
+  const dataUri = doc.output('datauristring') as string
+  return dataUri.split(',')[1]
 }

@@ -7,10 +7,10 @@ export const maxDuration = 120
 // The watch agent has its own rate limit (300/day) and diff-based alerting.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('Authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

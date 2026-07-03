@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 import { createServiceClient } from '@/lib/supabase'
 import { Resend } from 'resend'
 
 // Called daily by Vercel cron. Marks overdue invoices and sends one reminder email per invoice.
 export async function GET(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY)
-  const authHeader = req.headers.get('Authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

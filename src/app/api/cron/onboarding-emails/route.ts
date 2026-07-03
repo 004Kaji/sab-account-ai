@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 import { createServiceClient } from '@/lib/supabase'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
 
 // Runs daily. Sends onboarding emails at day 1, 3, and 7 after signup.
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('Authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
