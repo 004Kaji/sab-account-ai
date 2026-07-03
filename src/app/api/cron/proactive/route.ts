@@ -3,6 +3,7 @@ import { isAuthorizedCron } from '@/lib/cron-auth'
 import Anthropic from '@anthropic-ai/sdk'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
+import { paydaySuperDeadline } from '@/lib/super-compliance'
 
 export const maxDuration = 60
 
@@ -191,7 +192,9 @@ export async function GET(req: NextRequest) {
         }
 
         if (totalSuper > 0) {
-          const dueDate = addDays(latestPayday, 7)
+          // Payday Super deadline = payday + 7 BUSINESS days (skips weekends +
+          // national public holidays). Must match the Tax & Super tracker.
+          const dueDate = paydaySuperDeadline(latestPayday)
           const staffCount = Object.keys(perEmployee).length
           const breakdownLines = Object.entries(perEmployee).map(([n, sg]) => `• ${n}: ${fmtAUD(sg)}`)
           const template =
