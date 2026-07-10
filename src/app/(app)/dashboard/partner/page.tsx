@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
+import { FREE_MODE } from '@/lib/free-mode'
 
 interface PartnerData {
   name: string
@@ -14,6 +16,7 @@ interface PartnerData {
 }
 
 export default function PartnerDashboardPage() {
+  if (FREE_MODE) redirect('/dashboard')
   const [partner, setPartner] = useState<PartnerData | null>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)

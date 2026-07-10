@@ -1,5 +1,6 @@
 import { redis } from '@/lib/redis'
 import { createServiceClient } from '@/lib/supabase'
+import { FREE_MODE } from '@/lib/free-mode'
 
 const KEY = (userId: string) => `profile:${userId}`
 const TTL = 60 // seconds — stale data is fine; webhook invalidates on subscription changes
@@ -11,11 +12,18 @@ export interface CachedProfile {
   subscription_status: string | null
 }
 
+// Server-side chokepoint for feature gating: every API route reads the plan
+// through here, so free mode only needs to override it in one place.
+function withFreeMode(profile: CachedProfile | null): CachedProfile | null {
+  if (FREE_MODE && profile) return { ...profile, plan: 'autopilot' }
+  return profile
+}
+
 export async function getProfile(userId: string): Promise<CachedProfile | null> {
   if (redis) {
     try {
       const hit = await redis.get<CachedProfile>(KEY(userId))
-      if (hit) return hit
+      if (hit) return withFreeMode(hit)
     } catch {
       // Redis unavailable — fall through to Supabase
     }
@@ -36,7 +44,7 @@ export async function getProfile(userId: string): Promise<CachedProfile | null> 
     }
   }
 
-  return data ?? null
+  return withFreeMode(data ?? null)
 }
 
 export async function invalidateProfile(userId: string): Promise<void> {

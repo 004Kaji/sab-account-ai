@@ -8,6 +8,7 @@ export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { FREE_MODE } from '@/lib/free-mode'
 import { Resend } from 'resend'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
@@ -116,7 +117,7 @@ export async function GET(req: NextRequest) {
 
       if (!profile.email) continue
       if (profile.notify_super === false) continue
-      if (profile.plan === 'free') continue
+      if (!FREE_MODE && profile.plan === 'free') continue
 
       // Build per-employee summary
       const totalSg     = userPayslips.reduce((s, p) => s + (p.super_sg as number), 0)

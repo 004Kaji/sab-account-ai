@@ -58,11 +58,11 @@ KEY FEATURES:
 - Referral system with free months for successful referrals
 
 PRICING (vs competitors):
-- SAB Account AI: Free tier / Starter $9/mo / Pro $19/mo
+- SAB Account AI: completely free — every feature included
 - Xero: $50–70/mo
 - MYOB: $30–50/mo
 - QuickBooks: $25–45/mo
-- SAB Account AI is 3–5x cheaper with AI built in
+- SAB Account AI is free with AI built in
 
 AUSTRALIAN-SPECIFIC COMPLIANCE:
 - ATO tax tables and withholding schedules

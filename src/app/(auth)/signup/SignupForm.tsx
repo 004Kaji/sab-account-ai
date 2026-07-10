@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
 import { validateABN, validateEmail, safeStorage } from '@/lib/utils'
+import { FREE_MODE } from '@/lib/free-mode'
 
 type Plan = 'free' | 'starter' | 'pro'
 
@@ -172,7 +173,7 @@ export default function SignupForm({ initialPlan, initialRef }: { initialPlan: P
             full_name: `${firstName.trim()} ${lastName.trim()}`,
             business_name: businessName.trim(),
             abn: abn.trim() || null,
-            plan: selectedPlan,
+            plan: FREE_MODE ? 'free' : selectedPlan,
           },
         },
       })
@@ -284,7 +285,7 @@ export default function SignupForm({ initialPlan, initialRef }: { initialPlan: P
             <em style={{ color: 'var(--ember)', fontStyle: 'italic' }}>Australian businesses</em>
           </h1>
           <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.9375rem', lineHeight: 1.65, marginBottom: '2rem' }}>
-            Set up your account in under 2 minutes. No credit card required for the free plan.
+            Set up your account in under 2 minutes. Completely free — no credit card required.
           </p>
 
           {/* Social proof / reassurance */}
@@ -539,8 +540,8 @@ export default function SignupForm({ initialPlan, initialRef }: { initialPlan: P
               {errors.password && <p style={{ fontSize: '0.75rem', color: 'var(--ember)', marginTop: '0.25rem', fontWeight: 500 }}>{errors.password}</p>}
             </div>
 
-            {/* ── Plan picker ───────────────────────────────── */}
-            <div style={{ marginTop: '0.5rem' }}>
+            {/* ── Plan picker (hidden in free mode — everyone gets everything) ── */}
+            {!FREE_MODE && <div style={{ marginTop: '0.5rem' }}>
               <label className="sab-label" style={{ marginBottom: '0.75rem' }}>Choose your plan</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
                 {PLANS.map((plan) => {
@@ -613,7 +614,7 @@ export default function SignupForm({ initialPlan, initialRef }: { initialPlan: P
                   )
                 })}
               </div>
-            </div>
+            </div>}
 
             {/* Submit error */}
             {errors.submit && (
@@ -629,7 +630,7 @@ export default function SignupForm({ initialPlan, initialRef }: { initialPlan: P
               style={{ width: '100%', marginTop: '0.5rem', fontSize: '0.9375rem', padding: '0.75rem' }}
             >
               {loading && <span className="spinner" />}
-              {loading ? 'Creating account…' : `Create account${selectedPlan !== 'free' ? ' — start free trial' : ''}`}
+              {loading ? 'Creating account…' : `Create account${!FREE_MODE && selectedPlan !== 'free' ? ' — start free trial' : ''}`}
             </button>
 
             <p style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text3)', lineHeight: 1.5 }}>
@@ -637,7 +638,7 @@ export default function SignupForm({ initialPlan, initialRef }: { initialPlan: P
               <a href="/terms" style={{ color: 'var(--ember)', textDecoration: 'none' }}>Terms of Service</a>
               {' '}and{' '}
               <a href="/privacy" style={{ color: 'var(--ember)', textDecoration: 'none' }}>Privacy Policy</a>.
-              {selectedPlan !== 'free' && ' 14-day free trial, then billed monthly (AUD + GST). Cancel anytime.'}
+              {!FREE_MODE && selectedPlan !== 'free' && ' 14-day free trial, then billed monthly (AUD + GST). Cancel anytime.'}
             </p>
           </form>
 

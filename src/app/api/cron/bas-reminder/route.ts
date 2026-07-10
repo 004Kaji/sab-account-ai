@@ -7,6 +7,7 @@ export const maxDuration = 300
 
 import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { FREE_MODE } from '@/lib/free-mode'
 import { Resend } from 'resend'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
@@ -48,10 +49,11 @@ export async function GET(req: NextRequest) {
   const reminderType = daysAway === 28 ? '28_day' : daysAway === 7 ? '7_day' : null
   if (!reminderType) return NextResponse.json({ ok: true, skipped: true, daysAway })
 
-  const { data: users } = await supabase
+  let usersQuery = supabase
     .from('profiles')
     .select('id, email, business_name')
-    .eq('plan', 'autopilot')
+  if (!FREE_MODE) usersQuery = usersQuery.eq('plan', 'autopilot')
+  const { data: users } = await usersQuery
 
   if (!users?.length) return NextResponse.json({ ok: true, sent: 0 })
 

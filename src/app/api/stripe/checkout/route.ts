@@ -3,9 +3,16 @@ import * as Sentry from '@sentry/nextjs'
 import { stripe, PRICE_IDS } from '@/lib/stripe'
 import { createServiceClient } from '@/lib/supabase'
 import { getProfile } from '@/lib/profile-cache'
+import { FREE_MODE } from '@/lib/free-mode'
 
 export async function POST(req: NextRequest) {
   try {
+    if (FREE_MODE) {
+      return NextResponse.json(
+        { error: 'SAB Account AI is free — there is nothing to buy.' },
+        { status: 400 },
+      )
+    }
     // Authenticate via Bearer token sent from the client
     const token = req.headers.get('Authorization')?.replace('Bearer ', '')
     if (!token) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })

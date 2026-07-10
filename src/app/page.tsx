@@ -39,45 +39,21 @@ const FEATURES = [
 
 const PLANS = [
   {
-    name: 'Free',
+    name: 'Everything',
     price: '$0',
-    period: '/month',
-    desc: 'Get started with basic invoicing.',
+    period: 'forever',
+    desc: 'Every feature. No credit card. No limits. No catch.',
     cta: 'Start free',
     href: '/signup',
-    highlight: false,
-    features: ['3 invoices per month', 'Manual invoice builder', 'PDF download', 'GST calculation'],
-  },
-  {
-    name: 'Starter',
-    price: '$9',
-    period: '/month',
-    desc: 'For freelancers who invoice regularly.',
-    cta: 'Start 14-day trial',
-    href: '/signup?plan=starter',
-    highlight: false,
-    features: ['Unlimited invoices', 'AI invoice generation', 'Professional PDF', 'GST & BAS tracking', 'Income & expense records'],
-  },
-  {
-    name: 'Pro',
-    price: '$19',
-    period: '/month',
-    desc: 'Full ATO compliance for growing businesses.',
-    cta: 'Start 14-day trial',
-    href: '/signup?plan=pro',
-    highlight: false,
-    features: ['Everything in Starter', 'ATO-compliant payslips', 'PAYG withholding (Scale 1 & 2)', 'Payday Super tracking', 'BAS estimates', 'Priority support'],
-  },
-  {
-    name: 'Autopilot',
-    price: '$49',
-    period: '/month',
-    desc: 'Your business runs itself. You just approve.',
-    cta: 'Start 14-day trial',
-    href: '/signup?plan=autopilot',
     highlight: true,
-    features: ['Everything in Pro', 'SAB Chat AI assistant', 'Create payslips & invoices by message', 'ATO compliance answers instantly', 'Business summaries on demand'],
-    teaser: true,
+    features: [
+      'Unlimited invoices & AI generation',
+      'ATO-compliant payslips & PAYG withholding',
+      'Payday Super tracking & BAS estimates',
+      'SAB Chat AI assistant — unlimited',
+      'Income & expense records',
+      'Bank import & accountant sharing',
+    ],
   },
 ]
 
@@ -96,10 +72,7 @@ const SOFTWARE_SCHEMA = {
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'Web Browser',
   offers: [
-    { '@type': 'Offer', price: '0',  priceCurrency: 'AUD', name: 'Free'      },
-    { '@type': 'Offer', price: '9',  priceCurrency: 'AUD', name: 'Starter'   },
-    { '@type': 'Offer', price: '19', priceCurrency: 'AUD', name: 'Pro'       },
-    { '@type': 'Offer', price: '49', priceCurrency: 'AUD', name: 'Autopilot' },
+    { '@type': 'Offer', price: '0', priceCurrency: 'AUD', name: 'Free' },
   ],
   description: 'AI-powered invoicing and ATO-compliant payslips for Australian small businesses and freelancers.',
   url: 'https://sabaccountai.com',
@@ -111,7 +84,7 @@ const FAQ_SCHEMA = {
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
   mainEntity: [
-    { '@type': 'Question', name: 'How much does SAB Account AI cost?', acceptedAnswer: { '@type': 'Answer', text: 'Free plan includes 3 invoices per month. Starter plan is $9/month with unlimited invoices and AI generation. Pro plan is $19/month and adds ATO-compliant PAYG payslips, superannuation tracking, and BAS estimates.' } },
+    { '@type': 'Question', name: 'How much does SAB Account AI cost?', acceptedAnswer: { '@type': 'Answer', text: 'SAB Account AI is completely free. Unlimited invoices, AI generation, ATO-compliant PAYG payslips, superannuation tracking, BAS estimates, and the SAB Chat AI assistant — all at no cost, with no credit card required.' } },
     { '@type': 'Question', name: 'Is SAB Account AI ATO compliant?', acceptedAnswer: { '@type': 'Answer', text: 'Yes. PAYG calculations are verified across 19 ATO tax scenarios including Medicare levy, LITO, HELP/HECS debt repayment, and all visa types including working holiday makers and international students.' } },
     { '@type': 'Question', name: 'Does SAB Account AI handle Payday Super?', acceptedAnswer: { '@type': 'Answer', text: 'Yes. Payday Super starts 1 July 2026. SAB Account AI automatically calculates and tracks superannuation on every pay run, ensuring you meet the new ATO requirements from day one.' } },
     { '@type': 'Question', name: 'How long does it take to create an invoice?', acceptedAnswer: { '@type': 'Answer', text: 'About 30 seconds. Describe your job in plain English and the AI generates a professional ATO-compliant tax invoice with correct GST calculations instantly.' } },
@@ -168,9 +141,7 @@ export default function HomePage() {
           .trust-bar-inner { display: grid !important; grid-template-columns: repeat(2, 1fr) !important; gap: 0.625rem 1rem !important; justify-items: start !important; }
         }
         .nav-cta-short { display: none; }
-        .pricing-grid { display: grid !important; grid-template-columns: 1fr !important; gap: 1.25rem !important; align-items: start !important; }
-        @media (min-width: 600px) { .pricing-grid { grid-template-columns: repeat(2, 1fr) !important; } }
-        @media (min-width: 960px) { .pricing-grid { grid-template-columns: repeat(4, 1fr) !important; } }
+        .pricing-grid { display: grid !important; grid-template-columns: 1fr !important; gap: 1.25rem !important; align-items: start !important; max-width: 480px; margin: 0 auto; }
       `}</style>
       <nav className="landing-nav" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -223,7 +194,7 @@ export default function HomePage() {
         </div>
 
         <p style={{ marginTop: '1rem', fontSize: '0.8125rem', color: 'var(--text3)' }}>
-          No credit card required · 14-day free trial on paid plans
+          Completely free · No credit card required
         </p>
         <p style={{ marginTop: '0.5rem', fontSize: '0.8125rem' }}>
           <a href="/ato-verification" style={{ color: 'var(--text3)', textDecoration: 'none' }}>✓ ATO NAT 1004 verified — 25 May 2026</a>
@@ -484,8 +455,8 @@ export default function HomePage() {
       {/* ── Pricing ────────────────────────────────────────────── */}
       <section id="pricing" style={{ padding: '2rem 1.5rem 4rem', maxWidth: '1000px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
-          <h2 className="font-display" style={{ fontSize: '2rem', color: 'var(--char)', letterSpacing: '-0.02em', marginBottom: '0.5rem' }}>Simple pricing</h2>
-          <p style={{ color: 'var(--text2)', fontSize: '0.9375rem' }}>Start free. Upgrade only when you need more.</p>
+          <h2 className="font-display" style={{ fontSize: '2rem', color: 'var(--char)', letterSpacing: '-0.02em', marginBottom: '0.5rem' }}>Completely free</h2>
+          <p style={{ color: 'var(--text2)', fontSize: '0.9375rem' }}>Every feature, every plan — free for everyone.</p>
         </div>
 
         <div className="pricing-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', alignItems: 'start' }}>
@@ -497,7 +468,7 @@ export default function HomePage() {
             }}>
               {plan.highlight && (
                 <div style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'var(--ember)', color: '#fff', fontSize: '0.6875rem', fontWeight: 600, padding: '0.2rem 0.6rem', borderRadius: '999px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                  ⭐ Popular
+                  100% Free
                 </div>
               )}
               <h3 style={{ fontSize: '1rem', fontWeight: 600, color: plan.highlight ? '#fff' : 'var(--char)', marginBottom: '0.5rem' }}>{plan.name}</h3>
@@ -513,15 +484,6 @@ export default function HomePage() {
                   </li>
                 ))}
               </ul>
-              {'teaser' in plan && plan.teaser && (
-                <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem', marginBottom: '1.5rem', textAlign: 'center' }}>
-                  <p style={{ fontSize: '0.8125rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.6 }}>
-                    … <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}>One message. Everything done.</span>
-                    {' '}Something new is coming for Autopilot members.{' '}
-                    <span style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.35)' }}>Early access Q3 2026.</span>
-                  </p>
-                </div>
-              )}
               <a href={plan.href} className="btn" style={{ display: 'flex', width: '100%', justifyContent: 'center', background: plan.highlight ? 'var(--ember)' : 'transparent', color: plan.highlight ? '#fff' : 'var(--char)', border: plan.highlight ? 'none' : '1px solid var(--border)', textDecoration: 'none' }}>
                 {plan.cta}
               </a>
@@ -529,7 +491,7 @@ export default function HomePage() {
           ))}
         </div>
         <p style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.8125rem', color: 'var(--text3)' }}>
-          All prices in AUD + GST · Cancel anytime · No hidden fees
+          Free forever · No credit card required · No hidden fees
         </p>
       </section>
 

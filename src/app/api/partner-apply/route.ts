@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
 import { checkPublicRateLimit } from '@/lib/ratelimit'
+import { FREE_MODE } from '@/lib/free-mode'
 
 function generateCode(firm: string): string {
   const prefix = firm.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 6).padEnd(4, 'X')
@@ -11,6 +12,9 @@ function generateCode(firm: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  if (FREE_MODE) {
+    return NextResponse.json({ error: 'The partner program is closed while SAB Account AI is free.' }, { status: 404 })
+  }
   const { allowed } = await checkPublicRateLimit(req)
   if (!allowed) return NextResponse.json({ error: 'Too many requests. Please try again in an hour.' }, { status: 429 })
 

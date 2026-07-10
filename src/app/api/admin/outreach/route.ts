@@ -23,12 +23,12 @@ const PRODUCT_CONTEXT = `
 SAB Account AI (sabaccountai.com):
 - Australian invoicing and payroll SaaS for sole traders, freelancers, small business owners
 - Built by Sanjog Basnet — a sole trader himself (ABN: 49 541 449 108), bootstrapped
-- Pricing: Free / Starter $9/mo / Pro $19/mo — vs Xero $50-70/mo, MYOB $30-50/mo
+- Pricing: completely FREE (every feature included) — vs Xero $50-70/mo, MYOB $30-50/mo
 - Key features: AI invoice generation, ATO-compliant PAYG withholding, HELP/HECS repayment,
   superannuation tracking (12% SGC from July 2025), STP compliance, BAS tracking, ABN payment tracking,
   recurring invoices, overdue reminders, client management, employee management, PDF export
-- 14-day free trial, no credit card required
-- Referral system: accountants/partners can refer clients and earn rewards
+- 100% free, no credit card required
+- No partner/commission program — the product is free, so the pitch is pure value, not rewards
 `
 
 const TARGET_CONTEXT: Record<string, string> = {
@@ -38,15 +38,15 @@ TARGET: Accountant or bookkeeper in Australia
 - Many of their clients are sole traders or small businesses who currently use Xero/MYOB or nothing
 - Pain: clients complain about Xero/MYOB cost, especially sole traders who only need basics
 - Opportunity: SAB Account AI is a cheaper, simpler alternative they can recommend to suitable clients
-- Partner angle: referral rewards for every client they bring on, positions them as cost-conscious advisor
-- Key message: "you can save your sole trader clients money while earning rewards for referrals"
+- Angle: recommending a free tool positions them as a cost-conscious advisor their clients trust
+- Key message: "you can save your sole trader clients money — SAB Account AI is completely free"
 `,
   sole_trader: `
 TARGET: Australian sole trader or freelancer
 - Runs their own business, invoices clients, handles their own payroll/super
 - Likely using spreadsheets, Word docs, or paying too much for Xero/MYOB
 - Pain: invoicing is manual, payroll calculations are complex (PAYG, HELP, super), worried about ATO compliance
-- Key message: "SAB Account AI handles all of this for $9/mo, with AI built in"
+- Key message: "SAB Account AI handles all of this for free, with AI built in"
 - Trigger events that work: just registered ABN, just left employment to freelance, mentioned Xero costs
 `,
   small_business: `

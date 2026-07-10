@@ -6,6 +6,7 @@ import { SAB_CHAT_TOOLS } from '@/lib/chat/tools'
 import { executeToolCall } from '@/lib/chat/tool-handlers'
 import { getAwardRates, pct } from '@/lib/award-rates'
 import { checkRateLimit } from '@/lib/ratelimit'
+import { FREE_MODE } from '@/lib/free-mode'
 
 export const maxDuration = 60
 
@@ -166,7 +167,7 @@ export async function POST(req: NextRequest) {
     .eq('id', user.id)
     .single()
 
-  const plan = profileData?.plan ?? 'free'
+  const plan = FREE_MODE ? 'autopilot' : (profileData?.plan ?? 'free')
 
   if (plan === 'autopilot') {
     // Autopilot: rate limit only (60/hour)

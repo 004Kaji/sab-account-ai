@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/Toast'
 import { formatDateAU, validateABN, formatABN } from '@/lib/utils'
 import { INDUSTRY_LIST, getAwardRates, pct } from '@/lib/award-rates'
 import AbnVerifyBadge from '@/components/ui/AbnVerifyBadge'
+import { FREE_MODE } from '@/lib/free-mode'
 
 // ── Types ─────────────────────────────────────────────────────────────
 type TabKey = 'business' | 'subscription' | 'invoices' | 'notifications' | 'ato' | 'referrals' | 'feedback' | 'accountant'
@@ -397,6 +398,36 @@ function SubscriptionTab({ profile, successPlan, stripeLoading, handlePortal, ha
 }) {
   const planStyle = PLAN_STYLES[profile.plan] ?? PLAN_STYLES.free
   const isPaid    = profile.plan !== 'free'
+
+  if (FREE_MODE) {
+    // Legacy paying subscribers can still reach the billing portal to view or
+    // cancel their old subscription; everyone else just sees that SAB is free.
+    const hasLegacyBilling = ['active', 'trialing', 'past_due'].includes(profile.subscription_status ?? '')
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div style={{ background: 'var(--cream)', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.5rem' }}>
+          <p style={{ fontWeight: 700, fontSize: '1.125rem', color: 'var(--char)', marginBottom: '0.375rem' }}>
+            SAB Account AI is completely free 🎉
+          </p>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text2)', lineHeight: 1.6 }}>
+            Every feature — unlimited invoices, AI generation, payslips, PAYG, Payday Super,
+            BAS estimates, and SAB Chat — is included at no cost. There is nothing to upgrade
+            and nothing to pay.
+          </p>
+        </div>
+        {hasLegacyBilling && (
+          <div style={{ background: '#ffffff', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text2)', margin: 0 }}>
+              You have an old paid subscription. It will not renew — you can review it in the billing portal.
+            </p>
+            <button onClick={() => handlePortal()} disabled={stripeLoading} className="btn btn-outline" style={{ fontSize: '0.875rem' }}>
+              {stripeLoading ? 'Opening…' : 'Manage billing'}
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const plans: Array<{
     key: string; name: string; price: string; period: string
@@ -1110,29 +1141,31 @@ function ReferralsTab() {
         </div>
       </div>
 
-      {/* Partner program upsell */}
-      <div style={{
-        background: 'var(--ember-p)', border: '1px solid rgba(200,75,47,0.2)',
-        borderRadius: 'var(--r2)', padding: '1.25rem 1.5rem',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        flexWrap: 'wrap', gap: '1rem',
-      }}>
-        <div>
-          <p style={{ fontWeight: 700, color: 'var(--char)', fontSize: '0.9rem', marginBottom: '0.25rem' }}>
-            Are you an accountant or bookkeeper?
-          </p>
-          <p style={{ color: 'var(--text2)', fontSize: '0.825rem' }}>
-            Join the Partner Program — earn 20% ongoing monthly commission for every client you refer.
-          </p>
-        </div>
-        <a href="/dashboard/partner" style={{
-          display: 'inline-block', background: 'var(--ember)', color: 'white',
-          padding: '0.6rem 1.25rem', borderRadius: 'var(--r)',
-          fontWeight: 600, fontSize: '0.825rem', textDecoration: 'none', whiteSpace: 'nowrap',
+      {/* Partner program upsell — hidden while the product is free (no commissions to pay) */}
+      {!FREE_MODE && (
+        <div style={{
+          background: 'var(--ember-p)', border: '1px solid rgba(200,75,47,0.2)',
+          borderRadius: 'var(--r2)', padding: '1.25rem 1.5rem',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          flexWrap: 'wrap', gap: '1rem',
         }}>
-          Partner dashboard →
-        </a>
-      </div>
+          <div>
+            <p style={{ fontWeight: 700, color: 'var(--char)', fontSize: '0.9rem', marginBottom: '0.25rem' }}>
+              Are you an accountant or bookkeeper?
+            </p>
+            <p style={{ color: 'var(--text2)', fontSize: '0.825rem' }}>
+              Join the Partner Program — earn 20% ongoing monthly commission for every client you refer.
+            </p>
+          </div>
+          <a href="/dashboard/partner" style={{
+            display: 'inline-block', background: 'var(--ember)', color: 'white',
+            padding: '0.6rem 1.25rem', borderRadius: 'var(--r)',
+            fontWeight: 600, fontSize: '0.825rem', textDecoration: 'none', whiteSpace: 'nowrap',
+          }}>
+            Partner dashboard →
+          </a>
+        </div>
+      )}
 
       <style>{`
         @keyframes pulse {

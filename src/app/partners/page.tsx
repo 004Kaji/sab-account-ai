@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
+import { redirect } from 'next/navigation'
 import PartnerApplyForm from './PartnerApplyForm'
+import { FREE_MODE } from '@/lib/free-mode'
 
 export const metadata: Metadata = {
   title: 'Accountant Partner Program — SAB Account AI',
@@ -62,6 +64,8 @@ const FAQS = [
 ]
 
 export default function PartnersPage() {
+  // Commission-based partner program makes no sense while the product is free
+  if (FREE_MODE) redirect('/')
   return (
     <div style={{ minHeight: '100vh', background: 'var(--cream)' }}>
 

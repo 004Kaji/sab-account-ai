@@ -6,6 +6,7 @@ export const maxDuration = 300
 
 import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { FREE_MODE } from '@/lib/free-mode'
 import { Resend } from 'resend'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase'
@@ -48,11 +49,12 @@ export async function GET(req: NextRequest) {
   const range    = lastMonthRange()
   const basDue   = currentQuarterDueDate()
 
-  // Get all autopilot users
-  const { data: users } = await supabase
+  // Get all autopilot users (every user counts as autopilot in free mode)
+  let usersQuery = supabase
     .from('profiles')
     .select('id, email, business_name')
-    .eq('plan', 'autopilot')
+  if (!FREE_MODE) usersQuery = usersQuery.eq('plan', 'autopilot')
+  const { data: users } = await usersQuery
 
   if (!users?.length) return NextResponse.json({ ok: true, sent: 0 })
 

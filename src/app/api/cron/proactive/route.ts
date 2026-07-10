@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
 import { paydaySuperDeadline } from '@/lib/super-compliance'
+import { FREE_MODE } from '@/lib/free-mode'
 
 export const maxDuration = 60
 
@@ -123,10 +124,11 @@ export async function GET(req: NextRequest) {
   const today     = new Date().toISOString().slice(0, 10)
   const windowStart = addDays(today, -14)
 
-  const { data: users } = await supabase
+  let usersQuery = supabase
     .from('profiles')
     .select('id, email')
-    .eq('plan', 'autopilot')
+  if (!FREE_MODE) usersQuery = usersQuery.eq('plan', 'autopilot')
+  const { data: users } = await usersQuery
 
   let nudged = 0
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { createServiceClient } from '@/lib/supabase'
+import { FREE_MODE } from '@/lib/free-mode'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://sabaccountai.com'
 
@@ -36,7 +37,8 @@ export async function GET(req: NextRequest) {
   const SCHEDULE: { type: 'day1' | 'day3' | 'day7'; minDays: number; maxDays: number }[] = [
     { type: 'day1', minDays: 0, maxDays: 1 },
     { type: 'day3', minDays: 2, maxDays: 4 },
-    { type: 'day7', minDays: 5, maxDays: 9 },
+    // day7 is an upgrade pitch — skip it while the product is free
+    ...(FREE_MODE ? [] : [{ type: 'day7' as const, minDays: 5, maxDays: 9 }]),
   ]
 
   let sent_count = 0

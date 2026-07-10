@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase'
 import { ProfileContext, type Profile } from './profile-context'
 import { initials, safeStorage } from '@/lib/utils'
+import { FREE_MODE } from '@/lib/free-mode'
 import { ToastProvider } from '@/components/ui/Toast'
 
 const PLAN_RANK: Record<string, number> = { free: 0, starter: 1, pro: 2, autopilot: 3 }
@@ -144,7 +145,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         setProfile({
           id:                  user.id,
           email:               user.email ?? '',
-          plan:                (prof?.plan ?? 'free') as Profile['plan'],
+          plan:                FREE_MODE ? 'autopilot' : (prof?.plan ?? 'free') as Profile['plan'],
           subscription_status: prof?.subscription_status ?? null,
           trial_ends_at:       prof?.trial_ends_at ?? null,
           business_name:       biz?.business_name ?? null,
@@ -340,7 +341,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </nav>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginLeft: 'auto', flexShrink: 0 }}>
-                <span
+                {!FREE_MODE && <span
                   className="plan-badge"
                   title={
                     profile.plan === 'autopilot'
@@ -364,7 +365,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   }}
                 >
                   {planStyle.label}
-                </span>
+                </span>}
 
                 {profile.plan !== 'autopilot' && (
                   <Link
@@ -519,7 +520,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          {profile.subscription_status === 'past_due' && (
+          {!FREE_MODE && profile.subscription_status === 'past_due' && (
             <div style={{
               background: 'rgba(220,60,40,0.1)',
               borderBottom: '1px solid rgba(220,60,40,0.25)',

@@ -55,14 +55,11 @@ export default function TermsPage() {
           </ul>
         </Section>
 
-        <Section title="4. Subscription Plans and Billing">
+        <Section title="4. Pricing and Billing">
           <ul>
-            <li><strong>Free plan:</strong> Available at no charge, subject to usage limits set out on our pricing page.</li>
-            <li><strong>Paid plans (Starter, Pro):</strong> Billed monthly in Australian dollars (AUD) plus GST at 10%. Prices are displayed inclusive of GST where required by Australian Consumer Law.</li>
-            <li><strong>Free trial:</strong> Paid plans include a 14-day free trial. You will not be charged until the trial period ends. You may cancel at any time before the trial ends without charge.</li>
-            <li><strong>Cancellation:</strong> You may cancel your subscription at any time through your account settings. Access continues until the end of the current billing period. No refunds are provided for partial billing periods.</li>
-            <li><strong>Price changes:</strong> We will give at least 30 days notice before changing subscription prices, by email or in-app notice.</li>
-            <li>Payments are processed securely by Stripe. We do not store your payment card details.</li>
+            <li><strong>Free service:</strong> SAB Account AI is currently provided free of charge, with all features included. No payment details are required to use the service.</li>
+            <li><strong>Legacy subscriptions:</strong> If you previously purchased a paid plan, it will not renew. Any historical payments were processed securely by Stripe; we do not store your payment card details.</li>
+            <li><strong>Future changes:</strong> If we introduce paid plans in the future, we will give at least 30 days notice by email or in-app notice, and you will never be charged without explicitly subscribing.</li>
           </ul>
         </Section>
 
