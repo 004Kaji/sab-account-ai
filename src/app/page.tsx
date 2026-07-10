@@ -138,7 +138,7 @@ export default function HomePage() {
           <span className="font-display" style={{ fontWeight: 600, color: 'var(--char)', fontSize: '1rem', letterSpacing: '-0.02em' }}>SAB Account AI</span>
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-          <a href="#pricing" className="nav-desktop" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Pricing</a>
+          <a href="#pricing" className="nav-desktop" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Free</a>
           <a href="/blog" className="nav-desktop" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Blog</a>
           <a href="/login" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Sign in</a>
           <a href="/signup" className="btn btn-ember nav-cta-full" style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>Get started free</a>
@@ -180,7 +180,7 @@ export default function HomePage() {
           Completely free · No credit card required
         </p>
         <p style={{ marginTop: '0.5rem', fontSize: '0.8125rem' }}>
-          <a href="/ato-verification" style={{ color: 'var(--text3)', textDecoration: 'none' }}>✓ ATO NAT 1004 verified — 25 May 2026</a>
+          <a href="/ato-verification" style={{ color: 'var(--text3)', textDecoration: 'none' }}>✓ ATO NAT 1004 verified</a>
         </p>
       </section>
 
@@ -190,7 +190,7 @@ export default function HomePage() {
           display: 'flex', justifyContent: 'center', alignItems: 'center',
           gap: '2rem', flexWrap: 'wrap', maxWidth: '800px', margin: '0 auto',
         }}>
-          {['ATO NAT 1004 verified', 'Australian owned & built', 'No credit card required', 'Cancel anytime'].map(item => (
+          {['Australian owned & built', 'Payday Super ready', 'Your data — export or delete anytime', 'AI you review before anything sends'].map(item => (
             <span key={item} style={{ fontSize: '0.8125rem', color: 'rgba(255,255,255,0.75)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
               <span style={{ color: '#4ade80' }}>✓</span> {item}
             </span>
@@ -211,7 +211,7 @@ export default function HomePage() {
           <div style={{ background: 'var(--char)', padding: '0.875rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ width: '1.75rem', height: '1.75rem', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ember)' }}>SAB</span>
             <span style={{ color: '#fff', fontWeight: 600, fontSize: '0.9375rem' }}>SAB Chat</span>
-            <span style={{ marginLeft: 'auto', fontSize: '0.625rem', fontWeight: 700, letterSpacing: '0.05em', color: '#B8AAFF', background: 'rgba(100,80,200,0.3)', padding: '0.15rem 0.5rem', borderRadius: '999px' }}>AUTOPILOT</span>
+            <span style={{ marginLeft: 'auto', fontSize: '0.625rem', fontWeight: 700, letterSpacing: '0.05em', color: '#B8AAFF', background: 'rgba(100,80,200,0.3)', padding: '0.15rem 0.5rem', borderRadius: '999px' }}>AI</span>
           </div>
 
           {/* thread */}
@@ -280,7 +280,7 @@ export default function HomePage() {
         </div>
 
         <p style={{ textAlign: 'center', fontSize: '0.8125rem', color: 'var(--text3)', marginTop: '1rem' }}>
-          Payslips, invoices, BAS &amp; super — done by message. On the Autopilot plan.
+          Payslips, invoices, BAS &amp; super — done by message. Included free.
         </p>
       </section>
 
@@ -478,6 +478,26 @@ export default function HomePage() {
         </p>
       </section>
 
+      {/* ── FAQ — rendered from the same data as the FAQ JSON-LD so the
+             visible content always matches the schema ─────────────── */}
+      <section style={{ padding: '1rem 1.5rem 4rem', maxWidth: '720px', margin: '0 auto' }}>
+        <h2 className="font-display" style={{ fontSize: '2rem', color: 'var(--char)', letterSpacing: '-0.02em', marginBottom: '1.5rem', textAlign: 'center' }}>
+          Common questions
+        </h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {FAQ_SCHEMA.mainEntity.map(faq => (
+            <details key={faq.name} style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1rem 1.25rem' }}>
+              <summary style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--char)', cursor: 'pointer' }}>
+                {faq.name}
+              </summary>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text2)', lineHeight: 1.65, marginTop: '0.75rem' }}>
+                {faq.acceptedAnswer.text}
+              </p>
+            </details>
+          ))}
+        </div>
+      </section>
+
       {/* ── Footer ─────────────────────────────────────────────── */}
       <footer style={{ borderTop: '1px solid var(--border)', padding: '2.5rem 1.5rem', maxWidth: '1000px', margin: '0 auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>
@@ -495,7 +515,7 @@ export default function HomePage() {
             <div>
               <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--char)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '0.625rem' }}>Product</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                <a href="#pricing" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Pricing</a>
+                <a href="#pricing" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Free</a>
                 <a href="/signup" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Sign up free</a>
                 <a href="/login" style={{ fontSize: '0.875rem', color: 'var(--text2)', textDecoration: 'none' }}>Sign in</a>
               </div>
