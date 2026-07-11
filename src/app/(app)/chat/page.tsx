@@ -258,7 +258,17 @@ export default function ChatPage() {
       })
 
       if (!res.ok) {
-        const err = await res.json() as { error?: string; credits_exhausted?: boolean }
+        const err = await res.json() as { error?: string; credits_exhausted?: boolean; daily_cap?: boolean }
+        if (err.daily_cap) {
+          setMessages(prev => [...prev, {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            text: err.error ?? "You've used your free chats for today — the counter resets over the next 24 hours.",
+          }])
+          setLoading(false)
+          setToolActivity(null)
+          return
+        }
         if (err.credits_exhausted) {
           setCreditsRemaining(0)
           setMessages(prev => [...prev, {

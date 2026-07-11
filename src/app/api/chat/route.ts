@@ -5,7 +5,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { SAB_CHAT_TOOLS } from '@/lib/chat/tools'
 import { executeToolCall } from '@/lib/chat/tool-handlers'
 import { getAwardRates, pct } from '@/lib/award-rates'
-import { checkRateLimit } from '@/lib/ratelimit'
+import { checkRateLimit, checkDailyChatLimit, DAILY_CHAT_LIMIT } from '@/lib/ratelimit'
 import { FREE_MODE } from '@/lib/free-mode'
 
 export const maxDuration = 60
@@ -170,10 +170,21 @@ export async function POST(req: NextRequest) {
   const plan = FREE_MODE ? 'autopilot' : (profileData?.plan ?? 'free')
 
   if (plan === 'autopilot') {
-    // Autopilot: rate limit only (60/hour)
+    // Daily cost ceiling: 10 messages per rolling 24h per user
+    const daily = await checkDailyChatLimit(user.id)
+    if (!daily.allowed) {
+      return NextResponse.json({
+        error: `You've used your ${DAILY_CHAT_LIMIT} free chats for today — the counter resets over the next 24 hours. Everything else (invoices, payslips, records) keeps working as normal.`,
+        daily_cap: true,
+      }, {
+        status: 429,
+        headers: { 'X-RateLimit-Remaining': '0' },
+      })
+    }
+    // Burst protection on top of the daily cap (60/hour)
     const { allowed, remaining } = await checkRateLimit(user.id, 'autopilot')
     if (!allowed) {
-      return NextResponse.json({ error: 'Rate limit reached. You can send 60 messages per hour. Please wait a moment before trying again.' }, {
+      return NextResponse.json({ error: 'Rate limit reached. Please wait a moment before trying again.' }, {
         status: 429,
         headers: { 'X-RateLimit-Remaining': String(remaining) },
       })

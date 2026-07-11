@@ -40,9 +40,13 @@ const lruFallback = new LRUCounter(100, 60 * 60 * 1000)
 // Redis is unavailable, so a Redis outage can't turn the endpoint into an open
 // relay for sending PDFs from our verified domain.
 const emailLruFallback = new LRUCounter(500, 60 * 60 * 1000)
+// Fail-closed fallback for the daily chat cap — each chat message costs real
+// Anthropic API money, so a Redis outage must not remove the ceiling.
+const dailyChatLruFallback = new LRUCounter(500, 24 * 60 * 60 * 1000)
 const FREE_LIMIT = 5
 const PRO_LIMIT = 60
 const EMAIL_LIMIT = 20
+export const DAILY_CHAT_LIMIT = 10
 
 // Free plan: 5 AI requests/hour. Pro plan: 60 AI requests/hour.
 export const freeLimiter = redis ? new Ratelimit({
@@ -78,6 +82,14 @@ export const emailLimiter = redis ? new Ratelimit({
   prefix: 'rl:email',
 }) : null
 
+// SAB Chat: 10 messages per rolling 24 hours per user — the cost ceiling now
+// that chat is free for everyone (hourly limit alone allows ~$100+/day/user)
+export const dailyChatLimiter = redis ? new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(DAILY_CHAT_LIMIT, '1 d'),
+  prefix: 'rl:chatday',
+}) : null
+
 export async function checkRateLimit(userId: string, plan: string) {
   const isFreePlan = plan.toLowerCase() === 'free'
   const limit = isFreePlan ? FREE_LIMIT : PRO_LIMIT
@@ -95,6 +107,24 @@ export async function checkRateLimit(userId: string, plan: string) {
     console.error('[ratelimit] Redis error — using in-process fallback:', err)
     Sentry.captureException(err, { tags: { context: 'checkRateLimit' } })
     return lruFallback.check(userId, limit)
+  }
+}
+
+export async function checkDailyChatLimit(userId: string) {
+  if (!dailyChatLimiter) {
+    console.error('[ratelimit] Redis is not configured — daily chat cap falling back to in-process counter')
+    Sentry.captureMessage('Daily chat limiter not configured (Redis null) — using in-process fallback', 'warning')
+    return dailyChatLruFallback.check(userId, DAILY_CHAT_LIMIT)
+  }
+  try {
+    const { success, remaining } = await dailyChatLimiter.limit(userId)
+    return { allowed: success, remaining }
+  } catch (err) {
+    // Fail closed — chat spends Anthropic tokens, so a Redis error must not
+    // lift the daily ceiling.
+    console.error('[ratelimit] Redis error in daily chat limiter — using in-process fallback:', err)
+    Sentry.captureException(err, { tags: { context: 'checkDailyChatLimit' } })
+    return dailyChatLruFallback.check(userId, DAILY_CHAT_LIMIT)
   }
 }
 
