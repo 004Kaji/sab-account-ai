@@ -40,8 +40,10 @@ const lruFallback = new LRUCounter(100, 60 * 60 * 1000)
 // Redis is unavailable, so a Redis outage can't turn the endpoint into an open
 // relay for sending PDFs from our verified domain.
 const emailLruFallback = new LRUCounter(500, 60 * 60 * 1000)
-// Fail-closed fallback for the daily chat cap — each chat message costs real
-// Anthropic API money, so a Redis outage must not remove the ceiling.
+// Fallback for the daily chat cap when Redis is down — each chat message
+// costs real Anthropic API money, so errors must not remove the ceiling
+// entirely. Note this counter is per-process: across N serverless instances
+// the effective cap degrades to limit×N (still bounded, unlike failing open).
 const dailyChatLruFallback = new LRUCounter(500, 24 * 60 * 60 * 1000)
 const FREE_LIMIT = 5
 const PRO_LIMIT = 60
@@ -82,13 +84,12 @@ export const emailLimiter = redis ? new Ratelimit({
   prefix: 'rl:email',
 }) : null
 
-// SAB Chat: 10 messages per rolling 24 hours per user — the cost ceiling now
-// that chat is free for everyone (hourly limit alone allows ~$100+/day/user)
-export const dailyChatLimiter = redis ? new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(DAILY_CHAT_LIMIT, '1 d'),
-  prefix: 'rl:chatday',
-}) : null
+// SAB Chat daily cap: implemented as a plain INCR on a per-UTC-day key
+// (not Ratelimit.slidingWindow) so a slot can be REFUNDED via DECR when the
+// downstream Anthropic call fails — a failed message must not burn quota.
+function dailyChatKey(userId: string): string {
+  return `rl:chatday:${userId}:${new Date().toISOString().slice(0, 10)}`
+}
 
 export async function checkRateLimit(userId: string, plan: string) {
   const isFreePlan = plan.toLowerCase() === 'free'
@@ -110,21 +111,41 @@ export async function checkRateLimit(userId: string, plan: string) {
   }
 }
 
+// Consumes one daily chat slot. Pair with refundDailyChatSlot() when the
+// message ultimately isn't served (e.g. the Anthropic call throws).
 export async function checkDailyChatLimit(userId: string) {
-  if (!dailyChatLimiter) {
+  if (!redis) {
     console.error('[ratelimit] Redis is not configured — daily chat cap falling back to in-process counter')
     Sentry.captureMessage('Daily chat limiter not configured (Redis null) — using in-process fallback', 'warning')
     return dailyChatLruFallback.check(userId, DAILY_CHAT_LIMIT)
   }
   try {
-    const { success, remaining } = await dailyChatLimiter.limit(userId)
-    return { allowed: success, remaining }
+    const key = dailyChatKey(userId)
+    const count = await redis.incr(key)
+    if (count === 1) await redis.expire(key, 25 * 60 * 60) // outlives the UTC day it keys
+    return { allowed: count <= DAILY_CHAT_LIMIT, remaining: Math.max(0, DAILY_CHAT_LIMIT - count) }
   } catch (err) {
     // Fail closed — chat spends Anthropic tokens, so a Redis error must not
     // lift the daily ceiling.
     console.error('[ratelimit] Redis error in daily chat limiter — using in-process fallback:', err)
     Sentry.captureException(err, { tags: { context: 'checkDailyChatLimit' } })
     return dailyChatLruFallback.check(userId, DAILY_CHAT_LIMIT)
+  }
+}
+
+// Gives back a slot consumed by checkDailyChatLimit for a message that was
+// never served. Best-effort: a refund that fails only means the user keeps
+// one fewer slot today.
+export async function refundDailyChatSlot(userId: string): Promise<void> {
+  if (!redis) return
+  try {
+    const key = dailyChatKey(userId)
+    const count = await redis.decr(key)
+    // decr on a missing/expired key creates it at -1 — clean that up so the
+    // next day starts from a true zero.
+    if (count < 0) await redis.del(key)
+  } catch (err) {
+    Sentry.captureException(err, { tags: { context: 'refundDailyChatSlot' } })
   }
 }
 

@@ -5,7 +5,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { SAB_CHAT_TOOLS } from '@/lib/chat/tools'
 import { executeToolCall } from '@/lib/chat/tool-handlers'
 import { getAwardRates, pct } from '@/lib/award-rates'
-import { checkRateLimit, checkDailyChatLimit, DAILY_CHAT_LIMIT } from '@/lib/ratelimit'
+import { checkRateLimit, checkDailyChatLimit, refundDailyChatSlot, DAILY_CHAT_LIMIT } from '@/lib/ratelimit'
 import { FREE_MODE } from '@/lib/free-mode'
 
 export const maxDuration = 60
@@ -368,6 +368,9 @@ export async function POST(req: NextRequest) {
 
       } catch (err) {
         Sentry.captureException(err, { tags: { feature: 'sab_chat' } })
+        // The message failed — give the daily-cap slot back so errors don't
+        // eat into the user's 10/day quota.
+        await refundDailyChatSlot(user.id)
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: err instanceof Error ? err.message : 'Something went wrong' })}\n\n`))
         controller.close()
       }
